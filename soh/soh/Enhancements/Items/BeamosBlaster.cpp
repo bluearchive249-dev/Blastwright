@@ -33,6 +33,7 @@ extern "C" {
 #include "variables.h"
 #include "functions.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+#include "objects/object_vm/object_vm.h" // gBeamosLaserDL: the real Beamos laser model
 extern PlayState* gPlayState;
 }
 
@@ -42,6 +43,8 @@ extern PlayState* gPlayState;
 
 #define CVAR_BLASTER_ENABLED CVAR_ENHANCEMENT("BeamosBlaster.Enabled")
 #define CVAR_BLASTER_TAP_FRAMES CVAR_ENHANCEMENT("BeamosBlaster.TapFrames")
+#define CVAR_BLASTER_BEAM_WIDTH CVAR_ENHANCEMENT("BeamosBlaster.BeamWidth")
+#define CVAR_BLASTER_GLOW_SIZE CVAR_ENHANCEMENT("BeamosBlaster.GlowSize")
 #define CVAR_BLASTER_MODEL_SCALE CVAR_ENHANCEMENT("BeamosBlaster.ModelScale")
 #define CVAR_BLASTER_MODEL_ORIENT CVAR_ENHANCEMENT("BeamosBlaster.ModelOrientation")
 #define CVAR_BLASTER_MODEL_OFF_X CVAR_ENHANCEMENT("BeamosBlaster.ModelOffsetX")
@@ -62,8 +65,10 @@ struct TierStats {
     u32 dmgFlags;     // damage type handed to enemies' damage tables (same tables swords/hammers use)
     f32 speed;        // world units per update
     s16 lifetime;     // updates before the bolt fizzles out
-    f32 halfWidth;    // collision + visual half width (world units)
+    f32 halfWidth;    // collision half width (world units); the visible beam is much slimmer
     f32 visualLength; // length of the visible bolt (world units)
+    f32 beamThickness; // thickness of the visible beam, 1.0 = the width of a real Beamos laser
+    f32 flareSize;     // size of the small glow at the head of the bolt
     s16 cooldown;     // minimum updates between shots
     u8 pierce;        // how many targets the bolt passes through before it stops
     Color_RGB8 glow;  // outer glow colour of the bolt
@@ -73,13 +78,14 @@ struct TierStats {
 
 static const TierStats kTiers[GUN_TIER_COUNT] = {
     // Mk.I - weak, fast, thin. Hits like a Master Sword slash.
-    { "Mk.I Sentry Beamer", DMG_SLASH_MASTER, 55.0f, 14, 9.0f, 130.0f, 6, 0, { 255, 70, 40 }, { 255, 235, 220 }, 0.85f },
+    { "Mk.I Sentry Beamer", DMG_SLASH_MASTER, 55.0f, 14, 9.0f, 110.0f, 0.7f, 14.0f, 6, 0, { 70, 150, 255 },
+      { 230, 245, 255 }, 0.85f },
     // Mk.II - strong. Hits like a Biggoron's Sword slash and punches through one target.
-    { "Mk.II Sentinel Cannon", DMG_SLASH_GIANT, 70.0f, 18, 14.0f, 200.0f, 10, 1, { 255, 140, 20 }, { 255, 250, 200 },
-      1.0f },
-    // Mk.III - strongest. Hits like a Megaton Hammer swing, very wide, pierces three targets.
-    { "Mk.III Overseer Cannon", DMG_HAMMER_SWING, 90.0f, 22, 24.0f, 320.0f, 16, 3, { 255, 30, 30 }, { 255, 255, 255 },
-      1.2f },
+    { "Mk.II Sentinel Cannon", DMG_SLASH_GIANT, 70.0f, 18, 14.0f, 150.0f, 1.0f, 22.0f, 10, 1, { 50, 120, 255 },
+      { 235, 245, 255 }, 1.0f },
+    // Mk.III - strongest. Hits like a Megaton Hammer swing, thicker beam, pierces three targets.
+    { "Mk.III Overseer Cannon", DMG_HAMMER_SWING, 90.0f, 22, 24.0f, 220.0f, 1.7f, 36.0f, 16, 3, { 90, 100, 255 },
+      { 245, 250, 255 }, 1.2f },
 };
 
 static int sBeamActorId = -1;
@@ -231,37 +237,25 @@ static void ComputeShot(Player* player, Vec3f* muzzle, s16* yaw, s16* pitch) {
 // Drawing helpers (world space ribbons + flare)
 // ---------------------------------------------------------------------------------------------------------------------
 
-// A "+" shaped pair of unit quads running from z = 0 to z = 1. Alpha ramps from 0 (tail) to 255 (head).
-static Vtx sRibbonVtx[8] = {
-    VTX(-1, 0, 0, 0, 0, 255, 255, 255, 0),   VTX(1, 0, 0, 0, 0, 255, 255, 255, 0),
-    VTX(1, 0, 1, 0, 0, 255, 255, 255, 255),  VTX(-1, 0, 1, 0, 0, 255, 255, 255, 255),
-    VTX(0, -1, 0, 0, 0, 255, 255, 255, 0),   VTX(0, 1, 0, 0, 0, 255, 255, 255, 0),
-    VTX(0, 1, 1, 0, 0, 255, 255, 255, 255),  VTX(0, -1, 1, 0, 0, 255, 255, 255, 255),
-};
-
-static void DrawRibbon(PlayState* play, const Vec3f& start, s16 yaw, s16 pitch, f32 length, f32 halfWidth,
-                       const Color_RGBA8& color) {
-    if (length <= 0.5f) {
+// Draws the real Beamos laser model (slim, blue, with its scrolling texture) from `start` along yaw / pitch.
+// This is exactly how EnVm draws its own beam: x/y scale 0.01 is a normal Beamos laser, z scale is length * 0.0015.
+static void DrawLaser(PlayState* play, const Vec3f& start, s16 yaw, s16 pitch, f32 length, f32 thickness) {
+    if (length <= 0.5f || thickness <= 0.001f) {
         return;
     }
 
     OPEN_DISPS(play->state.gfxCtx);
 
-    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-    gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BACK | G_LIGHTING);
-    // colour = primitive colour, alpha = primitive alpha * vertex alpha (so the bolt fades out toward its tail)
-    gDPSetCombineLERP(POLY_XLU_DISP++, 0, 0, 0, PRIMITIVE, PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE, PRIMITIVE, 0,
-                      SHADE, 0);
-    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, color.r, color.g, color.b, color.a);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)func_80094E78(play->state.gfxCtx, 0, (u32)(play->gameplayFrames * 12)));
 
     Matrix_Push();
     Matrix_Translate(start.x, start.y, start.z, MTXMODE_NEW);
     Matrix_RotateZYX(pitch, yaw, 0, MTXMODE_APPLY);
-    Matrix_Scale(halfWidth, halfWidth, length, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPVertex(POLY_XLU_DISP++, (uintptr_t)sRibbonVtx, 8, 0);
-    gSP2Triangles(POLY_XLU_DISP++, 0, 1, 2, 0, 0, 2, 3, 0);
-    gSP2Triangles(POLY_XLU_DISP++, 4, 5, 6, 0, 4, 6, 7, 0);
+    const f32 w = 0.01f * thickness;
+    Matrix_Scale(w, w, length * 0.0015f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gBeamosLaserDL);
     Matrix_Pop();
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -269,6 +263,10 @@ static void DrawRibbon(PlayState* play, const Vec3f& start, s16 yaw, s16 pitch, 
 
 static void DrawFlare(PlayState* play, const Vec3f& pos, f32 scale, const Color_RGB8& prim, const Color_RGB8& env,
                       u8 alpha) {
+    if (scale < 0.5f) {
+        return;
+    }
+
     OPEN_DISPS(play->state.gfxCtx);
 
     Gfx_SetupDL_25Xlu2(play->state.gfxCtx);
@@ -328,7 +326,7 @@ static ColliderQuadInit sShotColliderInit = {
 static void BeamShot_Impact(PlayState* play, const Vec3f& pos, int tier, bool wall) {
     Vec3f p = pos;
     EffectSsHitMark_SpawnCustomScale(play, 0, wall ? 120 : 170, &p);
-    Sfx_PlaySfxAtPos(&p, wall ? NA_SE_EN_BIMOS_LAZER_GND : NA_SE_IT_ARROW_STICK_CRE);
+    Sfx_PlaySfxAtPos(&p, wall ? NA_SE_IT_HOOKSHOT_REFLECT : NA_SE_IT_ARROW_STICK_CRE);
     (void)tier;
 }
 
@@ -474,12 +472,13 @@ static void BeamShot_Draw(Actor* thisx, PlayState* play) {
     Vec3f tail = { thisx->world.pos.x - self->dir.x * length, thisx->world.pos.y - self->dir.y * length,
                    thisx->world.pos.z - self->dir.z * length };
 
-    // Outer glow, then a thin bright core, then a flare on the head of the bolt.
-    Color_RGBA8 glow = { stats.glow.r, stats.glow.g, stats.glow.b, (u8)(150 * fade / 255) };
-    Color_RGBA8 core = { stats.core.r, stats.core.g, stats.core.b, fade };
-    DrawRibbon(play, tail, self->yaw, self->pitch, length, stats.halfWidth * 1.4f, glow);
-    DrawRibbon(play, tail, self->yaw, self->pitch, length, stats.halfWidth * 0.45f, core);
-    DrawFlare(play, thisx->world.pos, stats.halfWidth * 7.0f, stats.core, stats.glow, fade);
+    const f32 widthMul = CVarGetInteger(CVAR_BLASTER_BEAM_WIDTH, 100) / 100.0f;
+    const f32 glowMul = CVarGetInteger(CVAR_BLASTER_GLOW_SIZE, 100) / 100.0f;
+    const f32 fadeF = self->dying ? (f32)std::max(0, (int)self->fadeTimer) / 3.0f : 1.0f;
+
+    // The beam itself, then a small spark on the head of the bolt.
+    DrawLaser(play, tail, self->yaw, self->pitch, length, stats.beamThickness * widthMul * fadeF);
+    DrawFlare(play, thisx->world.pos, stats.flareSize * glowMul * fadeF, stats.core, stats.glow, fade);
 }
 
 static void RegisterBeamActor() {
@@ -539,7 +538,7 @@ extern "C" void BeamosBlaster_Fire(PlayState* play, Player* player) {
         return;
     }
 
-    Sfx_PlaySfxAtPos(&muzzle, NA_SE_EN_BIMOS_LAZER);
+    Sfx_PlaySfxAtPos(&muzzle, NA_SE_IT_MAGIC_ARROW_SHOT); // one-shot (the Beamos laser sfx is a loop)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -802,40 +801,53 @@ extern "C" void BeamosBlaster_DrawInHand(PlayState* play, Player* player) {
 
     DrawGunMesh(play, tier);
     Matrix_Pop();
-
-    // Beamos-style targeting laser while aiming.
-    if (player->stateFlags1 & PLAYER_STATE1_READY_TO_FIRE) {
-        Vec3f muzzle;
-        s16 yaw, pitch;
-        ComputeShot(player, &muzzle, &yaw, &pitch);
-
-        Vec3f dir;
-        AnglesToDir(yaw, pitch, &dir);
-        const f32 range = 1200.0f;
-        Vec3f end = { muzzle.x + dir.x * range, muzzle.y + dir.y * range, muzzle.z + dir.z * range };
-
-        CollisionPoly* poly = nullptr;
-        s32 bgId = 0;
-        Vec3f hitPoint;
-        bool hitSomething = BgCheck_ProjectileLineTest(&play->colCtx, &muzzle, &end, &hitPoint, &poly, true, true, true,
-                                                       true, &bgId);
-        if (hitSomething) {
-            end = hitPoint;
-        }
-        const f32 len = sqrtf(Math3D_Vec3fDistSq(&muzzle, &end));
-        const TierStats& stats = kTiers[tier];
-
-        Color_RGBA8 sight = { stats.glow.r, stats.glow.g, stats.glow.b, 110 };
-        DrawRibbon(play, muzzle, yaw, pitch, len, 0.6f, sight);
-        if (hitSomething) {
-            DrawFlare(play, end, 9.0f, stats.core, stats.glow, 200);
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------------------------------------------------
+
+// Beamos-style targeting laser while aiming. Drawn after the world, not inside Link's limb draw, so it cannot disturb
+// the render state of his model.
+static void DrawAimSight() {
+    PlayState* play = gPlayState;
+    if (!sEnabled || play == nullptr) {
+        return;
+    }
+    Player* player = GET_PLAYER(play);
+    const int tier = GetTier(player->heldItemAction);
+    if (tier < 0 || player->itemAction != player->heldItemAction ||
+        !(player->stateFlags1 & PLAYER_STATE1_READY_TO_FIRE)) {
+        return;
+    }
+
+    Vec3f muzzle;
+    s16 yaw, pitch;
+    ComputeShot(player, &muzzle, &yaw, &pitch);
+
+    Vec3f dir;
+    AnglesToDir(yaw, pitch, &dir);
+    const f32 range = 1200.0f;
+    Vec3f end = { muzzle.x + dir.x * range, muzzle.y + dir.y * range, muzzle.z + dir.z * range };
+
+    CollisionPoly* poly = nullptr;
+    s32 bgId = 0;
+    Vec3f hitPoint;
+    const bool hitSomething =
+        BgCheck_ProjectileLineTest(&play->colCtx, &muzzle, &end, &hitPoint, &poly, true, true, true, true, &bgId);
+    if (hitSomething) {
+        end = hitPoint;
+    }
+    const f32 len = sqrtf(Math3D_Vec3fDistSq(&muzzle, &end));
+    const TierStats& stats = kTiers[tier];
+    const f32 widthMul = CVarGetInteger(CVAR_BLASTER_BEAM_WIDTH, 100) / 100.0f;
+    const f32 glowMul = CVarGetInteger(CVAR_BLASTER_GLOW_SIZE, 100) / 100.0f;
+
+    DrawLaser(play, muzzle, yaw, pitch, len, 0.16f * widthMul);
+    if (hitSomething) {
+        DrawFlare(play, end, 6.0f * glowMul, stats.core, stats.glow, 200);
+    }
+}
 
 static void RegisterBeamosBlaster() {
     sEnabled = CVarGetInteger(CVAR_BLASTER_ENABLED, 0) != 0;
@@ -847,6 +859,8 @@ static void RegisterBeamosBlaster() {
         ResetInputState();
         sCooldown = 0;
     }
+
+    COND_HOOK(OnPlayDrawEnd, sEnabled, DrawAimSight);
 
     // Runs right before the player's action function every update, with the player's controller input.
     COND_VB_SHOULD(VB_EXECUTE_PLAYER_ACTION_FUNC, sEnabled, {

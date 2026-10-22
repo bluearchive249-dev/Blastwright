@@ -2327,6 +2327,11 @@ void Player_InitItemAction(PlayState* play, Player* this, s8 itemAction) {
 
     sItemActionInitFuncs[itemAction](play, this);
 
+    if (BeamosBlaster_IsGunAction(itemAction)) {
+        // Aiming (like the bow) cancels itself unless this flag is set, see func_8084FA54 / func_8083AD4C.
+        this->stateFlags1 |= PLAYER_STATE1_ITEM_IN_HAND;
+    }
+
     Player_SetModelGroup(this, this->modelGroup);
 }
 
@@ -12826,7 +12831,9 @@ void Player_Action_8084B1D8(Player* this, PlayState* play) {
     if ((this->csAction != 0) || (this->unk_6AD == 0) || (this->unk_6AD >= 4) || Player_UpdateHostileLockOn(this) ||
         (this->focusActor != NULL) || !func_8083AD4C(play, this) ||
         (((this->unk_6AD == 2) &&
-          (CHECK_BTN_ANY(sControlInput->press.button, BTN_A | BTN_B | BTN_R) || Player_FriendlyLockOnOrParallel(this) ||
+          (CHECK_BTN_ANY(sControlInput->press.button,
+                          BeamosBlaster_IsGunAction(this->heldItemAction) ? (BTN_A | BTN_R) : (BTN_A | BTN_B | BTN_R)) ||
+           Player_FriendlyLockOnOrParallel(this) ||
            (!func_8002DD78(this) && !func_808334B4(this)))) ||
          ((this->unk_6AD == 1) && CHECK_BTN_ANY(sControlInput->press.button, buttonsToCheck)))) {
         func_8083C148(this, play);

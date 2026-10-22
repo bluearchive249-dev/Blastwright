@@ -1109,6 +1109,14 @@ void SohMenu::AddMenuEnhancements() {
         .CVar(CVAR_ENHANCEMENT("BeamosBlaster.TapFrames"))
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
         .Options(IntSliderOptions().Min(2).Max(15).DefaultValue(5).Format("%d frames").Tooltip("How many frames B may be held and still count as a hip-fire tap instead of aiming."));
+    AddWidget(path, "Beam Width", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.BeamWidth"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(25).Max(300).DefaultValue(100).Format("%d%%").Tooltip("Thickness of the laser bolts. 100% is the width of a real Beamos laser (scaled per gun)."));
+    AddWidget(path, "Beam Glow Size", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.GlowSize"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(300).DefaultValue(100).Format("%d%%").Tooltip("Size of the spark at the tip of each bolt and where it hits. 0% turns it off."));
     AddWidget(path, "Gun Size", WIDGET_CVAR_SLIDER_INT)
         .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelScale"))
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
