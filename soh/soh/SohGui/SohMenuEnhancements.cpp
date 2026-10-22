@@ -1098,6 +1098,50 @@ void SohMenu::AddMenuEnhancements() {
             "Press the R button to cycle to the next available arrow type. "
             "Only works when aiming and only cycles to arrow types you own with sufficient magic."));
 
+    AddWidget(path, "Beamos Blaster", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Swords Become Beamos Guns", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"))
+        .Options(CheckboxOptions().Tooltip(
+            "Replaces the Kokiri Sword, Master Sword and Biggoron's Sword with three Beamos-style laser guns "
+            "(weak / strong / strongest).\n\nTap B to hip-fire. Hold B to aim like the bow (first person or "
+            "Z-target) and release to fire."));
+    AddWidget(path, "Tap-to-Fire Window", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.TapFrames"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(2).Max(15).DefaultValue(5).Format("%d frames").Tooltip("How many frames B may be held and still count as a hip-fire tap instead of aiming."));
+    AddWidget(path, "Gun Size", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelScale"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(20).Max(200).DefaultValue(65).Format("%d%%").Tooltip("Size of the gun model in Link's hand."));
+    AddWidget(path, "Gun Orientation", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelOrientation"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(23).DefaultValue(8).Format("%d").Tooltip("Which way the gun points in Link's hand. Try values 0-23 until the barrel points forward."));
+    AddWidget(path, "Gun Offset X", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelOffsetX"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Move the gun along the hand's X axis."));
+    AddWidget(path, "Gun Offset Y", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelOffsetY"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Move the gun along the hand's Y axis."));
+    AddWidget(path, "Gun Offset Z", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelOffsetZ"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Move the gun along the hand's Z axis."));
+    AddWidget(path, "Gun Fine Rotation X", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelFineRotX"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Fine rotation of the gun."));
+    AddWidget(path, "Gun Fine Rotation Y", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelFineRotY"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Fine rotation of the gun."));
+    AddWidget(path, "Gun Fine Rotation Z", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelFineRotZ"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Fine rotation of the gun."));
+
     path.column = SECTION_COLUMN_3;
     AddWidget(path, "Hookshot", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Targetable Hookshot Reticle", WIDGET_CVAR_CHECKBOX)

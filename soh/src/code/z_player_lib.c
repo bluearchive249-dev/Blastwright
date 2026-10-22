@@ -8,6 +8,7 @@
 #include <libultraship/bridge/resourcebridge.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/Items/BeamosBlaster.h"
 #include "soh/Enhancements/randomizer/draw.h"
 #include "soh/ResourceManagerHelpers.h"
 
@@ -596,6 +597,13 @@ void Player_SetModels(Player* this, s32 modelGroup) {
         }
     }
 
+    // Beamos Blaster: the sword blade is replaced by an empty fist, the gun is drawn in the hand limb post-draw.
+    if (BeamosBlaster_IsGunAction(this->heldItemAction) && ((this->leftHandType == PLAYER_MODELTYPE_LH_SWORD) ||
+                                                            (this->leftHandType == PLAYER_MODELTYPE_LH_BGS))) {
+        this->leftHandType = PLAYER_MODELTYPE_LH_CLOSED;
+        this->leftHandDLists = &sPlayerDListGroups[PLAYER_MODELTYPE_LH_CLOSED][gSaveContext.linkAge];
+    }
+
     // Right hand
     this->rightHandType = gPlayerModelTypes[modelGroup][PLAYER_MODELGROUPENTRY_RIGHT_HAND];
     this->rightHandDLists = &sPlayerDListGroups[this->rightHandType][gSaveContext.linkAge];
@@ -865,6 +873,9 @@ s32 Player_ActionToMeleeWeapon(s32 itemAction) {
 }
 
 s32 Player_GetMeleeWeaponHeld(Player* this) {
+    if (BeamosBlaster_IsGunAction(this->heldItemAction)) {
+        return 0; // guns are not melee weapons
+    }
     return Player_ActionToMeleeWeapon(this->heldItemAction);
 }
 
@@ -1798,6 +1809,11 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
         Actor* hookedActor;
 
         Math_Vec3f_Copy(&this->leftHandPos, D_80160000);
+
+        if ((this->actor.scale.y >= 0.0f) && BeamosBlaster_IsGunAction(this->heldItemAction) &&
+            (this->itemAction == this->heldItemAction)) {
+            BeamosBlaster_DrawInHand(play, this);
+        }
 
         if (this->itemAction == PLAYER_IA_DEKU_STICK) {
             Vec3f sp124[3];

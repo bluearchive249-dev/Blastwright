@@ -25,6 +25,7 @@
 #include "soh/Enhancements/item-tables/ItemTableTypes.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/Items/BeamosBlaster.h"
 #include "soh/Enhancements/randomizer/randomizer_entrance.h"
 #include "soh/Enhancements/randomizer/randomizer_grotto.h"
 #include "soh/frame_interpolation.h"
@@ -142,6 +143,8 @@ s32 Player_UpperAction_Sword(Player* this, PlayState* play);
 s32 func_80834B5C(Player* this, PlayState* play);
 s32 func_80834C74(Player* this, PlayState* play);
 s32 func_8083501C(Player* this, PlayState* play);
+s32 func_80834D2C(Player* this, PlayState* play);
+s32 func_80834EB8(Player* this, PlayState* play);
 s32 func_808351D4(Player* this, PlayState* play); // Arrow nocked
 s32 func_808353D8(Player* this, PlayState* play); // Aiming in first person
 s32 func_80835588(Player* this, PlayState* play);
@@ -2673,7 +2676,8 @@ s32 func_8083442C(Player* this, PlayState* play) {
         if (this->unk_860 >= 0) {
             Player_PlaySfx(this, D_80854398[ABS(this->unk_860) - 1]);
 
-            if (!Player_HoldsHookshot(this) && (func_80834380(play, this, &item, &arrowType) > 0)) {
+            if (!Player_HoldsHookshot(this) && !BeamosBlaster_IsGunAction(this->heldItemAction) &&
+                (func_80834380(play, this, &item, &arrowType) > 0)) {
                 magicArrowType = arrowType - ARROW_FIRE;
 
                 if (this->unk_860 >= 0) {
@@ -2812,9 +2816,25 @@ s32 func_8083499C(Player* this, PlayState* play) {
 s32 Player_UpperAction_Sword(Player* this, PlayState* play) {
     if (func_80834758(play, this) || func_8083499C(this, play)) {
         return true;
-    } else {
-        return false;
     }
+
+    if (BeamosBlaster_IsGunAction(this->heldItemAction) && (this->doorType == PLAYER_DOORTYPE_NONE) &&
+        !(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN)) {
+        if (BeamosBlaster_WantsAim() && !(this->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
+            // Held B: raise the gun and aim exactly like the bow (first person / Z-target aim, release to fire).
+            this->unk_860 = 1;
+            if (func_80834D2C(this, play)) {
+                func_80834EB8(this, play);
+                return true;
+            }
+        } else if (BeamosBlaster_ConsumeHipFire()) {
+            // Quick tap of B: fire from the hip without aiming.
+            BeamosBlaster_Fire(play, this);
+            return false;
+        }
+    }
+
+    return false;
 }
 
 s32 Player_UpperAction_ChangeHeldItem(Player* this, PlayState* play) {
@@ -2968,6 +2988,12 @@ s32 func_80834FBC(Player* this) {
 }
 
 s32 func_8083501C(Player* this, PlayState* play) {
+    if (BeamosBlaster_IsGunAction(this->heldItemAction)) {
+        // Beamos Blaster: after a shot, go back to the gun's own idle upper action instead of the bow's.
+        Player_SetUpperActionFunc(this, Player_UpperAction_Sword);
+        return Player_UpperAction_Sword(this, play);
+    }
+
     if (this->unk_860 >= 0) {
         this->unk_860 = -this->unk_860;
     }
@@ -3058,7 +3084,9 @@ s32 func_808351D4(Player* this, PlayState* play) {
         Player_SetUpperActionFunc(this, func_808353D8);
         if (this->unk_860 >= 0) {
             if (sp2C == 0) {
-                if (!func_808350A4(play, this)) {
+                if (BeamosBlaster_IsGunAction(this->heldItemAction)) {
+                    BeamosBlaster_Fire(play, this);
+                } else if (!func_808350A4(play, this)) {
                     Player_PlaySfx(this, D_808543DC[ABS(this->unk_860) - 1]);
                 }
             } else if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
