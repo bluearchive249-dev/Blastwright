@@ -85,7 +85,7 @@ jobs:
       run: |
         # The job logs aren't always reachable, so the compiler errors also go into an annotation
         if [ -f build.log ]; then
-          msg=$(grep -E -i "error|undefined reference|unresolved external|FAILED:" build.log | grep -v -i "werror\|-Wno-error" | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          msg=$(grep -E -i -A4 "error|undefined reference|unresolved external|FAILED:" build.log | grep -v -i "werror\|-Wno-error" | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=Build errors::${msg}"
         fi
     - name: Upload build
@@ -194,7 +194,7 @@ jobs:
       run: |
         # The job logs aren't always reachable, so the compiler errors also go into an annotation
         if [ -f build.log ]; then
-          msg=$(grep -E -i "error|undefined reference|unresolved external|FAILED:" build.log | grep -v -i "werror\|-Wno-error" | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          msg=$(grep -E -i -A4 "error|undefined reference|unresolved external|FAILED:" build.log | grep -v -i "werror\|-Wno-error" | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=Build errors::${msg}"
         fi
     - name: Upload build
@@ -254,8 +254,9 @@ jobs:
         VCPKG_ROOT: ${{github.workspace}}/vcpkg
       run: |
         set $env:PATH="$env:USERPROFILE/.cargo/bin;$env:PATH"
-        cmake -S . -B build-windows -G Ninja -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBUILD_REMOTE_CONTROL=1
-        cmake --build build-windows --config Release --parallel 10 2>&1 | Tee-Object -FilePath build.log
+        cmake -S . -B build-windows -G Ninja -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBUILD_REMOTE_CONTROL=1 2>&1 | Tee-Object -FilePath build.log
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        cmake --build build-windows --config Release --parallel 10 2>&1 | Tee-Object -FilePath build.log -Append
         if ($LASTEXITCODE -ne 0) { exit 1 }
 
         (cd build-windows && cpack)
@@ -267,7 +268,7 @@ jobs:
       run: |
         # The job logs aren't always reachable, so the compiler errors also go into an annotation
         if [ -f build.log ]; then
-          msg=$(grep -E -i "error|undefined reference|unresolved external|FAILED:" build.log | grep -v -i "werror\|-Wno-error" | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          msg=$(grep -E -i -A4 "error|undefined reference|unresolved external|FAILED:" build.log | grep -v -i "werror\|-Wno-error" | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=Build errors::${msg}"
         fi
     - name: Unzip package
