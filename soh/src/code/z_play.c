@@ -458,7 +458,7 @@ void Play_Init(GameState* thisx) {
     }
 
     // SoH: "Play as Ganondorf" title screen. The boss room has no cutscene layers, so use its only one.
-    if ((gSaveContext.gameMode == GAMEMODE_TITLE_SCREEN) && (gSaveContext.entranceIndex == ENTR_GANON_BOSS_0)) {
+    if ((gSaveContext.gameMode == GAMEMODE_TITLE_SCREEN) && (gSaveContext.entranceIndex == ENTR_GANONDORF_BOSS_0)) {
         gSaveContext.sceneLayer = 0;
     }
 

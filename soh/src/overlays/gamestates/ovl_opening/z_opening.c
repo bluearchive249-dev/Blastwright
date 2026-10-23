@@ -21,7 +21,7 @@ void Opening_SetupTitleScreen(OpeningContext* this) {
 
     // SoH: "Play as Ganondorf" title screen, in his chamber instead of Hyrule Field (see BossGanon_TitleScreen)
     if (PlayAsGanondorf_UseTitleScreen()) {
-        gSaveContext.entranceIndex = ENTR_GANON_BOSS_0;
+        gSaveContext.entranceIndex = ENTR_GANONDORF_BOSS_0;
         gSaveContext.cutsceneIndex = 0;
         gSaveContext.sceneLayer = 0;
     }

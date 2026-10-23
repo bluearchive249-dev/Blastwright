@@ -67,7 +67,7 @@ extern "C" s32 PlayAsGanondorf_UseTitleScreen(void) {
 
 extern "C" s32 PlayAsGanondorf_IsTitleScreen(PlayState* play) {
     return (play != NULL) && (gSaveContext.gameMode == GAMEMODE_TITLE_SCREEN) &&
-           (play->sceneNum == SCENE_GANON_BOSS) && PlayAsGanondorf_UseTitleScreen();
+           (play->sceneNum == SCENE_GANONDORF_BOSS) && PlayAsGanondorf_UseTitleScreen();
 }
 
 static BossGanon* FindPlayerGanondorf(PlayState* play) {
