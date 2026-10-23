@@ -4356,6 +4356,8 @@ s32 Camera_Subj3(Camera* camera) {
     f32 playerHeight;
 
     Actor_GetFocus(&sp60, &camera->player->actor);
+    // SoH: Play as Ganondorf, looking around in first person sees from his eyes
+    PlayAsGanondorf_GetFirstPersonEye(camera->player, &sp60.pos);
     playerHeight = Player_GetHeight(camera->player);
 
     if (camera->play->view.unk_124 == 0) {

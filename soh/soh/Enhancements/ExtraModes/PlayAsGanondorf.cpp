@@ -43,6 +43,8 @@ extern PlayState* gPlayState;
 
 // Ganondorf's head is about this far above his root, which floats HoverHeight above Link's feet
 #define GDF_HEAD_ABOVE_ROOT 80.0f
+// ...and his eyes a bit below the top of his head
+#define GDF_EYES_ABOVE_ROOT 70.0f
 // Levitation climb/sink speed, world units per frame
 #define GDF_LEVITATE_VERTICAL_SPEED 6.0f
 
@@ -97,6 +99,22 @@ static bool ShouldHideLink(PlayState* play, Player* player) {
 
     BossGanon* dorf = FindPlayerGanondorf(play);
     return (dorf != NULL) && !BossGanon_Player_IsHidden(&dorf->actor);
+}
+
+// First-person look (C-Up): the view comes from Ganondorf's eyes, and neither he nor Link is drawn.
+// Aiming an item in first person (with Keep C-Button Items) still shows Link holding it.
+static bool IsLookingFirstPerson(PlayState* play, Player* player) {
+    if (!IsEnabled() || (play == NULL) || (player == NULL) || (player != GET_PLAYER(play)) || (player->unk_6AD != 1)) {
+        return false;
+    }
+    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 1) && (play->csCtx.state != CS_STATE_IDLE)) {
+        return false;
+    }
+    return FindPlayerGanondorf(play) != NULL;
+}
+
+static bool ShouldHideLinkModel(PlayState* play, Player* player) {
+    return ShouldHideLink(play, player) || IsLookingFirstPerson(play, player);
 }
 
 static void SetLinkShadowHidden(Player* player, bool hidden) {
@@ -281,7 +299,7 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
     UpdateCapeShield(play, player, dorf);
     UpdateWaterBoots(play, player, ShouldHideLink(play, player));
 
-    SetLinkShadowHidden(player, ShouldHideLink(play, player));
+    SetLinkShadowHidden(player, ShouldHideLinkModel(play, player));
 }
 
 extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Input* input) {
@@ -330,7 +348,18 @@ extern "C" s32 PlayAsGanondorf_IsCapeShielding(void) {
 }
 
 extern "C" s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player) {
-    return ShouldHideLink(play, player) || PlayAsGanondorf_IsTitleScreen(play);
+    return ShouldHideLinkModel(play, player) || PlayAsGanondorf_IsTitleScreen(play);
+}
+
+extern "C" s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye) {
+    if (!IsLookingFirstPerson(gPlayState, player)) {
+        return false;
+    }
+    // Link's feet + Ganondorf's hover height + his eyes above his root. Levitating lifts Link too.
+    eye->x = player->actor.world.pos.x;
+    eye->y = player->actor.world.pos.y + CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_EYES_ABOVE_ROOT;
+    eye->z = player->actor.world.pos.z;
+    return true;
 }
 
 // Every camera mode scales its distance and height from the player's height, so report Ganondorf's

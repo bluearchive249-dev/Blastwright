@@ -28,6 +28,9 @@ s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player);
 // Used by the camera instead of Player_GetHeight, so it frames Ganondorf instead of Link.
 f32 PlayAsGanondorf_GetCameraHeight(Player* player);
 
+// First-person look (C-Up): fills in Ganondorf's eye position and returns true, so the camera looks from there
+s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye);
+
 // Called from Player_PlaySfx for Link's voice clips: Ganondorf's voice instead, or PLAY_AS_GANONDORF_MUTE.
 u16 PlayAsGanondorf_GetVoiceSfx(Player* player, u16 sfxId);
 

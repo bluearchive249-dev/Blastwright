@@ -584,6 +584,9 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
     // SoH: "Play as Ganondorf"
     if (GDF_IS_PLAYER(this)) {
         BossGanon_Player_StopOrganMusic(this, play);
+        if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
+            Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3);
+        }
 
         if (sPlayerGanondorf == this) {
             if (sPlayerLensFlareOn) {
@@ -6608,7 +6611,15 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     // The organ sinks back into the ground once he stops playing, and the area music comes back
     if (this->actionFunc != BossGanon_Player_Organ) {
         BossGanon_Player_StopOrganMusic(this, play);
-        Math_ApproachF(&this->playerOrganSink, GDF_ORGAN_SINK_DEPTH, 1.0f, 25.0f);
+        if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
+            // Grinds while it sinks, and stops once it's gone
+            Math_ApproachF(&this->playerOrganSink, GDF_ORGAN_SINK_DEPTH, 1.0f, 25.0f);
+            if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
+                Actor_PlaySfx_Flagged(&this->actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
+            } else {
+                Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3);
+            }
+        }
     }
 
     // Triforce of Power on his hand, from the laugh
@@ -7117,11 +7128,14 @@ static void BossGanon_Player_DrawOrgan(BossGanon* this, PlayState* play) {
     gSPSegment(POLY_OPA_DISP++, 0x08, emptyDL);
     gSPSegment(POLY_OPA_DISP++, 0x09, emptyDL);
 
+    // Keep Ganondorf's own matrix (with his 0.01 scale) for when he's drawn right after this
+    Matrix_Push();
     Matrix_Translate(this->playerOrganPos.x, this->playerOrganPos.y - this->playerOrganSink, this->playerOrganPos.z,
                      MTXMODE_NEW);
     Matrix_RotateY(BINANG_TO_RAD(this->playerOrganYaw), MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, organDL);
+    Matrix_Pop();
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -7189,9 +7203,10 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
     switch (this->unk_1C2) {
         case 0: // the organ rises
             Math_ApproachZeroF(&this->playerOrganSink, 1.0f, 25.0f);
-            Sfx_PlaySfxAtPos(&this->actor.projectedPos, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
+            Actor_PlaySfx_Flagged(&this->actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
 
             if (this->playerOrganSink == 0.0f) {
+                Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_STONE_BOUND);
                 Actor_RequestQuakeAndRumble(&this->actor, play, 4, 10);
                 BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
