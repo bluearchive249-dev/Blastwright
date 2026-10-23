@@ -593,7 +593,7 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
         }
         BossGanon_Player_StopOrganMusic(this, play);
         if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
-            Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3);
+            Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
         }
 
         if (sPlayerGanondorf == this) {
@@ -7904,7 +7904,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
             if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
                 Actor_PlaySfx_Flagged(&this->actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
             } else {
-                Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3);
+                Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
             }
         }
     }
@@ -8498,7 +8498,7 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
             Actor_PlaySfx_Flagged(&this->actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
 
             if (this->playerOrganSink == 0.0f) {
-                Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3);
+                Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_STONE_BOUND);
                 Actor_RequestQuakeAndRumble(&this->actor, play, 4, 10);
                 BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
