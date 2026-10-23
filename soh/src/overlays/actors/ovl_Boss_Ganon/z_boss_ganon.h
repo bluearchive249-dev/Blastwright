@@ -195,6 +195,9 @@ typedef struct BossGanon {
     f32 playerWalkFrame;     // phase of the walk cycle
     f32 playerWalkWeight;    // 0 standing .. 1 walking
     f32 playerWalkStride;    // wider than the walk animation when running
+    f32 playerAuraScale;    // insta-kill dark aura (D-Pad Left mode): size of the vortex around him
+    f32 playerAuraAlpha;
+    s16 playerAuraTimer;
     f32 playerStandLegsWeight; // grounded: his legs stand while his upper body plays a floating action
     u8 playerStandAnim;      // the standing (not floating) idle is playing
     // Sword stance (D-Pad Left)

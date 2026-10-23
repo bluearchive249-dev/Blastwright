@@ -14,6 +14,7 @@
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
+#include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h" // SoH: shocks on enemies in his dark aura
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
 #include "overlays/actors/ovl_Obj_Syokudai/z_obj_syokudai.h"
 #include "soh/ResourceManagerHelpers.h"
@@ -76,6 +77,7 @@ void BossGanon_Player_Init(BossGanon* this, PlayState* play);
 void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play);
 void BossGanon_Player_StopOrganMusic(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawOrgan(BossGanon* this, PlayState* play);
+static void BossGanon_Player_DrawDarkAura(BossGanon* this, PlayState* play);
 static void BossGanon_Init_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Update_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
@@ -4068,6 +4070,7 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
 
     if (GDF_IS_PLAYER(this)) {
         BossGanon_Player_DrawOrgan(this, play);
+        BossGanon_Player_DrawDarkAura(this, play);
     }
 
     shadowTex = Graph_Alloc(play->state.gfxCtx, 64 * 64);
@@ -5360,6 +5363,9 @@ void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play);
 void BossGanon_Player_Laugh(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupOrgan(BossGanon* this, PlayState* play);
 void BossGanon_Player_Organ(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play);
+void BossGanon_Player_DarkAura(BossGanon* this, PlayState* play);
+static u8 sPlayerDarkAuraMode = false;
 static void BossGanon_Player_DeflectMagic(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawOrgan(BossGanon* this, PlayState* play);
 static s32 BossGanon_Player_CanStartAttack(BossGanon* this, PlayState* play);
@@ -5448,6 +5454,7 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
            (this->actionFunc == BossGanon_Player_Block) || (this->actionFunc == BossGanon_Player_Laugh) ||
            (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
            (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land);
+    // Not the dark aura: he moves freely while holding it
 }
 
 // Whether Ganondorf is free to start something (used for levitation)
@@ -5963,7 +5970,9 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
     }
 
     if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
-        if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
+        if (sPlayerDarkAuraMode) {
+            BossGanon_Player_SetupDarkAura(this, play);
+        } else if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
             BossGanon_Player_SetupPound(this, play);
         } else {
             BossGanon_Player_StartAttack(this, BTN_B);
@@ -6769,6 +6778,19 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
 
     if (!CVarGetInteger(CVAR_PLAY_AS_GDF("SwordStance"), 1) || !CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
         return false;
+    }
+    // Insta-kill dark aura mode: D-Pad Left toggles it, then B (held) unleashes the aura
+    if (CVarGetInteger(CVAR_PLAY_AS_GDF("DPadLeftMode"), 0) == 0) {
+        sPlayerDarkAuraMode = !sPlayerDarkAuraMode;
+        if (sPlayerDarkAuraMode) {
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+            BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
+            BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
+        } else {
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+        }
+        return true;
     }
     if (sPlayerSwordState == GDF_SWORD_OFF) {
         sPlayerSwordState = GDF_SWORD_SHEATHED;
@@ -8111,7 +8133,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     this->actionFunc(this, play);
 
     {
-        u8 standLegs = this->playerGrounded && !this->playerHidden &&
+        // The dark aura handles his legs itself (it walks)
+        u8 standLegs = (this->actionFunc != BossGanon_Player_DarkAura) && this->playerGrounded && !this->playerHidden &&
                        ((this->actionFunc == BossGanon_Player_Block) ||
                         (this->actionFunc == BossGanon_Player_ChargeLightBall) ||
                         (this->actionFunc == BossGanon_Player_Throw) ||
@@ -8119,7 +8142,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
                         (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Hurt));
 
         Math_ApproachF(&this->playerStandLegsWeight, standLegs ? 1.0f : 0.0f, 1.0f, 0.15f);
-        if (this->playerGrounded) {
+        if (this->actionFunc == BossGanon_Player_DarkAura) {
+            this->playerStandLegsWeight = 0.0f;
+        } else if (this->playerGrounded) {
             BossGanon_Player_StandLegs(this);
         } else {
             this->playerStandLegsWeight = 0.0f;
@@ -8167,8 +8192,13 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     // Triforce of Power on his hand, from the laugh
-    if (this->actionFunc != BossGanon_Player_Laugh) {
+    if ((this->actionFunc != BossGanon_Player_Laugh) && (this->actionFunc != BossGanon_Player_DarkAura)) {
         Math_ApproachZeroF(&this->fwork[GDF_TRIFORCE_PRIM_A], 1.0f, 25.0f);
+    }
+    // The aura fades once he lets go
+    if (this->actionFunc != BossGanon_Player_DarkAura) {
+        Math_ApproachZeroF(&this->playerAuraAlpha, 1.0f, 20.0f);
+        Math_ApproachZeroF(&this->playerAuraScale, 1.0f, 0.02f);
     }
     BossGanon_Player_Follow(this, play, controlY);
 
@@ -8530,6 +8560,225 @@ static void BossGanon_PlayerBigMagic_Update_Impl(Actor* thisx, PlayState* play) 
 // ------------------------------------------------------------------------------------------------
 // SoH: "Play as Ganondorf", D-pad Up: laugh while showing the Triforce of Power (from his intro)
 // ------------------------------------------------------------------------------------------------
+
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf", insta-kill dark aura (D-Pad Left mode)
+//
+// The purple vortex and dark shocks he hits Link with when Link enters his throne room, around himself. D-Pad Left
+// turns the mode on; then hold B: the aura surrounds him (move with the stick, on the ground or in the air) and every
+// enemy caught in it dies. Its health drops to 1 and the aura hits it like any of his attacks, so it dies its own
+// way (death animation, drops); one the aura can't hurt is destroyed after a moment. Bosses only take the hits.
+// ------------------------------------------------------------------------------------------------
+
+#define GDF_AURA_MAX_SCALE 0.24f // the vortex model is 600 wide and 3000 tall: radius 600 * scale
+#define GDF_AURA_HEIGHT_SCALE 0.45f
+#define GDF_AURA_FORCE_KILL_FRAMES 25
+#define GDF_AURA_MAX_TRACKED 32
+
+typedef struct {
+    Actor* actor;
+    s16 frames;
+} GdfAuraVictim;
+
+static GdfAuraVictim sGdfAuraVictims[GDF_AURA_MAX_TRACKED];
+
+static f32 BossGanon_Player_AuraRadius(BossGanon* this) {
+    return 600.0f * this->playerAuraScale;
+}
+
+void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+    Animation_MorphToLoop(&this->skelAnime, &gGanondorfRaiseHandLoopAnim, -5.0f);
+    this->actionFunc = BossGanon_Player_DarkAura;
+    this->playerAuraTimer = 0;
+    memset(sGdfAuraVictims, 0, sizeof(sGdfAuraVictims));
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EV_TRIFORCE_MARK);
+}
+
+static GdfAuraVictim* BossGanon_Player_AuraVictim(Actor* actor) {
+    GdfAuraVictim* freeSlot = NULL;
+    s32 i;
+
+    for (i = 0; i < GDF_AURA_MAX_TRACKED; i++) {
+        if (sGdfAuraVictims[i].actor == actor) {
+            return &sGdfAuraVictims[i];
+        }
+        if ((freeSlot == NULL) && (sGdfAuraVictims[i].actor == NULL)) {
+            freeSlot = &sGdfAuraVictims[i];
+        }
+    }
+    if (freeSlot != NULL) {
+        freeSlot->actor = actor;
+        freeSlot->frames = 0;
+    }
+    return freeSlot;
+}
+
+// Is this actor still in the enemy list (a tracked one may have died and been freed since)
+static s32 BossGanon_Player_IsLiveEnemy(PlayState* play, Actor* actor) {
+    Actor* it = play->actorCtx.actorLists[ACTORCAT_ENEMY].head;
+
+    while (it != NULL) {
+        if (it == actor) {
+            return true;
+        }
+        it = it->next;
+    }
+    return false;
+}
+
+static void BossGanon_Player_AuraKill(BossGanon* this, PlayState* play) {
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    Vec3f center = this->actor.world.pos;
+    f32 radius = BossGanon_Player_AuraRadius(this);
+    Actor* actor;
+    s32 i;
+
+    // Forget actors that are gone
+    for (i = 0; i < GDF_AURA_MAX_TRACKED; i++) {
+        if ((sGdfAuraVictims[i].actor != NULL) && !BossGanon_Player_IsLiveEnemy(play, sGdfAuraVictims[i].actor)) {
+            sGdfAuraVictims[i].actor = NULL;
+        }
+    }
+
+    actor = play->actorCtx.actorLists[ACTORCAT_ENEMY].head;
+    while (actor != NULL) {
+        Actor* next = actor->next;
+        f32 dx = actor->world.pos.x - center.x;
+        f32 dz = actor->world.pos.z - center.z;
+        f32 dy = actor->world.pos.y - (this->actor.world.pos.y - 40.0f);
+
+        if ((actor->update != NULL) && (SQ(dx) + SQ(dz) < SQ(radius + 20.0f)) && (dy > -80.0f) && (dy < 300.0f)) {
+            GdfAuraVictim* victim = BossGanon_Player_AuraVictim(actor);
+
+            // Any hit now kills
+            if (actor->colChkInfo.health > 1) {
+                actor->colChkInfo.health = 1;
+            }
+            if ((victim != NULL) && (actor->colChkInfo.health != 0)) {
+                victim->frames++;
+                if ((victim->frames % 6) == 1) {
+                    EffectSsFhgFlash_SpawnShock(play, actor, &actor->world.pos, 400, FHGFLASH_SHOCK_NO_ACTOR);
+                }
+                // The aura can't hurt it: destroy it
+                if (victim->frames >= GDF_AURA_FORCE_KILL_FRAMES) {
+                    Vec3f pos = actor->world.pos;
+
+                    pos.y += 20.0f;
+                    EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 120, 0, 200, 120, 255, 255, 60, 0, 120, 1, 9,
+                                         true);
+                    Item_DropCollectibleRandom(play, actor, &actor->world.pos, 0x10);
+                    victim->actor = NULL;
+                    Actor_Kill(actor);
+                }
+            }
+        }
+        actor = next;
+    }
+
+    // The aura itself hits everything in it, with all of his damage types
+    this->collider.dim.radius = (s16)radius;
+    this->collider.dim.height = 260;
+    this->collider.dim.yShift = 0;
+    this->collider.dim.pos.x = (s16)center.x;
+    this->collider.dim.pos.y = (s16)(this->actor.world.pos.y - 80.0f);
+    this->collider.dim.pos.z = (s16)center.z;
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+}
+
+void BossGanon_Player_DarkAura(BossGanon* this, PlayState* play) {
+    Input* input = &play->state.input[0];
+    Player* player = GET_PLAYER(play);
+    Vec3s arms[8];
+    Vec3s* joints = this->skelAnime.jointTable;
+    s32 i;
+
+    SkelAnime_Update(&this->skelAnime);
+
+    sCape->backPush = -3.0f;
+    sCape->backSwayMagnitude = 1.0f;
+    sCape->sideSwayMagnitude = -3.0f;
+    sCape->minDist = 20.0f;
+
+    // He faces where he moves
+    this->actor.yawTowardsPlayer = player->actor.shape.rot.y;
+
+    // On the ground he walks with the aura up: his arms keep the raised-hand pose, his legs stand and walk
+    if (this->playerGrounded) {
+        for (i = 0; i < 8; i++) {
+            arms[i] = joints[1 + 2 + i];
+        }
+        this->playerStandLegsWeight = 1.0f;
+        BossGanon_Player_StandLegs(this);
+        BossGanon_Player_UpdateWalk(this, play);
+        for (i = 0; i < 8; i++) {
+            joints[1 + 2 + i] = arms[i];
+        }
+    } else {
+        this->playerWalkWeight = 0.0f;
+    }
+
+    // The Triforce of Power glows on his raised hand
+    Math_ApproachF(&this->fwork[GDF_TRIFORCE_PRIM_A], 255.0f, 1.0f, 15.0f);
+    Math_ApproachF(&this->fwork[GDF_TRIFORCE_SCALE], 0.6f, 1.0f, 0.3f);
+    Math_ApproachF(&this->fwork[GDF_TRIFORCE_PRIM_B], 170.0f, 1.0f, 2.55f);
+    Math_ApproachF(&this->fwork[GDF_TRIFORCE_ENV_G], 200.0f, 1.0f, 3.0f);
+
+    Math_ApproachF(&this->playerAuraScale, GDF_AURA_MAX_SCALE, 1.0f, 0.02f);
+    Math_ApproachF(&this->playerAuraAlpha, 255.0f, 1.0f, 20.0f);
+
+    this->playerAuraTimer++;
+    if ((this->playerAuraTimer % 2) == 0) {
+        BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
+    }
+    if ((this->playerAuraTimer % 45) == 0) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+    }
+    if ((this->playerAuraTimer % 9) == 0) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+    }
+
+    if (this->playerAuraScale > 0.05f) {
+        BossGanon_Player_AuraKill(this, play);
+    }
+
+    // Until B is let go
+    if (!CHECK_BTN_ALL(input->cur.button, BTN_B) || this->playerHidden || !sPlayerDarkAuraMode) {
+        BossGanon_Player_SetupFloat(this, play);
+    }
+}
+
+// The purple vortex from his throne room, standing around him
+static void BossGanon_Player_DrawDarkAura(BossGanon* this, PlayState* play) {
+    f32 scale = this->playerAuraScale;
+    u32 frames = play->gameplayFrames;
+
+    if ((this->playerAuraAlpha <= 0.0f) || (scale <= 0.0f)) {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Push();
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPPipeSync(POLY_XLU_DISP++);
+    gSPSegment(POLY_XLU_DISP++, 0x08,
+               Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, frames * -8, 0, 0x20, 0x40, 1, frames * -4, frames * -8,
+                                  0x20, 0x20, -8, 0, -4, -8));
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 100, 0, 200, (u8)this->playerAuraAlpha);
+    gDPSetEnvColor(POLY_XLU_DISP++, 130, 0, 0, 128);
+
+    Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y - 60.0f, this->actor.world.pos.z, MTXMODE_NEW);
+    Matrix_RotateY(BINANG_TO_RAD((s16)(frames * 0x300)), MTXMODE_APPLY);
+    Matrix_Scale(scale, scale * GDF_AURA_HEIGHT_SCALE, scale, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfVortexDL));
+
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
 
 void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play) {
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);

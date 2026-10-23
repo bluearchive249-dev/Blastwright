@@ -49,6 +49,10 @@ static std::map<int32_t, const char*> bunnyHoodEffectMap = {
     { BUNNY_HOOD_FAST_AND_JUMP, "Faster + Longer Jump" },
 };
 
+static const std::map<int32_t, const char*> ganondorfDPadLeftModes = {
+    { 0, "Insta-Kill Dark Aura" },
+    { 1, "Sword Stance" },
+};
 static const std::map<int32_t, const char*> dekuStickCheat = {
     { DEKU_STICK_NORMAL, "Normal" },
     { DEKU_STICK_UNBREAKABLE, "Unbreakable" },
@@ -2198,23 +2202,37 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "When Link plays the ocarina, Ganondorf raises his organ and plays the song on it instead, with an organ "
             "sound (the windmill's organ). Needs Keep C-Button Items to take the ocarina out."));
-    AddWidget(path, "Sword Stance (D-Pad Left)", WIDGET_CVAR_CHECKBOX)
+    AddWidget(path, "D-Pad Left Mode Toggle", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"))
         .PreFunc([](WidgetInfo& info) {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "D-Pad Left: his sword appears sheathed, the sheath in his left hand.\n"
+            "D-Pad Left toggles the mode picked below (Insta-Kill Dark Aura or Sword Stance).\n\n"
+            "Sword Stance: his sword appears sheathed, the sheath in his left hand.\n"
             " - B: draw the blade (it cuts on the way out). Then B, B, B: three-hit combo.\n"
             " - Stick + R: dash (B during it: lunging thrust). R alone: guard.\n"
             " - C-Left: spin slash. C-Down: ground slam. C-Right: dark energy slash.\n"
             " - D-Pad Left: sheathe the blade. D-Pad Left again: put the sword away.\n\n"
             "The sword model is read from gdf_sword.bin next to the game; without it a plain blade is used."));
+    AddWidget(path, "D-Pad Left Mode", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0;
+        })
+        .Options(ComboboxOptions().ComboMap(ganondorfDPadLeftModes).DefaultIndex(0).Tooltip(
+            "What D-Pad Left toggles.\n"
+            " - Insta-Kill Dark Aura: while it's on, hold B to surround him with the dark aura from his throne room. "
+            "Move with the stick while holding it, on the ground or in the air. Enemies caught in it die (bosses "
+            "only take normal hits).\n"
+            " - Sword Stance: his sword moveset."));
     AddWidget(path, "Sword Size: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordSize"))
         .PreFunc([](WidgetInfo& info) {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0;
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"), 0) != 1;
         })
         .Options(FloatSliderOptions().Min(0.8f).Max(2.0f).DefaultValue(1.4f).Format("%.2fx").Tooltip(
             "Size of his sword and sheath. 1.4 is a greatsword for his size; the hitbox follows the blade."));
