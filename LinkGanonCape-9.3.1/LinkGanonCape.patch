@@ -1,0 +1,570 @@
+From 4938a666ba0eb3bc4b3aafe6ac1a9a2746b0967a Mon Sep 17 00:00:00 2001
+From: Link Ganon Cape <infectiousmetal@live.se>
+Date: Fri, 23 Oct 2026 02:23:16 +0200
+Subject: [PATCH] Add Ganondorf's Cape for Link enhancement
+
+Spawns Ganondorf's cloth-physics cape (EnGanonMant) on Link, attached to his
+shoulders and scaled to his size. Toggle and tuning under
+Enhancements > Graphics > Ganondorf's Cape.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01C7zQACRLFXxFtRaUPWxEdD
+---
+ .../Enhancements/Graphics/LinkGanonCape.cpp   | 240 ++++++++++++++++++
+ soh/soh/Enhancements/Graphics/LinkGanonCape.h |  25 ++
+ soh/soh/SohGui/SohMenuEnhancements.cpp        |  42 +++
+ soh/src/code/z_player_lib.c                   |   4 +
+ .../ovl_En_Ganon_Mant/z_en_ganon_mant.c       |  96 +++++--
+ .../ovl_En_Ganon_Mant/z_en_ganon_mant.h       |  13 +-
+ 6 files changed, 402 insertions(+), 18 deletions(-)
+ create mode 100644 soh/soh/Enhancements/Graphics/LinkGanonCape.cpp
+ create mode 100644 soh/soh/Enhancements/Graphics/LinkGanonCape.h
+
+diff --git a/soh/soh/Enhancements/Graphics/LinkGanonCape.cpp b/soh/soh/Enhancements/Graphics/LinkGanonCape.cpp
+new file mode 100644
+index 000000000..1787b8ea6
+--- /dev/null
++++ b/soh/soh/Enhancements/Graphics/LinkGanonCape.cpp
+@@ -0,0 +1,240 @@
++// Ganondorf's Cape for Link
++//
++// Spawns Ganondorf's cloth-physics cape (EnGanonMant, the one he wears in the Ganon's Tower fight)
++// on Link. The cape's graphics live in gameplay_keep, so it can be spawned in any scene.
++//
++// How it works:
++//  - Each frame Link is drawn, LinkGanonCape_RecordLimb stores his shoulder positions.
++//  - The cape is spawned in ACTORCAT_MISC, which draws after the player, so those positions are
++//    from the same frame when LinkGanonCape_PrepareDraw turns them into the cape's attach points.
++//  - Ganondorf's own cape values are scaled to Link's size by (jointLength / 9.5).
++//  - The cape uses static textures and vertex buffers, so only one can exist. Link's cape is
++//    removed while Ganondorf (ACTOR_BOSS_GANON) is loaded.
++
++#include <libultraship/bridge/consolevariablebridge.h>
++
++#include "soh/Enhancements/game-interactor/GameInteractor.h"
++#include "soh/ShipInit.hpp"
++#include "soh/cvar_prefixes.h"
++#include "LinkGanonCape.h"
++
++extern "C" {
++#include "z64.h"
++#include "macros.h"
++#include "functions.h"
++#include "variables.h"
++#include "overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h"
++extern PlayState* gPlayState;
++}
++
++#define CVAR_CAPE(var) CVAR_ENHANCEMENT("GanonCape." var)
++#define CVAR_CAPE_ENABLED CVAR_CAPE("Enabled")
++
++// Child Link is about 0.64x adult Link's size (see Player_OverrideLimbDrawGameplayCommon)
++#define CHILD_SCALE 0.64f
++// Ganondorf's strand segment length, all his cape values are tuned for this
++#define GANONDORF_JOINT_LENGTH 9.5f
++
++static Vec3f sZeroVec = { 0.0f, 0.0f, 0.0f };
++static Vec3f sLeftShoulder;
++static Vec3f sRightShoulder;
++static u8 sRecordedLimbs = 0; // bit 0 = left shoulder, bit 1 = right shoulder
++
++static bool ShouldWearCape() {
++    if (!CVarGetInteger(CVAR_CAPE_ENABLED, 0)) {
++        return false;
++    }
++    if (!LINK_IS_ADULT && !CVarGetInteger(CVAR_CAPE("Child"), 1)) {
++        return false;
++    }
++    return true;
++}
++
++extern "C" void LinkGanonCape_RecordLimb(PlayState* play, Player* player, int limbIndex) {
++    // Dark Link also draws with Player_PostLimbDrawGameplay
++    if (play == NULL || player != GET_PLAYER(play)) {
++        return;
++    }
++
++    if (limbIndex == PLAYER_LIMB_L_SHOULDER) {
++        Matrix_MultVec3f(&sZeroVec, &sLeftShoulder);
++        sRecordedLimbs |= 1;
++    } else if (limbIndex == PLAYER_LIMB_R_SHOULDER) {
++        Matrix_MultVec3f(&sZeroVec, &sRightShoulder);
++        sRecordedLimbs |= 2;
++    }
++}
++
++extern "C" int LinkGanonCape_PrepareDraw(EnGanonMant* cape, PlayState* play) {
++    Player* player = GET_PLAYER(play);
++    u8 recorded = sRecordedLimbs;
++
++    // Consume this frame's shoulder positions
++    sRecordedLimbs = 0;
++
++    if (!ShouldWearCape()) {
++        Actor_Kill(&cape->actor);
++        return false;
++    }
++
++    // Hide when Link wasn't drawn this frame, or the camera is inside his head (first person)
++    if (recorded != 3 || (player->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW) || player->unk_6AD == 1 ||
++        player->unk_6AD == 2) {
++        cape->needsReset = true;
++        return false;
++    }
++
++    f32 sizeScale = LINK_IS_ADULT ? 1.0f : CHILD_SCALE;
++    f32 jointLength = CVarGetFloat(CVAR_CAPE("Length"), 3.5f) * sizeScale;
++    f32 width = CVarGetFloat(CVAR_CAPE("Width"), 1.15f);
++    f32 backOffset = CVarGetFloat(CVAR_CAPE("BackOffset"), 1.5f) * sizeScale;
++    f32 s = jointLength / GANONDORF_JOINT_LENGTH;
++
++    Vec3f right = sRightShoulder;
++    Vec3f left = sLeftShoulder;
++
++    // The cape's "forward" is perpendicular to the right->left shoulder line. Make sure that matches
++    // the way Link is facing, in case a custom model mirrors the shoulder limbs.
++    f32 dx = left.x - right.x;
++    f32 dz = left.z - right.z;
++    f32 faceX = Math_SinS(player->actor.shape.rot.y);
++    f32 faceZ = Math_CosS(player->actor.shape.rot.y);
++    if ((-dz * faceX) + (dx * faceZ) < 0.0f) {
++        Vec3f tmp = right;
++        right = left;
++        left = tmp;
++        dx = -dx;
++        dz = -dz;
++    }
++
++    Vec3f mid;
++    mid.x = (right.x + left.x) * 0.5f;
++    mid.y = (right.y + left.y) * 0.5f;
++    mid.z = (right.z + left.z) * 0.5f;
++
++    // Widen the attach points so the cape drapes over the shoulders instead of cutting into them
++    right.x = mid.x + (right.x - mid.x) * width;
++    right.y = mid.y + (right.y - mid.y) * width;
++    right.z = mid.z + (right.z - mid.z) * width;
++    left.x = mid.x + (left.x - mid.x) * width;
++    left.y = mid.y + (left.y - mid.y) * width;
++    left.z = mid.z + (left.z - mid.z) * width;
++
++    // Push them behind Link's back so the cape doesn't start inside his torso
++    f32 len = sqrtf(SQ(dx) + SQ(dz));
++    if (len > 0.001f) {
++        f32 backX = dz / len;
++        f32 backZ = -dx / len;
++        right.x += backX * backOffset;
++        right.z += backZ * backOffset;
++        left.x += backX * backOffset;
++        left.z += backZ * backOffset;
++    }
++
++    // Snap the cape into place if Link teleported (warps, voiding out, respawning, ...)
++    if (!cape->needsReset) {
++        f32 jumpX = mid.x - cape->anchor.x;
++        f32 jumpY = mid.y - cape->anchor.y;
++        f32 jumpZ = mid.z - cape->anchor.z;
++        if (SQ(jumpX) + SQ(jumpY) + SQ(jumpZ) > SQ(150.0f)) {
++            cape->needsReset = true;
++        }
++    }
++
++    cape->rightShoulderPos = right;
++    cape->leftShoulderPos = left;
++
++    // Ganondorf's values while floating/walking around in his fight, scaled down to Link
++    cape->jointLength = jointLength;
++    cape->gravity = -3.0f * s;
++    cape->backPush = -3.0f * s;
++    cape->backSwayMagnitude = 0.25f * s;
++    cape->sideSwayMagnitude = -3.0f * s;
++    cape->minDist = 20.0f * s;
++    cape->velocityClamp = 5.0f * s;
++
++    // Lie on the floor instead of sinking through it
++    if (player->actor.floorHeight > BGCHECK_Y_MIN + 1.0f) {
++        cape->minY = player->actor.floorHeight + 0.5f;
++    } else {
++        cape->minY = BGCHECK_Y_MIN;
++    }
++
++    // minDist pushes the cape away from this point
++    cape->actor.world.pos = player->actor.world.pos;
++
++    return true;
++}
++
++static EnGanonMant* FindLinkCape(PlayState* play) {
++    for (Actor* actor = play->actorCtx.actorLists[ACTORCAT_MISC].head; actor != NULL; actor = actor->next) {
++        if (actor->id == ACTOR_EN_GANON_MANT && actor->params == LINK_GANON_CAPE_PARAMS && actor->update != NULL) {
++            return (EnGanonMant*)actor;
++        }
++    }
++    return NULL;
++}
++
++static bool IsGanondorfLoaded(PlayState* play) {
++    for (Actor* actor = play->actorCtx.actorLists[ACTORCAT_BOSS].head; actor != NULL; actor = actor->next) {
++        if (actor->id == ACTOR_BOSS_GANON || actor->id == ACTOR_EN_GANON_MANT) {
++            return true;
++        }
++    }
++    return false;
++}
++
++static void LinkGanonCape_OnPlayerUpdate() {
++    PlayState* play = gPlayState;
++    if (play == NULL) {
++        return;
++    }
++
++    Player* player = GET_PLAYER(play);
++    if (player == NULL) {
++        return;
++    }
++
++    EnGanonMant* cape = FindLinkCape(play);
++
++    if (!ShouldWearCape() || IsGanondorfLoaded(play)) {
++        if (cape != NULL) {
++            Actor_Kill(&cape->actor);
++        }
++        return;
++    }
++
++    if (cape == NULL) {
++        // Not spawned as Link's child: Player treats actor.child as the actor he's holding
++        cape = (EnGanonMant*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_GANON_MANT, player->actor.world.pos.x,
++                                         player->actor.world.pos.y, player->actor.world.pos.z, 0, 0, 0,
++                                         LINK_GANON_CAPE_PARAMS);
++        if (cape == NULL) {
++            return;
++        }
++        cape->actor.parent = &player->actor;
++        // Keep it through room changes, and draw it after Link (ACTORCAT_MISC comes after ACTORCAT_PLAYER)
++        cape->actor.room = -1;
++        Actor_ChangeCategory(play, &play->actorCtx, &cape->actor, ACTORCAT_MISC);
++    }
++
++    cape->actor.world.pos = player->actor.world.pos;
++}
++
++static void RegisterLinkGanonCape() {
++    // Always registered so turning the setting off also removes the cape
++    COND_HOOK(OnPlayerUpdate, true, LinkGanonCape_OnPlayerUpdate);
++
++    // Ganondorf brings his own cape, which shares the same buffers. Remove Link's right away.
++    COND_ID_HOOK(OnActorInit, ACTOR_BOSS_GANON, true, [](void* actorPtr) {
++        if (gPlayState == NULL) {
++            return;
++        }
++        EnGanonMant* cape = FindLinkCape(gPlayState);
++        if (cape != NULL) {
++            Actor_Kill(&cape->actor);
++        }
++    });
++}
++
++static RegisterShipInitFunc initFunc(RegisterLinkGanonCape, {});
+diff --git a/soh/soh/Enhancements/Graphics/LinkGanonCape.h b/soh/soh/Enhancements/Graphics/LinkGanonCape.h
+new file mode 100644
+index 000000000..20ef6f3b7
+--- /dev/null
++++ b/soh/soh/Enhancements/Graphics/LinkGanonCape.h
+@@ -0,0 +1,25 @@
++#ifndef LINK_GANON_CAPE_H
++#define LINK_GANON_CAPE_H
++
++// Lets Link wear Ganondorf's physics cape (EnGanonMant) from the Ganon's Tower fight.
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++struct PlayState;
++struct Player;
++struct EnGanonMant;
++
++// Called from Player_PostLimbDrawGameplay for every limb Link draws
++void LinkGanonCape_RecordLimb(struct PlayState* play, struct Player* player, int limbIndex);
++
++// Called at the start of EnGanonMant_Draw for Link's cape. Sets the attach points and physics
++// values for this frame. Returns 0 when the cape shouldn't be drawn.
++int LinkGanonCape_PrepareDraw(struct EnGanonMant* cape, struct PlayState* play);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/soh/soh/SohGui/SohMenuEnhancements.cpp b/soh/soh/SohGui/SohMenuEnhancements.cpp
+index acdfd6ebd..eb56698f0 100644
+--- a/soh/soh/SohGui/SohMenuEnhancements.cpp
++++ b/soh/soh/SohGui/SohMenuEnhancements.cpp
+@@ -691,6 +691,48 @@ void SohMenu::AddMenuEnhancements() {
+         .RaceDisable(false)
+         .Options(IntSliderOptions().Min(4).Max(6).DefaultValue(6).Tooltip(
+             "Space between text characters (useful for HD font textures)."));
++    AddWidget(path, "Ganondorf's Cape", WIDGET_SEPARATOR_TEXT);
++    AddWidget(path, "Link Wears Ganondorf's Cape", WIDGET_CVAR_CHECKBOX)
++        .CVar(CVAR_ENHANCEMENT("GanonCape.Enabled"))
++        .RaceDisable(false)
++        .Options(CheckboxOptions().Tooltip(
++            "Gives Link the cloth-physics cape Ganondorf wears in the Ganon's Tower fight.\n"
++            "The cape is removed while Ganondorf himself is around, since only one can exist at a time."));
++    AddWidget(path, "Cape on Child Link", WIDGET_CVAR_CHECKBOX)
++        .CVar(CVAR_ENHANCEMENT("GanonCape.Child"))
++        .RaceDisable(false)
++        .PreFunc([](WidgetInfo& info) {
++            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
++            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
++        })
++        .Options(CheckboxOptions().DefaultValue(true).Tooltip("Also show the cape on Child Link (scaled down)."));
++    AddWidget(path, "Cape Length: %.2f", WIDGET_CVAR_SLIDER_FLOAT)
++        .CVar(CVAR_ENHANCEMENT("GanonCape.Length"))
++        .RaceDisable(false)
++        .PreFunc([](WidgetInfo& info) {
++            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
++            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
++        })
++        .Options(FloatSliderOptions().Min(2.0f).Max(6.0f).DefaultValue(3.5f).Format("%.2f").Tooltip(
++            "Length of each of the cape's 11 segments. Ganondorf's is 9.5."));
++    AddWidget(path, "Cape Width: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
++        .CVar(CVAR_ENHANCEMENT("GanonCape.Width"))
++        .RaceDisable(false)
++        .PreFunc([](WidgetInfo& info) {
++            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
++            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
++        })
++        .Options(FloatSliderOptions().Min(0.8f).Max(2.0f).DefaultValue(1.15f).Format("%.2fx").Tooltip(
++            "How far apart the cape is attached, relative to Link's shoulders."));
++    AddWidget(path, "Cape Back Offset: %.2f", WIDGET_CVAR_SLIDER_FLOAT)
++        .CVar(CVAR_ENHANCEMENT("GanonCape.BackOffset"))
++        .RaceDisable(false)
++        .PreFunc([](WidgetInfo& info) {
++            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
++            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
++        })
++        .Options(FloatSliderOptions().Min(0.0f).Max(5.0f).DefaultValue(1.5f).Format("%.2f").Tooltip(
++            "Moves the cape's collar behind Link's back. Raise it if the cape clips into Link or a custom model."));
+     AddWidget(path, "Models & Textures", WIDGET_SEPARATOR_TEXT);
+     AddWidget(path, "Disable LOD", WIDGET_CVAR_CHECKBOX)
+         .CVar(CVAR_ENHANCEMENT("DisableLOD"))
+diff --git a/soh/src/code/z_player_lib.c b/soh/src/code/z_player_lib.c
+index e5ab5e230..45094146c 100644
+--- a/soh/src/code/z_player_lib.c
++++ b/soh/src/code/z_player_lib.c
+@@ -10,6 +10,7 @@
+ #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+ #include "soh/Enhancements/randomizer/draw.h"
+ #include "soh/ResourceManagerHelpers.h"
++#include "soh/Enhancements/Graphics/LinkGanonCape.h"
+ 
+ #include <stdlib.h>
+ #include <libultraship/bridge/consolevariablebridge.h>
+@@ -1793,6 +1794,9 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
+         Matrix_MultVec3f(&sZeroVec, D_80160000);
+     }
+ 
++    // SoH: remember where Link's shoulders are this frame for Ganondorf's cape
++    LinkGanonCape_RecordLimb(play, this, limbIndex);
++
+     if (limbIndex == PLAYER_LIMB_L_HAND) {
+         MtxF sp14C;
+         Actor* hookedActor;
+diff --git a/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.c b/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.c
+index 9c1ad757e..4f248e8f7 100644
+--- a/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.c
++++ b/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.c
+@@ -8,6 +8,7 @@
+ #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
+ #include "soh/OTRGlobals.h"
+ #include "soh/ResourceManagerHelpers.h"
++#include "soh/Enhancements/Graphics/LinkGanonCape.h"
+ 
+ #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
+ 
+@@ -107,6 +108,11 @@ void EnGanonMant_Init(Actor* thisx, PlayState* play) {
+ 
+     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
+ 
++    if (this->actor.params == LINK_GANON_CAPE_PARAMS) {
++        this->isLinkCape = true;
++        this->needsReset = true;
++    }
++
+     for (int i = 0; i < ARRAY_COUNT(sMaskTex); i++) {
+         sMaskTex[i] = 0;
+     }
+@@ -190,6 +196,9 @@ void EnGanonMant_UpdateStrand(PlayState* play, EnGanonMant* this, Vec3f* root, V
+         }
+         // Set length
+         jointLength = 6.5f;
++    } else if (this->jointLength > 0.0f) {
++        // SoH: Link's cape uses a shorter, configurable length
++        jointLength = this->jointLength;
+     } else {
+         jointLength = 9.5f;
+     }
+@@ -270,21 +279,23 @@ void EnGanonMant_UpdateStrand(PlayState* play, EnGanonMant* this, Vec3f* root, V
+             vel->z = (pos->z - z) * 80.0f / 100.0f;
+ 
+             if (this->actor.params != 0x23) {
++                f32 velClamp = (this->velocityClamp > 0.0f) ? this->velocityClamp : 5.0f;
++
+                 // Clamp elements of vel into [-5.0, 5.0]
+-                if (vel->x > 5.0f) {
+-                    vel->x = 5.0f;
+-                } else if (vel->x < -5.0f) {
+-                    vel->x = -5.0f;
++                if (vel->x > velClamp) {
++                    vel->x = velClamp;
++                } else if (vel->x < -velClamp) {
++                    vel->x = -velClamp;
+                 }
+-                if (vel->y > 5.0f) {
+-                    vel->y = 5.0f;
+-                } else if (vel->y < -5.0f) {
+-                    vel->y = -5.0f;
++                if (vel->y > velClamp) {
++                    vel->y = velClamp;
++                } else if (vel->y < -velClamp) {
++                    vel->y = -velClamp;
+                 }
+-                if (vel->z > 5.0f) {
+-                    vel->z = 5.0f;
+-                } else if (vel->z < -5.0f) {
+-                    vel->z = -5.0f;
++                if (vel->z > velClamp) {
++                    vel->z = velClamp;
++                } else if (vel->z < -velClamp) {
++                    vel->z = -velClamp;
+                 }
+             }
+ 
+@@ -327,9 +338,17 @@ void EnGanonMant_UpdateVertices(EnGanonMant* this) {
+     for (i = 0; i < GANON_MANT_NUM_STRANDS; i++, strand++) {
+         for (j = 0, k = 0; j < GANON_MANT_NUM_JOINTS; j++, k += GANON_MANT_NUM_JOINTS) {
+             vtx = &vertices[sVerticesMap[i + k]];
+-            vtx->n.ob[0] = strand->joints[j].x;
+-            vtx->n.ob[1] = strand->joints[j].y;
+-            vtx->n.ob[2] = strand->joints[j].z;
++            if (this->isLinkCape) {
++                // SoH: store relative to the anchor at higher precision; the small cape would
++                // visibly snap to whole units otherwise
++                vtx->n.ob[0] = CLAMP((strand->joints[j].x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
++                vtx->n.ob[1] = CLAMP((strand->joints[j].y - this->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
++                vtx->n.ob[2] = CLAMP((strand->joints[j].z - this->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
++            } else {
++                vtx->n.ob[0] = strand->joints[j].x;
++                vtx->n.ob[1] = strand->joints[j].y;
++                vtx->n.ob[2] = strand->joints[j].z;
++            }
+             Matrix_RotateY(strand->rotations[j].y, MTXMODE_NEW);
+             Matrix_RotateX(strand->rotations[j].x, MTXMODE_APPLY);
+             Matrix_MultVec3f(&up, &normal);
+@@ -374,7 +393,13 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
+     // Invalidate cape texture mask as it may have been torn
+     gSPInvalidateTexCache(POLY_OPA_DISP++, sMaskTex);
+ 
+-    Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
++    if (this->isLinkCape) {
++        Matrix_Translate(this->anchor.x, this->anchor.y, this->anchor.z, MTXMODE_NEW);
++        Matrix_Scale(1.0f / LINK_GANON_CAPE_VTX_SCALE, 1.0f / LINK_GANON_CAPE_VTX_SCALE,
++                     1.0f / LINK_GANON_CAPE_VTX_SCALE, MTXMODE_APPLY);
++    } else {
++        Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
++    }
+ 
+     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+ 
+@@ -411,11 +436,20 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
+     Vec3f midpoint;
+     s16 nextStrandIdx;
+ 
++    if (this->isLinkCape && !LinkGanonCape_PrepareDraw(this, play)) {
++        // SoH: Link isn't visible this frame (first person, hidden in a cutscene, ...)
++        return;
++    }
++
+     if (this->updateHasRun) {
+         // Only run this if update has run since last draw
+ 
+         // Choose endpoints
+-        if (this->attachRightArmTimer != 0.0f) {
++        if (this->isLinkCape) {
++            // SoH: Link's cape always hangs from his shoulders; gravity etc. are set in PrepareDraw
++            rightPos = &this->rightShoulderPos;
++            leftPos = &this->leftShoulderPos;
++        } else if (this->attachRightArmTimer != 0.0f) {
+             rightPos = &this->rightForearmPos;
+             leftPos = &this->leftShoulderPos;
+             this->gravity = -13.0f;
+@@ -449,6 +483,34 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
+         Matrix_RotateX(pitch, MTXMODE_APPLY);
+         this->baseYaw = yaw - M_PI / 2.0f;
+ 
++        if (this->isLinkCape) {
++            this->anchor = midpoint;
++
++            if (this->needsReset) {
++                // SoH: first frame or Link teleported, let every strand hang straight down from its root
++                for (strandIdx = 0; strandIdx < GANON_MANT_NUM_STRANDS; strandIdx++) {
++                    s16 j;
++
++                    Matrix_Push();
++                    strandOffset.x = sinf((strandIdx * M_PI) / (GANON_MANT_NUM_STRANDS - 1)) * diffHalfDist;
++                    strandOffset.y = 0;
++                    strandOffset.z = -cosf((strandIdx * M_PI) / (GANON_MANT_NUM_STRANDS - 1)) * diffHalfDist;
++                    Matrix_MultVec3f(&strandOffset, &strandDivPos);
++                    Matrix_Pop();
++
++                    for (j = 0; j < GANON_MANT_NUM_JOINTS; j++) {
++                        this->strands[strandIdx].joints[j].x = midpoint.x + strandDivPos.x;
++                        this->strands[strandIdx].joints[j].y = midpoint.y + strandDivPos.y - j * this->jointLength;
++                        this->strands[strandIdx].joints[j].z = midpoint.z + strandDivPos.z;
++                        this->strands[strandIdx].velocities[j].x = 0.0f;
++                        this->strands[strandIdx].velocities[j].y = 0.0f;
++                        this->strands[strandIdx].velocities[j].z = 0.0f;
++                    }
++                }
++                this->needsReset = false;
++            }
++        }
++
+         for (strandIdx = 0; strandIdx < GANON_MANT_NUM_STRANDS; strandIdx++) {
+             Matrix_Push();
+ 
+diff --git a/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h b/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h
+index ac169433b..072cf73d2 100644
+--- a/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h
++++ b/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h
+@@ -9,6 +9,11 @@ struct EnGanonMant;
+ #define GANON_MANT_NUM_JOINTS 12
+ #define GANON_MANT_NUM_STRANDS 12
+ 
++// SoH: params value used for the cape worn by Link
++#define LINK_GANON_CAPE_PARAMS 0x4C4B
++// SoH: Link's cape vertices are stored at this many units per world unit for extra precision
++#define LINK_GANON_CAPE_VTX_SCALE 16.0f
++
+ typedef struct {
+     /* 0x000 */ Vec3f root;                              // root position along the collar
+     /* 0x00C */ Vec3f joints[GANON_MANT_NUM_JOINTS];     // "joints" for deforming the cloak, stemming from root and propagating down the cloak
+@@ -37,6 +42,12 @@ typedef struct EnGanonMant {
+     /* 0x1704 */ u8 tearTimer; // tear the cloak for x many frames
+     /* 0x1705 */ u8 updateHasRun;
+     /* 0x1706 */ u8 frameTimer;
+-} EnGanonMant; // size = 0x1708
++    // SoH: fields used when the cape is worn by Link (see soh/Enhancements/Graphics/LinkGanonCape.cpp)
++    u8 isLinkCape;     // true when spawned with LINK_GANON_CAPE_PARAMS
++    u8 needsReset;     // snap all joints to hang straight down on the next physics step
++    f32 jointLength;   // strand segment length override, 0 = vanilla
++    f32 velocityClamp; // per-axis velocity clamp override, 0 = vanilla (5.0)
++    Vec3f anchor;      // origin the vertex buffer is stored relative to (Link mode only)
++} EnGanonMant;
+ 
+ #endif
+-- 
+2.43.0
+
