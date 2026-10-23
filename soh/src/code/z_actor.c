@@ -18,6 +18,7 @@
 #include "soh/ActorDB.h"
 #include "soh/OTRGlobals.h"
 #include "soh/ShipUtils.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -3864,6 +3865,22 @@ Actor* Actor_GetCollidedExplosive(PlayState* play, Collider* collider) {
     if ((collider->acFlags & AC_HIT) && (collider->ac->category == ACTORCAT_EXPLOSIVE)) {
         collider->acFlags &= ~AC_HIT;
         return collider->ac;
+    }
+
+    // SoH: "Play as Ganondorf". His attacks count as explosions for things that only react to bombs (Beamos,
+    // Bubbles, some walls, ...). Callers may read the explosive's position or overwrite its params (Dodongo's
+    // Cavern stairs), so hand them a stand-in instead of Ganondorf's own actor.
+    if ((collider->acFlags & AC_HIT) && BossGanon_IsPlayerAttack(collider->ac)) {
+        static Actor sGanondorfExplosion;
+
+        memset(&sGanondorfExplosion, 0, sizeof(sGanondorfExplosion));
+        sGanondorfExplosion.id = ACTOR_EN_BOM;
+        sGanondorfExplosion.category = ACTORCAT_EXPLOSIVE;
+        sGanondorfExplosion.params = 1; // BOMB_EXPLOSION
+        sGanondorfExplosion.world = collider->ac->world;
+        sGanondorfExplosion.home = collider->ac->world;
+        collider->acFlags &= ~AC_HIT;
+        return &sGanondorfExplosion;
     }
 
     return NULL;

@@ -2,6 +2,7 @@
 #include "vt.h"
 #include "overlays/effects/ovl_Effect_Ss_HitMark/z_eff_ss_hitmark.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include <assert.h>
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -2992,6 +2993,47 @@ void CollisionCheck_SetInfoGetDamageTable(CollisionCheckInfo* info, s32 index, C
 /**
  * Apply AC damage effect
  */
+/**
+ * SoH: "Play as Ganondorf". His attacks carry every damage type at once. Vanilla uses the highest set bit, which
+ * would always be an unused entry, so instead pick the entry that suits him best among the types the target accepts:
+ * the most damage from a plain hit, then from an elemental hit (fire/ice/light, only for targets that need one),
+ * then a stun. Elemental entries come last so enemies don't burn, freeze or sparkle unless that's the only way to
+ * hurt them.
+ */
+static s32 CollisionCheck_GetGanondorfDamageEntry(DamageTable* tbl, u32 flags) {
+    s32 best = -1;
+    s32 bestScore = -1;
+    s32 i;
+
+    for (i = 0; i < 0x20; i++) {
+        if (flags & (1u << i)) {
+            s32 damage = tbl->table[i] & 0xF;
+            s32 effect = (tbl->table[i] >> 4) & 0xF;
+            s32 elemental = (effect == 2) || (effect == 3) || (effect == 4);
+            s32 group;
+            s32 score;
+
+            if ((damage > 0) && !elemental) {
+                group = 3;
+            } else if (damage > 0) {
+                group = 2;
+            } else if ((effect != 0) && !elemental) {
+                group = 1;
+            } else {
+                group = 0;
+            }
+
+            score = (group * 16) + damage;
+            if (score > bestScore) {
+                bestScore = score;
+                best = i;
+            }
+        }
+    }
+
+    return best;
+}
+
 void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCtx, Collider* collider,
                                 ColliderInfo* info) {
     DamageTable* tbl;
@@ -3012,12 +3054,18 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
             damage = 0;
         }
     } else {
-        s32 i;
+        s32 i = -1;
         u32 flags = info->acHitInfo->toucher.dmgFlags;
 
-        for (i = 0; i < 0x20; i++, flags >>= 1) {
-            if (flags == 1) {
-                break;
+        if (BossGanon_IsPlayerAttack(collider->ac)) {
+            i = CollisionCheck_GetGanondorfDamageEntry(tbl, flags & info->bumper.dmgFlags);
+        }
+
+        if (i < 0) {
+            for (i = 0; i < 0x20; i++, flags >>= 1) {
+                if (flags == 1) {
+                    break;
+                }
             }
         }
 

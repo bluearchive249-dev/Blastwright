@@ -2099,6 +2099,46 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Shadow Tag Mode", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("ShadowTag"))
         .Options(CheckboxOptions().Tooltip("A Wallmaster follows Link everywhere, don't get caught!"));
+    AddWidget(path, "Play as Ganondorf", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"))
+        .Options(CheckboxOptions().Tooltip(
+            "Replaces Link with Ganondorf from the Ganon's Tower fight, with his boss moveset instead of Link's.\n\n"
+            " - B: Light ball. Keep holding B to charge Big Magic.\n"
+            " - R: Block with the cape.\n"
+            " - R + B: Pound the floor.\n"
+            " - C-Left / C-Down / C-Right: Light ball / Pound / Big Magic.\n"
+            " - A still opens doors, talks, climbs and grabs.\n\n"
+            "His attacks count as every damage type, so they also break rocks and walls and hit switches.\n"
+            "Link plays the real Ganondorf and Ganon fights."));
+    AddWidget(path, "Keep C-Button Items", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KeepItems"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().Tooltip(
+            "Lets Ganondorf use Link's C-button items (Ocarina, Hookshot, Bombs, ...) so the game can still be "
+            "finished. The C-button attacks are turned off; use B, hold B and R + B instead."));
+    AddWidget(path, "Big Magic", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.BigMagic"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Holding B (or pressing C-Right) charges Big Magic: five balls that home in on enemies."));
+    AddWidget(path, "Show Link in Cutscenes", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.ShowLinkInCutscenes"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Story cutscenes animate Link, so show him instead of Ganondorf while one plays."));
+    AddWidget(path, "Ganondorf Hover Height: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.HoverHeight"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(FloatSliderOptions().Min(30.0f).Max(150.0f).DefaultValue(70.0f).Format("%.0f").Tooltip(
+            "How high Ganondorf floats above the ground. He floats at 150 in his boss fight."));
     AddWidget(path, "Hurt Container Mode", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("HurtContainer"))
         .Options(CheckboxOptions().Tooltip("Changes Heart Piece and Heart Container functionality.\n\n"

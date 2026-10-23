@@ -58,6 +58,16 @@ void BossGanon_UpdateEffects(PlayState* play);
 
 s32 BossGanon_CheckFallingPlatforms(BossGanon* this, PlayState* play, Vec3f* checkPos);
 
+// SoH: "Play as Ganondorf"
+#define GDF_IS_PLAYER(dorf) ((dorf)->actor.params == GDF_PARAMS_PLAYER)
+// The arena floor is at y = 0. Outside the arena, use the floor under Link.
+#define GDF_FLOOR_Y(dorf) (GDF_IS_PLAYER(dorf) ? (dorf)->playerFloorY : 0.0f)
+void BossGanon_Player_Init(BossGanon* this, PlayState* play);
+void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play);
+static ActorFunc sPlayerCapeDraw = NULL;
+// Phantom Ganon's energy ball uses the custom lens flare too, so only clear it if Ganondorf turned it on
+static u8 sPlayerLensFlareOn = false;
+
 const ActorInit Boss_Ganon_InitVars = {
     ACTOR_BOSS_GANON,
     ACTORCAT_BOSS,
@@ -141,7 +151,7 @@ static u8 sWindowShatterTex[2048] = { { 0 } };
 void BossGanonEff_SpawnWindowShard(PlayState* play, Vec3f* pos, Vec3f* velocity, f32 scale) {
     static Color_RGB8 shardColors[] = { { 255, 175, 85 }, { 155, 205, 155 }, { 155, 125, 55 } };
     s16 i;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
     Color_RGB8* color;
 
     for (i = 0; i < 200; i++, eff++) {
@@ -167,7 +177,7 @@ void BossGanonEff_SpawnWindowShard(PlayState* play, Vec3f* pos, Vec3f* velocity,
 
 void BossGanonEff_SpawnSparkle(PlayState* play, Vec3f* pos, Vec3f* velocity, Vec3f* accel, f32 scale, s16 arg6) {
     s16 i;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
 
     for (i = 0; i < 150; i++, eff++) {
         if (eff->type == GDF_EFF_NONE) {
@@ -188,7 +198,7 @@ void BossGanonEff_SpawnSparkle(PlayState* play, Vec3f* pos, Vec3f* velocity, Vec
 void BossGanonEff_SpawnLightRay(PlayState* play, Vec3f* pos, Vec3f* velocity, Vec3f* accel, f32 scale, f32 arg5,
                                 s16 arg6) {
     s16 i;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
 
     for (i = 0; i < 150; i++, eff++) {
         if (eff->type == GDF_EFF_NONE) {
@@ -212,7 +222,7 @@ void BossGanonEff_SpawnLightRay(PlayState* play, Vec3f* pos, Vec3f* velocity, Ve
 
 void BossGanonEff_SpawnShock(PlayState* play, f32 scale, s16 shockType) {
     s16 i;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
 
     for (i = 0; i < 75; i++, eff++) {
         if (eff->type == GDF_EFF_NONE) {
@@ -232,7 +242,7 @@ void BossGanonEff_SpawnShock(PlayState* play, f32 scale, s16 shockType) {
 
 void BossGanonEff_SpawnLightning(PlayState* play, f32 scale, f32 arg2, f32 arg3) {
     s16 i;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
 
     for (i = 0; i < 150; i++, eff++) {
         if (eff->type == GDF_EFF_NONE) {
@@ -252,7 +262,7 @@ void BossGanonEff_SpawnLightning(PlayState* play, f32 scale, f32 arg2, f32 arg3)
 
 void BossGanonEff_SpawnDustDark(PlayState* play, Vec3f* pos, f32 scale, f32 arg3) {
     s16 i;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
 
     for (i = 0; i < 150; i++, eff++) {
         if (eff->type == GDF_EFF_NONE) {
@@ -272,7 +282,7 @@ void BossGanonEff_SpawnDustDark(PlayState* play, Vec3f* pos, f32 scale, f32 arg3
 }
 
 void BossGanonEff_SpawnDustLight(PlayState* play, Vec3f* pos, f32 scale, f32 arg3, s16 bufIndex) {
-    GanondorfEffect* effArr = play->specialEffects;
+    GanondorfEffect* effArr = sEffects;
 
     effArr[bufIndex].type = GDF_EFF_IMPACT_DUST_LIGHT;
     effArr[bufIndex].pos = *pos;
@@ -288,7 +298,7 @@ void BossGanonEff_SpawnDustLight(PlayState* play, Vec3f* pos, f32 scale, f32 arg
 
 void BossGanonEff_SpawnShockwave(PlayState* play, Vec3f* pos, f32 scale, f32 arg3) {
     s16 i;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
 
     for (i = 0; i < 150; i++, eff++) {
         if (eff->type == GDF_EFF_NONE) {
@@ -310,7 +320,7 @@ void BossGanonEff_SpawnShockwave(PlayState* play, Vec3f* pos, f32 scale, f32 arg
 
 void BossGanonEff_SpawnBlackDot(PlayState* play, Vec3f* pos, f32 scale) {
     s16 i;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
 
     for (i = 0; i < 150; i++, eff++) {
         if (eff->type == GDF_EFF_NONE) {
@@ -337,6 +347,11 @@ void BossGanon_SetColliderPos(Vec3f* pos, ColliderCylinder* collider) {
 
 void BossGanon_SetAnimationObject(BossGanon* this, PlayState* play, s32 objectId) {
     this->animBankIndex = Object_GetIndex(&play->objectCtx, objectId);
+    // SoH: the animation objects aren't loaded when Ganondorf is player-controlled outside his scene
+    if (this->animBankIndex < 0) {
+        this->animBankIndex = 0;
+        return;
+    }
     gSegments[6] = VIRTUAL_TO_PHYSICAL(play->objectCtx.status[this->animBankIndex].segment);
 }
 
@@ -356,6 +371,17 @@ void BossGanon_Init(Actor* thisx, PlayState* play2) {
     f32 yDistFromPlayer;
     f32 zDistFromPlayer;
     Player* player = GET_PLAYER(play);
+
+    // SoH: "Play as Ganondorf"
+    if (thisx->params == GDF_PARAMS_PLAYER) {
+        BossGanon_Player_Init(this, play);
+        return;
+    }
+    if ((thisx->params >= GDF_PARAMS_PLAYER_LIGHT_BALL) &&
+        (thisx->params < GDF_PARAMS_PLAYER_BIG_MAGIC + GDF_PLAYER_BIG_MAGIC_COUNT)) {
+        BossGanon_PlayerProjectile_Init(this, play);
+        return;
+    }
 
     if (thisx->params < 0x64) {
         Flags_SetSwitch(play, 0x14);
@@ -490,6 +516,16 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
 
     if (this->actor.params < 0x64) {
         SkelAnime_Free(&this->skelAnime, play);
+    }
+
+    // SoH: "Play as Ganondorf"
+    if (GDF_IS_PLAYER(this) && (sGanondorf == this)) {
+        if (sPlayerLensFlareOn) {
+            gCustomLensFlareOn = false;
+            sPlayerLensFlareOn = false;
+        }
+        sGanondorf = NULL;
+        sCape = NULL;
     }
 }
 
@@ -3501,7 +3537,7 @@ void BossGanon_DrawHandLightBall(BossGanon* this, PlayState* play) {
         alpha = ((this->unk_1A2 % 2) != 0) ? 100 : 80;
         gDPPipeSync(POLY_XLU_DISP++);
         gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 155, alpha);
-        Matrix_Translate(this->unk_260.x, 0.0f, this->unk_260.z, MTXMODE_NEW);
+        Matrix_Translate(this->unk_260.x, GDF_FLOOR_Y(this), this->unk_260.z, MTXMODE_NEW);
         Matrix_Scale(this->handLightBallScale * 0.75f, 1.0f, this->handLightBallScale * 0.75f, MTXMODE_APPLY);
         gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_XLU_DISP++, gGanondorfLightCoreDL);
@@ -3837,8 +3873,9 @@ void BossGanon_DrawShadowTexture(void* tex, BossGanon* this, PlayState* play) {
     gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 0);
 
     if (this->csState < 100) {
-        zOffset = (((((this->actor.world.pos.y - 10) + 70.0f) * -5.0f) / 10.0f) + 10.0f);
-        Matrix_Translate(this->actor.world.pos.x, 0.0f, this->actor.world.pos.z + zOffset, MTXMODE_NEW);
+        zOffset = (((((this->actor.world.pos.y - GDF_FLOOR_Y(this) - 10) + 70.0f) * -5.0f) / 10.0f) + 10.0f);
+        Matrix_Translate(this->actor.world.pos.x, GDF_FLOOR_Y(this) + (GDF_IS_PLAYER(this) ? 1.0f : 0.0f),
+                         this->actor.world.pos.z + zOffset, MTXMODE_NEW);
     } else {
         Matrix_Translate(this->actor.world.pos.x, 4102.0f, this->actor.world.pos.z - 20.0f, MTXMODE_NEW);
     }
@@ -3858,6 +3895,12 @@ void BossGanon_Draw(Actor* thisx, PlayState* play) {
     s32 i;
     BossGanon* this = (BossGanon*)thisx;
     void* shadowTex;
+
+    // SoH: "Play as Ganondorf", hidden in first person and while Link is shown instead
+    if (GDF_IS_PLAYER(this) && this->playerHidden) {
+        BossGanon_DrawEffects(play);
+        return;
+    }
 
     shadowTex = Graph_Alloc(play->state.gfxCtx, 64 * 64);
 
@@ -4669,7 +4712,7 @@ void func_808E324C(Actor* thisx, PlayState* play) {
 
 void BossGanon_UpdateEffects(PlayState* play) {
     Player* player = GET_PLAYER(play);
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
     s16 i;
     s32 pad;
     f32 xDiff;
@@ -4851,7 +4894,7 @@ void BossGanon_UpdateEffects(PlayState* play) {
 
                 Math_ApproachF(&eff->scale, eff->unk_38, 1.0f, 0.13f);
 
-                if ((eff->timer < 150) && (fabsf(player->actor.world.pos.y) < 5.0f)) {
+                if ((eff->timer < 150) && (fabsf(player->actor.world.pos.y) < 5.0f) && !GDF_IS_PLAYER(sGanondorf)) {
                     distToPlayer =
                         sqrtf(SQ(eff->pos.x - player->actor.world.pos.x) + SQ(eff->pos.z - player->actor.world.pos.z));
 
@@ -4889,7 +4932,7 @@ void BossGanon_DrawEffects(PlayState* play) {
     s16 i;
     s32 pad;
     GraphicsContext* gfxCtx = play->state.gfxCtx;
-    GanondorfEffect* eff = play->specialEffects;
+    GanondorfEffect* eff = sEffects;
     GanondorfEffect* effFirst = eff;
 
     OPEN_DISPS(gfxCtx);
@@ -5095,6 +5138,1425 @@ void BossGanon_DrawEffects(PlayState* play) {
     }
 
     CLOSE_DISPS(gfxCtx);
+}
+
+// ================================================================================================
+// SoH: "Play as Ganondorf"
+//
+// Ganondorf from the Ganon's Tower fight, controlled by the player. Link is still there underneath,
+// invisible, so walking, collision, doors, ladders, the camera and loading zones keep working. This
+// actor follows him around and replaces his moveset with Ganondorf's boss attacks:
+//
+//   B            Charge a light ball and throw it. Keep holding B to charge Big Magic instead.
+//   R            Block with the cape (Link can't be hurt while blocking).
+//   R + B        Pound the floor (shockwave around Ganondorf).
+//   C-Left       Light ball        (when C-button items are disabled)
+//   C-Down       Pound the floor   (when C-button items are disabled)
+//   C-Right      Big Magic         (when C-button items are disabled)
+//
+// Every attack carries all damage types (see DMG_GANONDORF_PLAYER), but only looks like Ganondorf's magic.
+//
+// The vanilla AI is tied to the arena (absolute coordinates, falling platforms, room lighting), so
+// this mode has its own update function and action functions modelled on the vanilla ones. The
+// model, animations, cape, effects and draw code are shared with the boss.
+// ================================================================================================
+
+#define CVAR_PLAY_AS_GDF(var) CVAR_ENHANCEMENT("PlayAsGanondorf." var)
+
+void BossGanon_Player_Update(Actor* thisx, PlayState* play);
+void BossGanon_PlayerLightBall_Update(Actor* thisx, PlayState* play);
+void BossGanon_PlayerBigMagic_Update(Actor* thisx, PlayState* play);
+
+void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play);
+void BossGanon_Player_Float(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupChargeLightBall(BossGanon* this, PlayState* play);
+void BossGanon_Player_ChargeLightBall(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupThrow(BossGanon* this, PlayState* play);
+void BossGanon_Player_Throw(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupChargeBigMagic(BossGanon* this, PlayState* play);
+void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupPound(BossGanon* this, PlayState* play);
+void BossGanon_Player_Pound(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupBlock(BossGanon* this, PlayState* play);
+void BossGanon_Player_Block(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupHurt(BossGanon* this, PlayState* play);
+void BossGanon_Player_Hurt(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupDowned(BossGanon* this, PlayState* play);
+void BossGanon_Player_Downed(BossGanon* this, PlayState* play);
+
+// Ganondorf's own attacks hurt enemies instead of Link
+static ColliderCylinderInit sPlayerLightBallCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER,
+        AC_NONE,
+        OC1_NONE,
+        OC2_NONE,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK2,
+        { DMG_GANONDORF_PLAYER, 0x00, 0x04 },
+        { 0x00000000, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NORMAL,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { 20, 30, -15, { 0, 0, 0 } },
+};
+
+static ColliderCylinderInit sPlayerBigMagicCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER,
+        AC_NONE,
+        OC1_NONE,
+        OC2_NONE,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK2,
+        { DMG_GANONDORF_PLAYER, 0x00, 0x02 },
+        { 0x00000000, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NORMAL,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { 15, 20, -10, { 0, 0, 0 } },
+};
+
+static ColliderCylinderInit sPlayerPoundCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER,
+        AC_NONE,
+        OC1_NONE,
+        OC2_NONE,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK0,
+        { DMG_GANONDORF_PLAYER, 0x00, 0x08 },
+        { 0x00000000, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NORMAL,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { 60, 80, 0, { 0, 0, 0 } },
+};
+
+s32 BossGanon_Player_IsBusy(Actor* thisx) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    if ((thisx == NULL) || !GDF_IS_PLAYER(this)) {
+        return false;
+    }
+
+    return (this->actionFunc == BossGanon_Player_ChargeLightBall) || (this->actionFunc == BossGanon_Player_Throw) ||
+           (this->actionFunc == BossGanon_Player_ChargeBigMagic) || (this->actionFunc == BossGanon_Player_Pound) ||
+           (this->actionFunc == BossGanon_Player_Block);
+}
+
+s32 BossGanon_IsPlayerAttack(Actor* actor) {
+    if ((actor == NULL) || (actor->id != ACTOR_BOSS_GANON)) {
+        return false;
+    }
+
+    return (actor->params == GDF_PARAMS_PLAYER) ||
+           ((actor->params >= GDF_PARAMS_PLAYER_LIGHT_BALL) &&
+            (actor->params < GDF_PARAMS_PLAYER_BIG_MAGIC + GDF_PLAYER_BIG_MAGIC_COUNT));
+}
+
+s32 BossGanon_Player_IsHidden(Actor* thisx) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    if ((thisx == NULL) || !GDF_IS_PLAYER(this)) {
+        return true;
+    }
+
+    return this->playerHidden;
+}
+
+static f32 BossGanon_Player_GetHoverHeight(void) {
+    return CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f);
+}
+
+// Rotation that points from `from` to `to`, using the same convention as the vanilla light ball
+static void BossGanon_Player_AimRot(Vec3f* from, Vec3f* to, s16* rotX, s16* rotY) {
+    f32 dx = to->x - from->x;
+    f32 dy = to->y - from->y;
+    f32 dz = to->z - from->z;
+
+    *rotY = Math_Atan2S(dz, dx);
+    *rotX = Math_Atan2S(sqrtf(SQ(dx) + SQ(dz)), dy);
+}
+
+// Closest targetable enemy in front of `from`
+static Actor* BossGanon_Player_FindTarget(PlayState* play, Vec3f* from, s16 facingYaw, f32 maxDist, s16 maxAngle) {
+    static u8 sTargetCategories[] = { ACTORCAT_ENEMY, ACTORCAT_BOSS };
+    Actor* best = NULL;
+    f32 bestDist = maxDist;
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sTargetCategories); i++) {
+        Actor* actor = play->actorCtx.actorLists[sTargetCategories[i]].head;
+
+        for (; actor != NULL; actor = actor->next) {
+            f32 dist;
+            s16 yawDiff;
+
+            if ((actor->update == NULL) || (actor->id == ACTOR_BOSS_GANON) || (actor->id == ACTOR_EN_GANON_MANT)) {
+                continue;
+            }
+            if (!(actor->flags & ACTOR_FLAG_ATTENTION_ENABLED)) {
+                continue;
+            }
+
+            dist = Math_Vec3f_DistXYZ(from, &actor->focus.pos);
+            if (dist >= bestDist) {
+                continue;
+            }
+
+            yawDiff = Math_Vec3f_Yaw(from, &actor->focus.pos) - facingYaw;
+            if (ABS(yawDiff) > maxAngle) {
+                continue;
+            }
+
+            best = actor;
+            bestDist = dist;
+        }
+    }
+
+    return best;
+}
+
+// Aim at Link's lock-on target, else the closest enemy in front, else straight ahead.
+// yawTowardsPlayer is reused as the aim direction because the vanilla effect code reads it.
+static void BossGanon_Player_UpdateAim(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Actor* target = player->focusActor;
+
+    if ((target == NULL) || (target->update == NULL)) {
+        target = BossGanon_Player_FindTarget(play, &this->unk_1FC, player->actor.shape.rot.y, 700.0f, 0x2000);
+    }
+
+    if (target != NULL) {
+        this->playerAimPos = target->focus.pos;
+    } else {
+        this->playerAimPos.x = player->actor.world.pos.x + (Math_SinS(player->actor.shape.rot.y) * 300.0f);
+        this->playerAimPos.y = player->actor.world.pos.y + 25.0f;
+        this->playerAimPos.z = player->actor.world.pos.z + (Math_CosS(player->actor.shape.rot.y) * 300.0f);
+    }
+
+    this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&this->actor.world.pos, &this->playerAimPos);
+}
+
+static void BossGanon_Player_SnapToLink(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    this->actor.world.pos = player->actor.world.pos;
+    this->actor.world.pos.y += BossGanon_Player_GetHoverHeight();
+    this->actor.prevPos = this->actor.world.pos;
+    this->actor.shape.rot.y = this->actor.world.rot.y = player->actor.shape.rot.y;
+}
+
+static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 controlY) {
+    Player* player = GET_PLAYER(play);
+    Vec3f target;
+    f32 dx;
+    f32 dy;
+    f32 dz;
+
+    target.x = player->actor.world.pos.x;
+    target.y = player->actor.world.pos.y + BossGanon_Player_GetHoverHeight() + (Math_SinS(this->unk_1A2 * 1500) * 3.0f);
+    target.z = player->actor.world.pos.z;
+
+    dx = target.x - this->actor.world.pos.x;
+    dy = target.y - this->actor.world.pos.y;
+    dz = target.z - this->actor.world.pos.z;
+
+    // Warps, voiding out, ...
+    if ((SQ(dx) + SQ(dy) + SQ(dz)) > SQ(250.0f)) {
+        BossGanon_Player_SnapToLink(this, play);
+        return;
+    }
+
+    this->actor.world.pos.x += dx * 0.5f;
+    this->actor.world.pos.z += dz * 0.5f;
+
+    if (controlY) {
+        this->actor.world.pos.y += dy * 0.25f;
+    }
+}
+
+static s32 BossGanon_Player_ShouldHide(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    // First person
+    if ((player->unk_6AD == 1) || (player->unk_6AD == 2)) {
+        return true;
+    }
+    // Link isn't drawn either
+    if (player->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW) {
+        return true;
+    }
+    // Crawlspaces are too small for Ganondorf, show Link instead
+    if (player->stateFlags2 & PLAYER_STATE2_CRAWLING) {
+        return true;
+    }
+    // Story cutscenes animate Link, show him instead
+    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 1) && (play->csCtx.state != CS_STATE_IDLE)) {
+        return true;
+    }
+
+    return false;
+}
+
+static s32 BossGanon_Player_CanStartAttack(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    if (this->playerHidden || Player_InCsMode(play) || (play->csCtx.state != CS_STATE_IDLE)) {
+        return false;
+    }
+    if ((Message_GetState(&play->msgCtx) != TEXT_STATE_NONE) || (player->textboxBtnCooldownTimer != 0)) {
+        return false;
+    }
+    if (player->stateFlags1 &
+        (PLAYER_STATE1_INPUT_DISABLED | PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_GETTING_ITEM |
+         PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_FIRST_PERSON |
+         PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
+         PLAYER_STATE1_CARRYING_ACTOR)) {
+        return false;
+    }
+    if (player->stateFlags2 & PLAYER_STATE2_CRAWLING) {
+        return false;
+    }
+
+    return true;
+}
+
+static void BossGanon_Player_StartAttack(BossGanon* this, u16 button) {
+    this->playerBtnHeld = button;
+    this->playerHeldTimer = 0;
+}
+
+static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
+    Input* input = &play->state.input[0];
+    u8 useCButtons = !CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0);
+    u8 bigMagicEnabled = CVarGetInteger(CVAR_PLAY_AS_GDF("BigMagic"), 1);
+
+    if (!BossGanon_Player_CanStartAttack(this, play)) {
+        return;
+    }
+
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
+            BossGanon_Player_SetupPound(this, play);
+        } else {
+            BossGanon_Player_StartAttack(this, BTN_B);
+            BossGanon_Player_SetupChargeLightBall(this, play);
+        }
+    } else if (useCButtons && CHECK_BTN_ALL(input->press.button, BTN_CLEFT)) {
+        BossGanon_Player_StartAttack(this, BTN_CLEFT);
+        BossGanon_Player_SetupChargeLightBall(this, play);
+    } else if (useCButtons && CHECK_BTN_ALL(input->press.button, BTN_CDOWN)) {
+        BossGanon_Player_SetupPound(this, play);
+    } else if (useCButtons && bigMagicEnabled && CHECK_BTN_ALL(input->press.button, BTN_CRIGHT)) {
+        BossGanon_Player_SetupChargeBigMagic(this, play);
+    } else if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
+        BossGanon_Player_SetupBlock(this, play);
+    }
+}
+
+void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
+    Actor* thisx = &this->actor;
+    Player* player = GET_PLAYER(play);
+    s16 i;
+
+    for (i = 0; i < ARRAY_COUNT(sEffects); i++) {
+        sEffects[i].type = GDF_EFF_NONE;
+    }
+
+    sGanondorf = this;
+
+    Actor_ProcessInitChain(thisx, sInitChain);
+    // Not an enemy: no lock-on, no Navi, no battle music
+    thisx->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    thisx->flags |= ACTOR_FLAG_UPDATE_DURING_OCARINA;
+    thisx->update = BossGanon_Player_Update;
+    ActorShape_Init(&thisx->shape, 0, NULL, 0);
+    Actor_SetScale(thisx, 0.01f);
+    SkelAnime_InitFlex(play, &this->skelAnime, &gGanondorfSkel, NULL, NULL, NULL, 0);
+    Collider_InitCylinder(play, &this->collider);
+    Collider_SetCylinder(play, &this->collider, thisx, &sPlayerPoundCylinderInit);
+
+    // Follow Link through every room, and keep updating while he talks or gets items
+    thisx->room = -1;
+    thisx->parent = &player->actor;
+
+    sCape = (EnGanonMant*)Actor_SpawnAsChild(&play->actorCtx, thisx, play, ACTOR_EN_GANON_MANT, 0.0f, 0.0f, 0.0f, 0, 0,
+                                             0, 1);
+    if (sCape == NULL) {
+        Actor_Kill(thisx);
+        return;
+    }
+    sCape->actor.room = -1;
+    sPlayerCapeDraw = sCape->actor.draw;
+
+    // Ganondorf goes in front of his cape in the update and draw order, like in the vanilla init.
+    // MISC also isn't affected by things that freeze or look for bosses.
+    Actor_ChangeCategory(play, &play->actorCtx, thisx, ACTORCAT_MISC);
+
+    this->playerFloorY = player->actor.floorHeight;
+    this->playerPrevInvincibilityTimer = player->invincibilityTimer;
+    BossGanon_Player_SnapToLink(this, play);
+    BossGanon_Player_UpdateAim(this, play);
+    BossGanon_Player_SetupFloat(this, play);
+}
+
+void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play) {
+    Actor* thisx = &this->actor;
+    s16 i;
+
+    thisx->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    thisx->room = -1;
+    this->fwork[GDF_FWORK_1] = 255.0f;
+    Collider_InitCylinder(play, &this->collider);
+
+    if (thisx->params == GDF_PARAMS_PLAYER_LIGHT_BALL) {
+        thisx->update = BossGanon_PlayerLightBall_Update;
+        thisx->draw = BossGanon_LightBall_Draw;
+        thisx->speedXZ = 14.0f;
+        Actor_SetScale(thisx, 6.0f);
+        this->timers[2] = 90; // lifetime
+        Collider_SetCylinder(play, &this->collider, thisx, &sPlayerLightBallCylinderInit);
+    } else {
+        s16 index = thisx->params - GDF_PARAMS_PLAYER_BIG_MAGIC;
+
+        thisx->update = BossGanon_PlayerBigMagic_Update;
+        thisx->draw = func_808E324C;
+        Actor_SetScale(thisx, 0.01f);
+        this->unk_1C2 = 10;
+        // Same phase offsets as the vanilla balls (params 0x104 - 0x108)
+        this->unk_1A2 = 520 + (-(0x104 + index) * 2);
+
+        for (i = 0; i < 15; i++) {
+            this->unk_2EC[i] = thisx->world.pos;
+            this->unk_3C4[i].x = BINANG_TO_RAD(thisx->world.rot.x);
+            this->unk_3C4[i].y = BINANG_TO_RAD(thisx->world.rot.y);
+        }
+
+        this->timers[1] = 3;
+        this->timers[2] = 75; // lifetime
+        Collider_SetCylinder(play, &this->collider, thisx, &sPlayerBigMagicCylinderInit);
+    }
+}
+
+void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -10.0f);
+    this->actionFunc = BossGanon_Player_Float;
+    this->unk_1C2 = 0;
+    this->playerBtnHeld = 0;
+}
+
+void BossGanon_Player_Float(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    this->legSwayEnabled = true;
+
+    sCape->backPush = -3.0f;
+    sCape->backSwayMagnitude = 0.25f;
+    sCape->sideSwayMagnitude = -3.0f;
+    sCape->minDist = 20.0f;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->handLightBallScale, 1.0f, 1.0f);
+
+    if (player->actor.speedXZ > 1.0f) {
+        Sfx_PlaySfxAtPos(&this->actor.projectedPos, NA_SE_EN_FANTOM_FLOAT - SFX_FLAG);
+    }
+
+    BossGanon_Player_ReadButtons(this, play);
+}
+
+void BossGanon_Player_SetupChargeLightBall(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfChargeLightBallAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfChargeLightBallAnim, -3.0f);
+    this->actionFunc = BossGanon_Player_ChargeLightBall;
+    this->timers[0] = 25;
+    this->unk_1C2 = 0;
+    BossGanon_Player_UpdateAim(this, play);
+}
+
+void BossGanon_Player_ChargeLightBall(BossGanon* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+
+    this->legSwayEnabled = true;
+    sCape->backPush = -3.0f;
+    sCape->backSwayMagnitude = 1.25f;
+    sCape->sideSwayMagnitude = -2.0f;
+    sCape->minDist = 10.0f;
+
+    BossGanon_Player_UpdateAim(this, play);
+
+    if (this->timers[0] == 17) {
+        this->unk_26C = 10;
+        this->unk_270 = Rand_ZeroFloat(M_PI);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+    }
+
+    if (this->timers[0] < 10) {
+        this->unk_258 += (Rand_ZeroFloat(M_PI / 2) + (M_PI / 2));
+        Math_ApproachF(&this->handLightBallScale, 10.0f, 0.5f, 1.25f);
+
+        if (this->timers[0] == 0) {
+            // Still holding the button: charge Big Magic instead
+            if ((this->playerBtnHeld != 0) && (this->playerHeldTimer >= 20) &&
+                CVarGetInteger(CVAR_PLAY_AS_GDF("BigMagic"), 1)) {
+                this->handLightBallScale = 0.0f;
+                BossGanon_Player_SetupChargeBigMagic(this, play);
+            } else {
+                BossGanon_Player_SetupThrow(this, play);
+            }
+        }
+    }
+}
+
+void BossGanon_Player_SetupThrow(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfThrowAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfThrowAnim, 0.0f);
+    this->actionFunc = BossGanon_Player_Throw;
+    this->unk_1C2 = 0;
+}
+
+void BossGanon_Player_Throw(BossGanon* this, PlayState* play) {
+    s16 rotX;
+    s16 rotY;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->handLightBallScale, 1.0f, 0.2f);
+
+    if (this->skelAnime.curFrame < 11.0f) {
+        BossGanon_Player_UpdateAim(this, play);
+    }
+
+    if (this->skelAnime.curFrame <= 12.0f) {
+        this->lensFlareTimer = 2;
+        this->lensFlareMode = 2;
+        gCustomLensFlarePos = this->unk_260;
+    }
+
+    if (Animation_OnFrame(&this->skelAnime, 12.0f)) {
+        this->handLightBallScale = 0.0f;
+    }
+
+    if (Animation_OnFrame(&this->skelAnime, 11.0f)) {
+        this->unk_25C = 1;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_MASIC);
+        BossGanon_Player_AimRot(&this->unk_260, &this->playerAimPos, &rotX, &rotY);
+        Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->unk_260.x, this->unk_260.y,
+                           this->unk_260.z, rotX, rotY, 0, GDF_PARAMS_PLAYER_LIGHT_BALL);
+    }
+
+    if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+        BossGanon_Player_SetupFloat(this, play);
+    }
+}
+
+void BossGanon_Player_SetupChargeBigMagic(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    this->unk_1C2 = 0;
+    this->timers[0] = 8;
+    this->unk_1AA = Rand_ZeroFloat(20000.0f);
+    this->unk_1AC = 0;
+    this->actionFunc = BossGanon_Player_ChargeBigMagic;
+    BossGanon_Player_UpdateAim(this, play);
+}
+
+// Vanilla BossGanon_ChargeBigMagic without the arena movement, and with a shorter charge
+void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play) {
+    Vec3f sp80;
+    Vec3f sp74;
+    Vec3f sp68;
+    s16 i;
+
+    SkelAnime_Update(&this->skelAnime);
+
+    if (this->unk_1C2 < 3) {
+        BossGanon_Player_UpdateAim(this, play);
+    }
+
+    switch (this->unk_1C2) {
+        case 0:
+            if (this->timers[0] == 0) {
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfBigMagicChargeStartAnim);
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfBigMagicChargeStartAnim, 0.0f);
+                this->unk_1C2 = 1;
+            }
+            break;
+
+        case 1:
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfBigMagicChargeHoldAnim);
+                Animation_MorphToLoop(&this->skelAnime, &gGanondorfBigMagicChargeHoldAnim, 0.0f);
+                this->unk_1C2 = 2;
+                // Vanilla charges for 100 frames. The thresholds below are the vanilla ones, so starting lower
+                // only skips the first part of the charge.
+                this->timers[0] = 60;
+            }
+            break;
+
+        case 2:
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CHARGE_MASIC - SFX_FLAG);
+            this->unk_278.x = this->unk_2EC[0].x;
+            this->unk_278.y = this->unk_2EC[0].y + 50.0f + 30.0f;
+            this->unk_278.z = this->unk_2EC[0].z;
+
+            Math_ApproachF(&this->unk_284, 0.25f, 0.1f, 0.006f);
+            Math_ApproachF(&this->unk_288, 255.0f, 1.0f, 255.0f);
+            Math_ApproachF(&this->unk_28C, 0.25f, 0.1f, 0.006f);
+
+            if ((this->timers[0] > 20) && (this->timers[0] < 60)) {
+                Math_ApproachF(&this->unk_290, 255.0f, 1.0f, 15.0f);
+            }
+
+            if (this->timers[0] == 0) {
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfBigMagicWindupAnim);
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfBigMagicWindupAnim, 0.0f);
+                this->unk_1C2 = 3;
+                this->timers[0] = 6;
+                this->timers[1] = 15;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+                break;
+            }
+
+            if ((this->timers[0] >= 7) && (this->timers[0] < 26)) {
+                if (this->unk_1AC < ARRAY_COUNT(this->unk_294)) {
+                    this->unk_1AC++;
+                }
+
+                for (i = 0; i < this->unk_1AC; i++) {
+                    Math_ApproachF(&this->unk_294[i], 200.0f, 1.0f, 40.0f);
+                }
+            }
+
+            if (this->timers[0] <= 30) {
+                Math_ApproachF(&this->unk_284, 0.4f, 0.5f, 0.017f);
+                this->unk_28C = this->unk_284;
+                Math_ApproachF(&this->unk_2D0, 45.0f, 0.1f, 10.0f);
+                this->lensFlareTimer = 1;
+                this->lensFlareMode = 2;
+                gCustomLensFlarePos = this->unk_278;
+            }
+
+            if ((this->timers[0] <= 47) && (this->timers[0] >= 42)) {
+                this->unk_274 = 48 - this->timers[0];
+            }
+
+            if (this->timers[0] > 30) {
+                sp74.x = 0.0f;
+                sp74.y = Rand_ZeroFloat(10.0f) + 150.0f;
+                sp74.z = 0.0f;
+
+                Matrix_RotateY(BINANG_TO_RAD(this->actor.yawTowardsPlayer), MTXMODE_NEW);
+                Matrix_RotateZ(Rand_ZeroFloat(65536.0f), MTXMODE_APPLY);
+                Matrix_MultVec3f(&sp74, &sp68);
+
+                sp80.x = this->unk_278.x + sp68.x;
+                sp80.y = this->unk_278.y + sp68.y;
+                sp80.z = this->unk_278.z + sp68.z;
+
+                BossGanonEff_SpawnBlackDot(play, &sp80, 20.0f);
+            }
+            break;
+
+        case 3:
+            for (i = 0; i < ARRAY_COUNT(this->unk_294); i++) {
+                Math_ApproachF(&this->unk_294[i], 0.0f, 1.0f, 40.0f);
+            }
+
+            if (this->timers[0] == 1) {
+                sCape->attachLeftArmTimer = 15.0f;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+            }
+
+            if (this->timers[0] == 0) {
+                Math_ApproachZeroF(&this->unk_284, 1.0f, 0.08f);
+                this->unk_28C = this->unk_284;
+                Math_ApproachZeroF(&this->unk_2D0, 1.0f, 10.0f);
+                Math_ApproachF(&this->unk_278.x, this->unk_1FC.x, 0.5f, 30.0f);
+                Math_ApproachF(&this->unk_278.y, this->unk_1FC.y, 0.5f, 30.0f);
+                Math_ApproachF(&this->unk_278.z, this->unk_1FC.z, 0.5f, 30.0f);
+            }
+
+            if (this->timers[1] == 0) {
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfBigMagicThrowAnim);
+                Animation_MorphToLoop(&this->skelAnime, &gGanondorfBigMagicThrowAnim, 0.0f);
+                this->unk_1C2 = 4;
+                this->unk_288 = 0.0f;
+                this->unk_290 = 0.0f;
+                this->unk_284 = 0.0f;
+                this->unk_28C = 0.0f;
+            }
+            break;
+
+        case 4:
+            if (Animation_OnFrame(&this->skelAnime, 5.0f)) {
+                for (i = 0; i < GDF_PLAYER_BIG_MAGIC_COUNT; i++) {
+                    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->unk_1FC.x,
+                                       this->unk_1FC.y, this->unk_1FC.z, 0, this->actor.yawTowardsPlayer, 0,
+                                       GDF_PARAMS_PLAYER_BIG_MAGIC + i);
+                }
+
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_BIGMASIC);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_BIG);
+            }
+
+            if (Animation_OnFrame(&this->skelAnime, 3.0f)) {
+                sCape->attachShouldersTimer = 26.0f;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+            }
+
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfBigMagicThrowEndAnim);
+                Animation_MorphToLoop(&this->skelAnime, &gGanondorfBigMagicThrowEndAnim, 0.0f);
+                this->unk_1C2 = 5;
+            }
+            break;
+
+        case 5:
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                BossGanon_Player_SetupFloat(this, play);
+            }
+            break;
+    }
+}
+
+void BossGanon_Player_SetupPound(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    this->unk_1C2 = 0;
+    this->timers[0] = 26;
+    this->actionFunc = BossGanon_Player_Pound;
+    this->actor.velocity.y = 0.0f;
+    this->handLightBallScale = 0.0f;
+    this->playerBtnHeld = 0;
+}
+
+// Vanilla BossGanon_PoundFloor, relative to the floor under Link
+void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 floorY = this->playerFloorY;
+    f32 hover = BossGanon_Player_GetHoverHeight();
+    f32 heightTarget;
+    s16 i;
+    Vec3f sp6C;
+    Vec3f sp60;
+    Vec3f sp54;
+
+    SkelAnime_Update(&this->skelAnime);
+
+    switch (this->unk_1C2) {
+        case 0:
+            if (this->timers[0] == 5) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND);
+            }
+
+            if (this->timers[0] < 14) {
+                heightTarget = player->actor.world.pos.y + hover + 90.0f;
+                this->unk_258 += (Rand_ZeroFloat(M_PI / 2) + (M_PI / 2));
+                Math_ApproachF(&this->handLightBallScale, 7.0f, 0.5f, 1.0f);
+            } else {
+                heightTarget = player->actor.world.pos.y + hover + 40.0f;
+            }
+
+            Math_ApproachF(&this->actor.world.pos.y, heightTarget, 0.1f, this->actor.velocity.y);
+            Math_ApproachF(&this->actor.velocity.y, 20.0f, 1.0f, 1.0f);
+
+            if (this->timers[0] == 14) {
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfPoundAnim);
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfPoundAnim, 0.0f);
+                this->actor.velocity.y = 0.0f;
+            }
+
+            if (this->timers[0] == 0) {
+                this->unk_1C2 = 1;
+                this->actor.velocity.y = 0.0f;
+            }
+            break;
+
+        case 1:
+            sCape->gravity = -1.0f;
+            Math_ApproachF(&this->actor.velocity.y, -50.0f, 1.0f, 10.0f);
+            this->actor.world.pos.y += this->actor.velocity.y;
+
+            if (this->actor.world.pos.y < (floorY + 60.0f)) {
+                this->actor.world.pos.y = floorY + 60.0f;
+                this->unk_1C2 = 2;
+                this->timers[0] = 10;
+                Actor_RequestQuakeAndRumble(&this->actor, play, 0xA, 0x14);
+                this->unk_19C = 35;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
+                this->handLightBallScale = 0.0f;
+                sp60 = this->unk_260;
+                sp60.y = floorY;
+
+                for (i = 0; i < 80; i++) {
+                    sp6C.x = Rand_CenteredFloat(25.0f);
+                    sp6C.y = Rand_ZeroFloat(17.0f);
+                    sp6C.z = Rand_CenteredFloat(25.0f);
+                    BossGanonEff_SpawnLightRay(play, &sp60, &sp6C, &sZeroVec, Rand_ZeroFloat(300.0f) + 500.0f, 13.0f,
+                                               0x1E);
+                }
+            }
+            break;
+
+        case 2:
+            if (this->timers[0] == 0) {
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfPoundEndAnim);
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfPoundEndAnim, 0.0f);
+                this->unk_1C2 = 3;
+                this->unk_19F = 1;
+                this->actor.velocity.y = 0.0f;
+            }
+            break;
+
+        case 3:
+        case 4:
+            Math_ApproachF(&this->actor.world.pos.y, player->actor.world.pos.y + hover, 0.1f, this->actor.velocity.y);
+            Math_ApproachF(&this->actor.velocity.y, 20.0f, 1.0f, 1.0f);
+
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                if (this->unk_1C2 == 3) {
+                    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfGetUp3Anim);
+                    Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfGetUp3Anim, 0.0f);
+                    SkelAnime_Update(&this->skelAnime);
+                    sCape->attachShouldersTimer = 18.0f;
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+                    this->unk_1C2 = 4;
+                } else {
+                    BossGanon_Player_SetupFloat(this, play);
+                }
+            }
+            break;
+    }
+
+    if ((this->unk_19C == 35) || (this->unk_19C == 30) || (this->unk_19C == 25)) {
+        sp54 = this->actor.world.pos;
+        sp54.y = floorY;
+        BossGanonEff_SpawnDustLight(play, &sp54, 0, 3.0f, this->unk_19C - 25);
+    }
+
+    if (this->unk_19C == 35) {
+        sp54 = this->actor.world.pos;
+        sp54.y = floorY;
+        BossGanonEff_SpawnShockwave(play, &sp54, 0, 3.0f);
+    }
+
+    // The shockwave hurts enemies around Ganondorf in two pulses as it spreads
+    if ((this->unk_19C == 35) || (this->unk_19C == 27)) {
+        this->collider.dim.radius = (this->unk_19C == 35) ? 130 : 280;
+        this->collider.dim.height = 80;
+        this->collider.dim.yShift = 0;
+        this->collider.dim.pos.x = this->actor.world.pos.x;
+        this->collider.dim.pos.y = floorY - 20.0f;
+        this->collider.dim.pos.z = this->actor.world.pos.z;
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+    }
+}
+
+void BossGanon_Player_SetupBlock(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfBlockAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfBlockAnim, 0.0f);
+    this->actionFunc = BossGanon_Player_Block;
+    this->unk_1C2 = 0;
+    sCape->attachLeftArmTimer = this->timers[0] = 10;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+    this->handLightBallScale = 0.0f;
+}
+
+void BossGanon_Player_Block(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Input* input = &play->state.input[0];
+
+    SkelAnime_Update(&this->skelAnime);
+    sCape->backPush = -9.0f;
+    sCape->backSwayMagnitude = 0.25f;
+    sCape->sideSwayMagnitude = -2.0f;
+    sCape->minDist = 13.0f;
+
+    if (this->unk_1C2 == 0) {
+        // Ganondorf's cape guard: Link can't be hurt or knocked back while it's up (intangibility)
+        if ((player->invincibilityTimer >= 0) && (player->invincibilityTimer < 2)) {
+            player->invincibilityTimer = 2;
+        }
+
+        if (CHECK_BTN_ALL(input->cur.button, BTN_R) && BossGanon_Player_CanStartAttack(this, play)) {
+            if (this->timers[0] < 2) {
+                this->timers[0] = 2;
+            }
+            sCape->attachLeftArmTimer = 10.0f;
+
+            if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+                BossGanon_Player_SetupPound(this, play);
+                return;
+            }
+        }
+
+        if (this->timers[0] == 0) {
+            this->unk_1C2 = 1;
+            Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfBlockReleaseAnim, 0.0f);
+            this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfBlockReleaseAnim);
+            SkelAnime_Update(&this->skelAnime);
+            sCape->attachShouldersTimer = 15.0f;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+        }
+    } else {
+        sCape->sideSwayMagnitude = -13.0f;
+
+        if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+            BossGanon_Player_SetupFloat(this, play);
+        }
+    }
+}
+
+static void BossGanon_Player_CancelMagic(BossGanon* this) {
+    this->handLightBallScale = 0.0f;
+    this->unk_284 = 0.0f;
+    this->unk_288 = 0.0f;
+    this->unk_28C = 0.0f;
+    this->unk_290 = 0.0f;
+    this->unk_2D0 = 0.0f;
+    this->unk_1AC = 0;
+    this->unk_274 = 0;
+    this->unk_26C = 0;
+    this->lensFlareTimer = 0;
+    this->playerBtnHeld = 0;
+    sCape->attachRightArmTimer = sCape->attachLeftArmTimer = 0.0f;
+}
+
+void BossGanon_Player_SetupHurt(BossGanon* this, PlayState* play) {
+    s16 i;
+
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    BossGanon_Player_CancelMagic(this);
+    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfDamageAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfDamageAnim, 0.0f);
+    this->actionFunc = BossGanon_Player_Hurt;
+    this->unk_1A6 = 15; // red flash
+
+    // A short burst of the yellow shock he gets when hit by his own light ball
+    for (i = 1; i < 15; i++) {
+        this->unk_4E4[i] = D_808E4C58[i];
+    }
+    this->unk_2E6 = 30;
+    this->unk_2E8 = 0;
+    this->unk_508 = 3.0f;
+
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE1);
+}
+
+void BossGanon_Player_Hurt(BossGanon* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+
+    if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+        BossGanon_Player_SetupFloat(this, play);
+    }
+}
+
+void BossGanon_Player_SetupDowned(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    BossGanon_Player_CancelMagic(this);
+    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfLightArrowHitAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfLightArrowHitAnim, 0.0f);
+    this->actionFunc = BossGanon_Player_Downed;
+    this->unk_1C2 = 0;
+    this->actor.velocity.y = 0.0f;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE2);
+}
+
+static s32 BossGanon_Player_IsLinkDead(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    return (gSaveContext.health <= 0) || (player->stateFlags1 & PLAYER_STATE1_DEAD);
+}
+
+// Falls to the floor when Link dies, gets back up if a fairy revives him
+void BossGanon_Player_Downed(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 floorY = this->playerFloorY;
+
+    SkelAnime_Update(&this->skelAnime);
+    sCape->minDist = 0.0f;
+
+    switch (this->unk_1C2) {
+        case 0:
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                this->unk_1C2 = 1;
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfDownedAnim);
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfDownedAnim, 0.0f);
+            }
+            break;
+
+        case 1:
+            this->actor.velocity.y -= 0.5f;
+            this->actor.world.pos.y += this->actor.velocity.y;
+
+            if (this->actor.world.pos.y < (floorY + 40.0f)) {
+                this->actor.world.pos.y = floorY + 40.0f;
+                this->actor.velocity.y = 0.0f;
+                this->unk_1C2 = 2;
+                this->unk_19F = 1;
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfLandAnim);
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfLandAnim, 0.0f);
+            }
+            break;
+
+        case 2:
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                this->unk_1C2 = 3;
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfVulnerableAnim);
+                Animation_MorphToLoop(&this->skelAnime, &gGanondorfVulnerableAnim, 0.0f);
+            }
+            break;
+
+        case 3:
+            this->actor.world.pos.y = floorY + 40.0f;
+
+            if (!BossGanon_Player_IsLinkDead(play)) {
+                this->unk_1C2 = 4;
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfGetUp3Anim);
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfGetUp3Anim, 0.0f);
+                SkelAnime_Update(&this->skelAnime);
+                sCape->attachShouldersTimer = 18.0f;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_RESTORE);
+            }
+            break;
+
+        case 4:
+            sCape->minDist = 20.0f;
+            Math_ApproachF(&this->actor.world.pos.y, player->actor.world.pos.y + BossGanon_Player_GetHoverHeight(),
+                           0.1f, 10.0f);
+
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                BossGanon_Player_SetupFloat(this, play);
+            }
+            break;
+    }
+}
+
+void BossGanon_Player_Update(Actor* thisx, PlayState* play) {
+    BossGanon* this = (BossGanon*)thisx;
+    Player* player = GET_PLAYER(play);
+    Input* input = &play->state.input[0];
+    f32 legRotX;
+    f32 legRotY;
+    f32 legRotZ;
+    f32 sin;
+    f32 cos;
+    f32 targetLensFlareScale;
+    f32 xOffset;
+    f32 zOffset;
+    Vec3f spE8;
+    s16 i;
+    u8 controlY;
+
+    if (sCape == NULL) {
+        Actor_Kill(thisx);
+        return;
+    }
+
+    sCape->gravity = -3.0f;
+    this->shockGlow = false;
+    this->unk_1A2++;
+    this->unk_1A4++;
+
+    // The floor under Link stands in for the arena floor
+    if (player->actor.floorHeight > (BGCHECK_Y_MIN + 1.0f)) {
+        this->playerFloorY = player->actor.floorHeight;
+    } else {
+        this->playerFloorY = player->actor.world.pos.y;
+    }
+    sCape->minY = this->playerFloorY + 2.0f;
+
+    this->playerHidden = BossGanon_Player_ShouldHide(this, play);
+    if (sCape->actor.update != NULL) {
+        sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
+    }
+
+    // Track how long the attack button is held (to charge Big Magic)
+    if (this->playerBtnHeld != 0) {
+        if (CHECK_BTN_ALL(input->cur.button, this->playerBtnHeld)) {
+            this->playerHeldTimer++;
+        } else {
+            this->playerBtnHeld = 0;
+        }
+    }
+
+    // React to Link getting hurt or dying
+    if (BossGanon_Player_IsLinkDead(play)) {
+        if (this->actionFunc != BossGanon_Player_Downed) {
+            BossGanon_Player_SetupDowned(this, play);
+        }
+    } else if ((player->invincibilityTimer > 0) && (this->playerPrevInvincibilityTimer <= 0) &&
+               (this->actionFunc != BossGanon_Player_Downed)) {
+        BossGanon_Player_SetupHurt(this, play);
+    }
+
+    this->actionFunc(this, play);
+
+    // After the action, so the block's own intangibility doesn't count as getting hurt
+    this->playerPrevInvincibilityTimer = player->invincibilityTimer;
+
+    controlY = (this->actionFunc != BossGanon_Player_Pound) && (this->actionFunc != BossGanon_Player_Downed);
+    BossGanon_Player_Follow(this, play, controlY);
+
+    if (BossGanon_Player_IsBusy(thisx)) {
+        Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 3, 0x1000);
+    } else if (this->actionFunc != BossGanon_Player_Downed) {
+        Math_ApproachS(&this->actor.shape.rot.y, player->actor.shape.rot.y, 2, 0x2000);
+    }
+    this->actor.world.rot.y = this->actor.shape.rot.y;
+
+    // Used for the leg sway
+    this->actor.velocity.x = this->actor.world.pos.x - this->actor.prevPos.x;
+    this->actor.velocity.z = this->actor.world.pos.z - this->actor.prevPos.z;
+    if (controlY) {
+        this->actor.velocity.y = this->actor.world.pos.y - this->actor.prevPos.y;
+    }
+
+    for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
+        if (this->timers[i] != 0) {
+            this->timers[i]--;
+        }
+    }
+
+    if (this->unk_1A6 != 0) {
+        this->unk_1A6--;
+    }
+
+    if (this->unk_2D4 != 0) {
+        this->unk_2D4--;
+    }
+
+    if (this->unk_2E8 != 0) {
+        this->unk_2E8--;
+    }
+
+    if (this->unk_2E6 != 0) {
+        this->unk_2E6--;
+    }
+
+    if (this->unk_19C != 0) {
+        this->unk_19C--;
+    }
+
+    // Leg sway, from BossGanon_Update
+    if (this->legSwayEnabled) {
+        f32 velX = CLAMP(this->actor.velocity.x, -6.0f, 6.0f);
+        f32 velZ = CLAMP(this->actor.velocity.z, -6.0f, 6.0f);
+
+        sin = Math_SinS(-this->actor.shape.rot.y);
+        cos = Math_CosS(-this->actor.shape.rot.y);
+
+        legRotX = ((velZ * sin) + (cos * velX)) * 300.0f;
+        legRotY = ((-sin * velX) + (cos * velZ)) * 300.0f;
+        legRotZ = (Math_SinS(this->unk_1A2 * 2268) * -500.0f) - 500.0f;
+    } else {
+        legRotY = legRotX = legRotZ = 0.0f;
+    }
+
+    this->legSwayEnabled = false;
+
+    Math_SmoothStepToF(&this->legRot.x, legRotX, 1.0f, 600.0f, 0.0f);
+    Math_SmoothStepToF(&this->legRot.y, legRotY, 1.0f, 600.0f, 0.0f);
+    Math_SmoothStepToF(&this->legRot.z, legRotZ, 1.0f, 100.0f, 0.0f);
+
+    // Electric shock on Ganondorf's body
+    if (this->unk_2E6 != 0) {
+        for (i = 1; i < ARRAY_COUNT(this->unk_49C); i++) {
+            if (this->unk_4E4[i] != 0) {
+                this->unk_4E4[i]--;
+                Math_ApproachF(&this->unk_49C[i], this->unk_508, 1.0f, 2.0f);
+            } else {
+                Math_ApproachZeroF(&this->unk_49C[i], 1.0f, 0.2f);
+            }
+        }
+    }
+
+    // Dust when landing
+    if (this->unk_19F != 0) {
+        this->unk_19F = 0;
+        spE8 = this->actor.world.pos;
+        spE8.y = this->playerFloorY;
+        BossGanonEff_SpawnDustDark(play, &spE8, 0.2, 0.7f);
+        BossGanonEff_SpawnDustDark(play, &spE8, 0.3f, 0.8f);
+    }
+
+    // Lightning while charging a light ball
+    if (this->unk_26C != 0) {
+        this->unk_26C--;
+
+        if (this->unk_26C == 0) {
+            BossGanonEff_SpawnLightning(play, 1.0f, 0.0f, 0.0f);
+        }
+
+        BossGanonEff_SpawnLightning(play, 1.0f, D_808E4D44[this->unk_26C] * (M_PI / 5) + this->unk_270,
+                                    Rand_CenteredFloat(M_PI / 5) + (M_PI / 2));
+    }
+
+    BossGanon_UpdateEffects(play);
+
+    // Lens flare, from BossGanon_Update
+    if (this->lensFlareTimer != 0) {
+        this->lensFlareTimer--;
+
+        if (this->lensFlareMode == 1) {
+            targetLensFlareScale = 40.0f;
+        } else if (this->lensFlareMode == 4) {
+            targetLensFlareScale = 25.0f;
+        } else {
+            targetLensFlareScale = 10.0f;
+        }
+
+        Math_ApproachF(&this->lensFlareScale, targetLensFlareScale, 0.3f, 10.0f);
+    } else {
+        Math_ApproachZeroF(&this->lensFlareScale, 1.0f, 5.0f);
+
+        if (this->lensFlareScale == 0.0f) {
+            this->lensFlareMode = 0;
+        }
+    }
+
+    if ((this->lensFlareMode != 0) && !this->playerHidden) {
+        gCustomLensFlareOn = true;
+        sPlayerLensFlareOn = true;
+
+        if (this->lensFlareMode == 1) {
+            gCustomLensFlarePos = this->actor.world.pos;
+        }
+
+        gLensFlareScale = this->lensFlareScale;
+        gLensFlareColorIntensity = 10.0f;
+        gLensFlareScreenFillAlpha = 0;
+    } else if (sPlayerLensFlareOn) {
+        gCustomLensFlareOn = false;
+        sPlayerLensFlareOn = false;
+    }
+
+    // Light balls that fly into the Big Magic charge
+    if (this->unk_274 != 0) {
+        i = this->unk_274 - 1;
+
+        this->unk_278.x = this->unk_2EC[0].x;
+        this->unk_278.y = this->unk_2EC[0].y + 50.0f + 30.0f;
+        this->unk_278.z = this->unk_2EC[0].z;
+
+        xOffset = (sinf(i * 1.2566371f) * 600.0f);
+        zOffset = (cosf(i * 1.2566371f) * 600.0f);
+
+        Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->unk_1FC.x + xOffset,
+                           this->unk_1FC.y, this->unk_1FC.z + zOffset, 0, (s16)(i * 13107.2f) + 0x6000, 0, 0xFA + i);
+        this->unk_274 = 0;
+    }
+}
+
+// Ganondorf's light ball, thrown by the player. Flies straight and bursts on enemies, walls and floors.
+void BossGanon_PlayerLightBall_Update(Actor* thisx, PlayState* play) {
+    BossGanon* this = (BossGanon*)thisx;
+    u8 burst = false;
+    s16 i;
+    Vec3f vel;
+    Vec3f accel;
+    Vec3f pos;
+
+    this->unk_1A2++;
+
+    if (this->unk_1A8 != 0) {
+        // Burst, from BossGanon_LightBall_Update
+        this->actor.shape.rot.y += 0x1000;
+        Math_ApproachZeroF(&this->fwork[GDF_FWORK_1], 1.0f, 30.0f);
+        Math_ApproachF(&this->actor.scale.x, 20.0f, 0.5f, 100.0f);
+        this->fwork[GDF_FWORK_0] += ((M_PI / 2) + Rand_ZeroFloat(M_PI / 4));
+        Actor_SetScale(&this->actor, this->actor.scale.x);
+
+        if (this->fwork[GDF_FWORK_1] == 0.0f) {
+            Actor_Kill(&this->actor);
+        }
+        return;
+    }
+
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_FIRE - SFX_FLAG);
+    Actor_SetScale(&this->actor, ((this->unk_1A2 % 2) != 0) ? 6.0f : 5.25f);
+    this->actor.shape.rot.z += (s16)(Rand_ZeroOne() * 20000.0f) + 0x4000;
+
+    for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
+        if (this->timers[i] != 0) {
+            this->timers[i]--;
+        }
+    }
+
+    Actor_UpdateVelocityXYZ(&this->actor);
+    Actor_UpdatePos(&this->actor);
+    Actor_UpdateBgCheckInfo(play, &this->actor, 10.0f, 12.0f, 12.0f, 1 | 2 | 4);
+
+    if (this->collider.base.atFlags & AT_HIT) {
+        this->collider.base.atFlags &= ~AT_HIT;
+        burst = true;
+    }
+    if (this->actor.bgCheckFlags & (BGCHECKFLAG_GROUND | BGCHECKFLAG_WALL | BGCHECKFLAG_CEILING)) {
+        burst = true;
+    }
+    if (this->timers[2] == 0) {
+        burst = true;
+    }
+
+    if (!burst) {
+        Collider_UpdateCylinder(&this->actor, &this->collider);
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+
+        for (i = 0; i < 2; i++) {
+            accel.x = accel.z = 0.0f;
+            accel.y = 0.2f;
+            vel.x = vel.y = vel.z = 0.0f;
+            pos.x = Rand_CenteredFloat(30.0f) + this->actor.world.pos.x;
+            pos.y = Rand_CenteredFloat(30.0f) + this->actor.world.pos.y;
+            pos.z = Rand_CenteredFloat(30.0f) + this->actor.world.pos.z;
+            BossGanonEff_SpawnSparkle(play, &pos, &vel, &accel, Rand_ZeroFloat(500.0f) + 700.0f, 0x1E);
+        }
+    } else {
+        SoundSource_PlaySfxAtFixedWorldPos(play, &this->actor.world.pos, 80, NA_SE_EN_GANON_HIT_THUNDER);
+
+        for (i = 0; i < 70; i++) {
+            vel.x = Rand_CenteredFloat(30.0f);
+            vel.y = Rand_CenteredFloat(30.0f);
+            vel.z = Rand_CenteredFloat(30.0f);
+            BossGanonEff_SpawnLightRay(play, &this->actor.world.pos, &vel, &sZeroVec, Rand_ZeroFloat(200.0f) + 500.0f,
+                                       15.0f, 0x1E);
+        }
+
+        this->actor.speedXZ = 0.0f;
+        this->unk_1A8 = 1;
+    }
+}
+
+// Ganondorf's Big Magic, thrown by the player. Five balls that spread out and home in on enemies.
+void BossGanon_PlayerBigMagic_Update(Actor* thisx, PlayState* play) {
+    BossGanon* this = (BossGanon*)thisx;
+    BossGanon* dorf = (BossGanon*)this->actor.parent;
+    u8 numEffects = 0;
+    s16 index = this->actor.params - GDF_PARAMS_PLAYER_BIG_MAGIC;
+    s16 i;
+    s16 yawTarget;
+    s16 pitchTarget;
+    f32 dist;
+    f32 wobble;
+    Actor* target;
+    Vec3f targetPos;
+    Vec3f sp60;
+
+    this->unk_1A2++;
+    Actor_SetScale(&this->actor, 0.01f);
+
+    for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
+        if (this->timers[i] != 0) {
+            this->timers[i]--;
+        }
+    }
+
+    Actor_UpdateVelocityXYZ(&this->actor);
+    Actor_UpdatePos(&this->actor);
+
+    this->unk_1A6++;
+
+    if (this->unk_1A6 >= 15) {
+        this->unk_1A6 = 0;
+    }
+
+    this->unk_2EC[this->unk_1A6] = this->actor.world.pos;
+    this->unk_3C4[this->unk_1A6].x = BINANG_TO_RAD(this->actor.world.rot.x);
+    this->unk_3C4[this->unk_1A6].y = BINANG_TO_RAD(this->actor.world.rot.y);
+
+    switch (this->unk_1C2) {
+        case 1:
+            Math_ApproachZeroF(&this->fwork[GDF_FWORK_1], 1.0f, 40.0f);
+
+            if (this->fwork[GDF_FWORK_1] == 0.0f) {
+                Actor_Kill(&this->actor);
+            }
+            break;
+
+        case 10:
+            this->unk_1C2 = 11;
+            this->timers[0] = 14;
+            this->actor.speedXZ = 20.0f;
+            this->fwork[GDF_FWORK_1] = 255.0f;
+            this->csCamMaxStepScale = 0.0f;
+            this->unk_1F0 = (dorf != NULL) ? dorf->playerAimPos : this->actor.world.pos;
+            // Fan out like the vanilla balls
+            this->actor.shape.rot.y = this->actor.world.rot.y + (index * 0x2000) - 0x4000;
+            this->actor.shape.rot.x = 0;
+            // fallthrough
+        case 11:
+            // Spread out for a moment, then home in
+            if (this->timers[0] < 8) {
+                target =
+                    BossGanon_Player_FindTarget(play, &this->actor.world.pos, this->actor.shape.rot.y, 600.0f, 0x6000);
+                targetPos = (target != NULL) ? target->focus.pos : this->unk_1F0;
+
+                yawTarget = Math_Vec3f_Yaw(&this->actor.world.pos, &targetPos);
+                dist = sqrtf(SQ(targetPos.x - this->actor.world.pos.x) + SQ(targetPos.z - this->actor.world.pos.z));
+                pitchTarget = Math_Atan2S(dist, targetPos.y - this->actor.world.pos.y);
+
+                Math_ApproachS(&this->actor.shape.rot.y, yawTarget, 1, this->csCamMaxStepScale);
+                Math_ApproachS(&this->actor.shape.rot.x, pitchTarget, 1, this->csCamMaxStepScale);
+                Math_ApproachF(&this->csCamMaxStepScale, 2048.0f, 1.0f, 128.0f);
+
+                wobble = CLAMP(dist * 10.0f, 0.0f, 6144.0f);
+            } else {
+                wobble = 6144.0f;
+            }
+
+            this->actor.world.rot.x = (Math_CosS(this->unk_1A2 * 0x3400) * wobble * 0.1f) + this->actor.shape.rot.x;
+            this->actor.world.rot.y = (Math_SinS(this->unk_1A2 * 0x1A00) * wobble * 0.3f) + this->actor.shape.rot.y;
+
+            Actor_UpdateBgCheckInfo(play, &this->actor, 10.0f, 10.0f, 10.0f, 1 | 2 | 4);
+
+            if (this->collider.base.atFlags & AT_HIT) {
+                this->collider.base.atFlags &= ~AT_HIT;
+                numEffects = 40;
+            } else if ((this->actor.bgCheckFlags & (BGCHECKFLAG_GROUND | BGCHECKFLAG_WALL | BGCHECKFLAG_CEILING)) ||
+                       (this->timers[2] == 0)) {
+                numEffects = 10;
+            }
+
+            if (numEffects != 0) {
+                this->unk_1C2 = 1;
+                this->actor.speedXZ = 0.0f;
+            } else {
+                Collider_UpdateCylinder(&this->actor, &this->collider);
+                CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+            }
+            break;
+    }
+
+    if (numEffects) {
+        SoundSource_PlaySfxAtFixedWorldPos(play, &this->actor.world.pos, 80, NA_SE_EN_FANTOM_THUNDER);
+
+        for (i = 0; i < numEffects; i++) {
+            sp60.x = Rand_CenteredFloat(30.0f);
+            sp60.y = Rand_CenteredFloat(30.0f);
+            sp60.z = Rand_CenteredFloat(30.0f);
+
+            BossGanonEff_SpawnLightRay(play, &this->actor.world.pos, &sp60, &sZeroVec, Rand_ZeroFloat(200.0f) + 500.0f,
+                                       15.0f, 0x1E);
+        }
+    }
 }
 
 #include "overlays/ovl_Boss_Ganon/ovl_Boss_Ganon.h"

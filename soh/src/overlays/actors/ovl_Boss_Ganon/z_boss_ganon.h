@@ -8,6 +8,18 @@ struct BossGanon;
 
 typedef void (*BossGanonActionFunc)(struct BossGanon*, PlayState*);
 
+// SoH: "Play as Ganondorf". These params spawn Ganondorf and his projectiles in player-controlled mode.
+// Vanilla uses 0/1 for Ganondorf himself and 0x64-0x190 for his projectiles.
+#define GDF_PARAMS_PLAYER 0x10
+#define GDF_PARAMS_PLAYER_LIGHT_BALL 0x1F4
+#define GDF_PARAMS_PLAYER_BIG_MAGIC 0x1F5 // 0x1F5 - 0x1F9, one per ball
+#define GDF_PLAYER_BIG_MAGIC_COUNT 5
+
+// Ganondorf's attacks carry every damage type in the game, so they break rocks and walls, hit switches and hurt
+// anything Link could hurt with any weapon. Only "blocked by a shield" is left out: enemies treat that one as a
+// harmless shield push. Which damage-table entry is used is decided in CollisionCheck_ApplyDamage.
+#define DMG_GANONDORF_PLAYER ((u32)~DMG_SHIELD)
+
 typedef enum {
     /*  0 */ GDF_FWORK_0,
     /*  1 */ GDF_FWORK_1,
@@ -161,6 +173,18 @@ typedef struct BossGanon {
     /* 0x0718 */ s16 organAlpha;
     /* 0x071A */ u8 useOpenHand;
     /* 0x071B */ u8 windowShatterState;
-} BossGanon; // size = 0x71C
+    // SoH: player-controlled Ganondorf
+    u8 playerHidden;     // not drawn this frame (first person, cutscene showing Link, ...)
+    u16 playerBtnHeld;   // button that started the current attack, while it is still held
+    s16 playerHeldTimer; // how long it has been held
+    s16 playerPrevInvincibilityTimer;
+    Vec3f playerAimPos; // where attacks are thrown at
+    f32 playerFloorY;   // floor below Link, replaces the arena floor (y = 0)
+} BossGanon;
+
+// SoH: "Play as Ganondorf"
+s32 BossGanon_Player_IsBusy(Actor* thisx);
+s32 BossGanon_Player_IsHidden(Actor* thisx);
+s32 BossGanon_IsPlayerAttack(Actor* actor);
 
 #endif

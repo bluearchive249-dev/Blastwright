@@ -25,6 +25,7 @@
 #include "soh/Enhancements/item-tables/ItemTableTypes.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "soh/Enhancements/Items/BeamosBlaster.h"
 #include "soh/Enhancements/randomizer/randomizer_entrance.h"
 #include "soh/Enhancements/randomizer/randomizer_grotto.h"
@@ -12311,6 +12312,8 @@ void Player_Update(Actor* thisx, PlayState* play) {
                 input.cur.button &= ~(BTN_A | BTN_B | BTN_CUP);
                 input.press.button &= ~(BTN_A | BTN_B | BTN_CUP);
             }
+            // SoH: Play as Ganondorf, his attacks replace Link's moveset
+            PlayAsGanondorf_FilterInput(play, this, &input);
         }
 
         if (CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f) != 1.0f &&
@@ -12534,7 +12537,12 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
 
     OPEN_DISPS(play->state.gfxCtx);
 
-    if (!(this->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW)) {
+    // SoH: Play as Ganondorf, Link is invisible while Ganondorf is shown (items he holds up are still drawn)
+    if (PlayAsGanondorf_ShouldHideLink(play, this)) {
+        if (this->unk_862 > 0) {
+            Player_DrawGetItem(play, this);
+        }
+    } else if (!(this->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW)) {
         OverrideLimbDrawOpa overrideLimbDraw = Player_OverrideLimbDrawGameplayDefault;
         s32 lod;
         s32 pad;
