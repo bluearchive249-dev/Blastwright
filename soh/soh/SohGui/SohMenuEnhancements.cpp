@@ -2151,6 +2151,14 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Link's voice clips (idling, getting hurt, ...) use Ganondorf's voice instead."));
+    AddWidget(path, "Ganondorf Walks on the Ground", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.WalkOnGround"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "On the ground Ganondorf stands, walks and runs. He only floats in his boss pose while levitating (L).\n"
+            "Off: he always floats, like in his boss fight."));
     AddWidget(path, "Ganondorf Run Speed: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.RunSpeed"))
         .PreFunc([](WidgetInfo& info) {

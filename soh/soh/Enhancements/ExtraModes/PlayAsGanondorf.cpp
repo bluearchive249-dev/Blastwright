@@ -48,6 +48,10 @@ extern PlayState* gPlayState;
 #define GDF_HEAD_ABOVE_ROOT 80.0f
 // ...and his eyes a bit below the top of his head
 #define GDF_EYES_ABOVE_ROOT 70.0f
+// Standing on the ground (not levitating): his head and eyes above his feet, and the height the camera frames
+#define GDF_STANDING_EYE_HEIGHT 92.0f
+#define GDF_STANDING_CAMERA_HEIGHT 120.0f
+
 // Levitation climb/sink speed, world units per frame
 #define GDF_LEVITATE_VERTICAL_SPEED 6.0f
 
@@ -65,6 +69,10 @@ static bool sLevitating = false;
 static bool sSoftLanding = false; // let go of the levitation: no fall damage until Link lands
 static f32 sLevitateY = 0.0f;
 static f32 sLevitateSpeed = 0.0f;
+
+static bool IsStandingOnGround() {
+    return CVarGetInteger(CVAR_PLAY_AS_GDF("WalkOnGround"), 1) && !sLevitating;
+}
 
 static bool IsEnabled() {
     return CVarGetInteger(CVAR_PLAY_AS_GDF_ENABLED, 0) != 0;
@@ -120,6 +128,10 @@ static bool IsGanonAllowedHere(PlayState* play) {
         return true;
     }
     return (scene >= SCENE_HYRULE_FIELD) && (scene <= SCENE_OUTSIDE_GANONS_CASTLE);
+}
+
+extern "C" s32 PlayAsGanondorf_IsLevitating(void) {
+    return sLevitating;
 }
 
 extern "C" s32 PlayAsGanondorf_IsGanonOut(PlayState* play) {
@@ -543,7 +555,9 @@ extern "C" s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye) {
     }
     // Link's feet + Ganondorf's hover height + his eyes above his root. Levitating lifts Link too.
     eye->x = player->actor.world.pos.x;
-    eye->y = player->actor.world.pos.y + CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_EYES_ABOVE_ROOT;
+    eye->y = player->actor.world.pos.y + (IsStandingOnGround()
+                                              ? GDF_STANDING_EYE_HEIGHT
+                                              : CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_EYES_ABOVE_ROOT);
     eye->z = player->actor.world.pos.z;
 
     // Ganon's eyes are a bit below the top of his head
@@ -564,7 +578,10 @@ extern "C" f32 PlayAsGanondorf_GetCameraHeight(Player* player) {
         bool outdoors = (gPlayState->skyboxId == SKYBOX_NORMAL_SKY) && !gPlayState->envCtx.skyboxDisabled;
         f32 distance = outdoors ? CVarGetFloat(CVAR_PLAY_AS_GDF("CameraDistanceOutdoors"), 0.75f)
                                 : CVarGetFloat(CVAR_PLAY_AS_GDF("CameraDistance"), 1.0f);
-        f32 ganondorfHeight = (CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_HEAD_ABOVE_ROOT) * distance;
+        f32 ganondorfHeight = (IsStandingOnGround()
+                                   ? GDF_STANDING_CAMERA_HEIGHT
+                                   : CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_HEAD_ABOVE_ROOT) *
+                              distance;
 
         // Ganon has his own distance
         BossGanon2* ganon = FindPlayerGanon(gPlayState);

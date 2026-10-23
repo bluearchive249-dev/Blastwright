@@ -8,6 +8,7 @@
 #include "assets/objects/object_ganon/object_ganon.h"
 #include "assets/objects/object_ganon_anime1/object_ganon_anime1.h"
 #include "assets/objects/object_ganon_anime2/object_ganon_anime2.h"
+#include "assets/objects/object_gndd/object_gndd.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
@@ -5456,6 +5457,186 @@ static f32 BossGanon_Player_GetHoverHeight(void) {
     return CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f);
 }
 
+// Where Ganondorf's root sits above Link's feet: on the ground he stands and walks, levitating he floats
+static f32 BossGanon_Player_GetHeightAboveLink(BossGanon* this) {
+    if (this->playerGrounded) {
+        return this->playerGroundOffset;
+    }
+    return BossGanon_Player_GetHoverHeight() + (Math_SinS(this->unk_1A2 * 1500) * 3.0f);
+}
+
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf", walking on the ground
+//
+// His boss model has no walk, so the walk of young Ganondorf (object_gndd, the cutscene model) is retargeted onto it
+// at runtime, from the game's own files. The two skeletons match limb for limb except that the boss model has an
+// extra shoulder joint on each arm; the upper arms are corrected for it, so the arms swing the same way. Faster
+// than his natural pace the cycle speeds up and the stride widens, into a run.
+// ------------------------------------------------------------------------------------------------
+
+// z_skelanime.c
+void SkelAnime_GetFrameData(AnimationHeader* animation, s32 frame, s32 limbCount, Vec3s* frameTable);
+
+#define GDF_LIMB_COUNT_PLAYER 25 // gGanondorfSkel
+#define GDF_YOUNG_WALK_JOINTS 24 // 23 limbs + the root translation
+#define GDF_WALK_CYCLE_FRAMES 30.0f
+#define GDF_WALK_NATURAL_SPEED 2.3f // world units per frame at the animation's own pace
+#define GDF_WALK_MAX_RATE 2.5f
+#define GDF_WALK_MAX_STRIDE 1.6f
+#define GDF_ANKLE_HEIGHT 9.9f // his ankles above the floor when standing
+#define GDF_LEFT_FOOT_BODYPART 14
+#define GDF_RIGHT_FOOT_BODYPART 11
+
+// Boss limb -> young Ganondorf limb (-1: keep the boss animation's own rotation)
+static const s8 sGdfBossToYoungLimb[GDF_LIMB_COUNT_PLAYER] = {
+    0,  1,  -1, 2,  3,  4,  -1, 5,  6,  7,  // root, torso, left arm (shoulder, upper, fore, hand), right arm
+    8,  9,  10, 11, -1, -1, 12, 14,         // jewel, lips, mouth, jaw, hair, lip, head
+    15, 16, 17, 18, 20, 21, 22,             // pelvis, legs
+};
+
+static void BossGanon_Player_RotToMtx(Vec3s* rot, f32 m[3][3]) {
+    f32 sx = sinf((f32)BINANG_TO_RAD(rot->x));
+    f32 cx = cosf((f32)BINANG_TO_RAD(rot->x));
+    f32 sy = sinf((f32)BINANG_TO_RAD(rot->y));
+    f32 cy = cosf((f32)BINANG_TO_RAD(rot->y));
+    f32 sz = sinf((f32)BINANG_TO_RAD(rot->z));
+    f32 cz = cosf((f32)BINANG_TO_RAD(rot->z));
+
+    // Rz * Ry * Rx, the order Matrix_TranslateRotateZYX applies them in
+    m[0][0] = cz * cy;
+    m[0][1] = (cz * sy * sx) - (sz * cx);
+    m[0][2] = (cz * sy * cx) + (sz * sx);
+    m[1][0] = sz * cy;
+    m[1][1] = (sz * sy * sx) + (cz * cx);
+    m[1][2] = (sz * sy * cx) - (cz * sx);
+    m[2][0] = -sy;
+    m[2][1] = cy * sx;
+    m[2][2] = cy * cx;
+}
+
+static void BossGanon_Player_MtxToRot(f32 m[3][3], Vec3s* rot) {
+    f32 sy = CLAMP(-m[2][0], -1.0f, 1.0f);
+
+    rot->x = RADF_TO_BINANG(atan2f(m[2][1], m[2][2]));
+    rot->y = RADF_TO_BINANG(asinf(sy));
+    rot->z = RADF_TO_BINANG(atan2f(m[1][0], m[0][0]));
+}
+
+static s16 BossGanon_Player_ScaleAngle(s16 base, s16 target, f32 scale) {
+    s16 diff = target - base;
+
+    return (s16)(base + (s16)(diff * scale));
+}
+
+// Blends the walk over the current (standing) pose in jointTable
+static void BossGanon_Player_ApplyWalk(BossGanon* this) {
+    static Vec3s sYoungA[GDF_YOUNG_WALK_JOINTS];
+    static Vec3s sYoungB[GDF_YOUNG_WALK_JOINTS];
+    static Vec3s sYoung[GDF_YOUNG_WALK_JOINTS];
+    static Vec3s sYoungRest;
+    static u8 sYoungRestRead = false;
+    Vec3s walk[GDF_LIMB_COUNT_PLAYER + 1];
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 speed = this->playerWalkWeight;
+    s32 frameA = (s32)this->playerWalkFrame;
+    s32 frameB = (frameA + 1) % (s32)GDF_WALK_CYCLE_FRAMES;
+    f32 frac = this->playerWalkFrame - frameA;
+    f32 stride;
+    f32 shoulder[3][3];
+    f32 arm[3][3];
+    f32 corrected[3][3];
+    s32 b;
+    s32 i;
+    s32 j;
+    s32 k;
+
+    if (this->playerWalkWeight <= 0.0f) {
+        return;
+    }
+
+    SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, frameA, GDF_YOUNG_WALK_JOINTS, sYoungA);
+    SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, frameB, GDF_YOUNG_WALK_JOINTS, sYoungB);
+    SkelAnime_InterpFrameTable(GDF_YOUNG_WALK_JOINTS, sYoung, sYoungA, sYoungB, frac);
+    if (!sYoungRestRead) {
+        SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, 0, GDF_YOUNG_WALK_JOINTS, sYoungA);
+        sYoungRest = sYoungA[0];
+        sYoungRestRead = true;
+    }
+
+    stride = CLAMP(this->playerWalkStride, 1.0f, GDF_WALK_MAX_STRIDE);
+
+    for (b = 0; b < GDF_LIMB_COUNT_PLAYER; b++) {
+        s8 y = sGdfBossToYoungLimb[b];
+
+        walk[1 + b] = (y >= 0) ? sYoung[1 + y] : joints[1 + b];
+    }
+
+    // The boss model's shoulders: rotate the upper arms so the arms hang and swing like young Ganondorf's
+    for (k = 0; k < 2; k++) {
+        s32 shoulderLimb = (k == 0) ? 2 : 6;
+        s32 armLimb = shoulderLimb + 1;
+
+        BossGanon_Player_RotToMtx(&joints[1 + shoulderLimb], shoulder);
+        BossGanon_Player_RotToMtx(&sYoung[1 + sGdfBossToYoungLimb[armLimb]], arm);
+        for (i = 0; i < 3; i++) {
+            for (j = 0; j < 3; j++) {
+                corrected[i][j] = (shoulder[0][i] * arm[0][j]) + (shoulder[1][i] * arm[1][j]) +
+                                  (shoulder[2][i] * arm[2][j]);
+            }
+        }
+        BossGanon_Player_MtxToRot(corrected, &walk[1 + armLimb]);
+    }
+
+    // Wider stride when running
+    for (b = 1; b <= GDF_LIMB_COUNT_PLAYER; b++) {
+        walk[b].x = BossGanon_Player_ScaleAngle(joints[b].x, walk[b].x, stride);
+        walk[b].y = BossGanon_Player_ScaleAngle(joints[b].y, walk[b].y, stride);
+        walk[b].z = BossGanon_Player_ScaleAngle(joints[b].z, walk[b].z, stride);
+    }
+
+    // His own standing height, with the walk's bob
+    walk[0] = joints[0];
+    walk[0].y += (s16)((sYoung[0].y - sYoungRest.y) * stride);
+
+    SkelAnime_InterpFrameTable(GDF_LIMB_COUNT_PLAYER + 1, joints, joints, walk, speed);
+}
+
+// Standing and walking, while not levitating: the walk cycle follows Link's speed
+static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 speed = fabsf(player->linearVelocity);
+    f32 rate;
+    u8 moving = (speed > 0.5f) && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
+
+    Math_ApproachF(&this->playerWalkWeight, moving ? 1.0f : 0.0f, 1.0f, 0.15f);
+
+    rate = CLAMP(speed / GDF_WALK_NATURAL_SPEED, 0.5f, GDF_WALK_MAX_RATE);
+    this->playerWalkStride = speed / (GDF_WALK_NATURAL_SPEED * GDF_WALK_MAX_RATE);
+    if (moving || (this->playerWalkWeight > 0.0f)) {
+        this->playerWalkFrame += rate;
+        while (this->playerWalkFrame >= GDF_WALK_CYCLE_FRAMES) {
+            this->playerWalkFrame -= GDF_WALK_CYCLE_FRAMES;
+        }
+    }
+
+    BossGanon_Player_ApplyWalk(this);
+}
+
+// Keeps his lowest ankle at the floor (from the last draw), so any animation stands on the ground
+static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 lowestAnkle = MIN(this->unk_2EC[GDF_LEFT_FOOT_BODYPART].y, this->unk_2EC[GDF_RIGHT_FOOT_BODYPART].y);
+    f32 ankleAboveRoot = lowestAnkle - this->actor.world.pos.y;
+    f32 target = GDF_ANKLE_HEIGHT - ankleAboveRoot + (this->playerFloorY - player->actor.world.pos.y);
+
+    if (this->playerHidden || (ankleAboveRoot < -300.0f) || (ankleAboveRoot > 100.0f)) {
+        return; // not drawn (stale), or not a sensible pose
+    }
+
+    target = CLAMP(target, -20.0f, BossGanon_Player_GetHoverHeight() + 60.0f);
+    Math_ApproachF(&this->playerGroundOffset, target, 0.5f, 6.0f);
+}
+
 // Rotation that points from `from` to `to`, using the same convention as the vanilla light ball
 static void BossGanon_Player_AimRot(Vec3f* from, Vec3f* to, s16* rotX, s16* rotY) {
     f32 dx = to->x - from->x;
@@ -5565,7 +5746,7 @@ static void BossGanon_Player_SnapToLink(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
     this->actor.world.pos = player->actor.world.pos;
-    this->actor.world.pos.y += BossGanon_Player_GetHoverHeight();
+    this->actor.world.pos.y += BossGanon_Player_GetHeightAboveLink(this);
     this->actor.prevPos = this->actor.world.pos;
     this->actor.shape.rot.y = this->actor.world.rot.y = player->actor.shape.rot.y;
 }
@@ -5578,7 +5759,7 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
     f32 dz;
 
     target.x = player->actor.world.pos.x;
-    target.y = player->actor.world.pos.y + BossGanon_Player_GetHoverHeight() + (Math_SinS(this->unk_1A2 * 1500) * 3.0f);
+    target.y = player->actor.world.pos.y + BossGanon_Player_GetHeightAboveLink(this);
     target.z = player->actor.world.pos.z;
 
     dx = target.x - this->actor.world.pos.x;
@@ -5784,8 +5965,14 @@ void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play) {
 }
 
 void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play) {
-    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
-    Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -10.0f);
+    if (this->playerGrounded) {
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -10.0f);
+    } else {
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -10.0f);
+    }
+    this->playerStandAnim = this->playerGrounded; // which of the two is playing
     this->actionFunc = BossGanon_Player_Float;
     this->unk_1C2 = 0;
     this->playerBtnHeld = 0;
@@ -5793,6 +5980,25 @@ void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play) {
 
 void BossGanon_Player_Float(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
+
+    // Landed, or started levitating: stand or float
+    if (this->playerStandAnim != this->playerGrounded) {
+        BossGanon_Player_SetupFloat(this, play);
+    }
+
+    if (this->playerGrounded) {
+        sCape->backPush = -2.0f;
+        sCape->backSwayMagnitude = 0.25f;
+        sCape->sideSwayMagnitude = -1.0f;
+        sCape->minDist = 0.0f;
+
+        SkelAnime_Update(&this->skelAnime);
+        BossGanon_Player_UpdateWalk(this, play);
+        Math_ApproachZeroF(&this->handLightBallScale, 1.0f, 1.0f);
+        BossGanon_Player_ReadButtons(this, play);
+        return;
+    }
+    this->playerWalkWeight = 0.0f;
 
     this->legSwayEnabled = true;
 
@@ -6518,8 +6724,8 @@ void BossGanon_Player_Downed(BossGanon* this, PlayState* play) {
 
         case 4:
             sCape->minDist = 20.0f;
-            Math_ApproachF(&this->actor.world.pos.y, player->actor.world.pos.y + BossGanon_Player_GetHoverHeight(),
-                           0.1f, 10.0f);
+            Math_ApproachF(&this->actor.world.pos.y,
+                           player->actor.world.pos.y + BossGanon_Player_GetHeightAboveLink(this), 0.1f, 10.0f);
 
             if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
                 BossGanon_Player_SetupFloat(this, play);
@@ -6572,6 +6778,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
+    // On the ground he stands and walks; he only floats while levitating
+    this->playerGrounded = CVarGetInteger(CVAR_PLAY_AS_GDF("WalkOnGround"), 1) && !PlayAsGanondorf_IsLevitating();
+
     this->playerHidden = BossGanon_Player_ShouldHide(this, play);
     if (sCape->actor.update != NULL) {
         sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
@@ -6619,6 +6828,10 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
     // After the action, so the block's own intangibility doesn't count as getting hurt
     this->playerPrevInvincibilityTimer = player->invincibilityTimer;
+
+    if (this->playerGrounded) {
+        BossGanon_Player_UpdateGroundOffset(this, play);
+    }
 
     controlY = (this->actionFunc != BossGanon_Player_Pound) && (this->actionFunc != BossGanon_Player_Downed) &&
                (this->actionFunc != BossGanon_Player_Organ);

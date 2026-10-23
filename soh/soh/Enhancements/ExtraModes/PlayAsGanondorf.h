@@ -31,6 +31,9 @@ f32 PlayAsGanondorf_GetCameraHeight(Player* player);
 // First-person look (C-Up): fills in Ganondorf's eye position and returns true, so the camera looks from there
 s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye);
 
+// L/Z levitation is active (Ganondorf floats; otherwise he stands and walks on the ground)
+s32 PlayAsGanondorf_IsLevitating(void);
+
 // Ganon (the D-Pad Right transformation) is out instead of Ganondorf
 s32 PlayAsGanondorf_IsGanonOut(PlayState* play);
 

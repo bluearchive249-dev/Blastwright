@@ -3356,7 +3356,10 @@ static void BossGanon2_Player_Init(BossGanon2* this, PlayState* play) {
         this->unk_194 = Animation_GetLastFrame(&gGanondorfTransformStartAnim);
         this->unk_337 = 0;
         this->unk_224 = 0.0f;
-        thisx->world.pos.y += CVarGetFloat(CVAR_ENHANCEMENT("PlayAsGanondorf.HoverHeight"), 70.0f);
+        // Floating Ganondorf starts where he was; standing he rises into the air as he transforms
+        if (PlayAsGanondorf_IsLevitating() || !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.WalkOnGround"), 1)) {
+            thisx->world.pos.y += CVarGetFloat(CVAR_ENHANCEMENT("PlayAsGanondorf.HoverHeight"), 70.0f);
+        }
         this->actionFunc = BossGanon2_Player_Transform;
         this->playerTimer = 0;
         Audio_PlayActorSound2(thisx, NA_SE_EN_GANON_CASBREAK);

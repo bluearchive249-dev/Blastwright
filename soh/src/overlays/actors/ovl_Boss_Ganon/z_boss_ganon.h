@@ -186,6 +186,12 @@ typedef struct BossGanon {
     u8 playerOrganMusic;  // Ganondorf's Theme is playing and the area music has to come back afterwards
     u16 playerPrevBgm;    // the area music to bring back
     s16 playerShieldPitch; // tilt of the cape shield, from the stick while blocking
+    u8 playerGrounded;       // standing/walking on the ground instead of floating (not levitating)
+    f32 playerGroundOffset;  // keeps his feet on the floor whatever the animation
+    f32 playerWalkFrame;     // phase of the walk cycle
+    f32 playerWalkWeight;    // 0 standing .. 1 walking
+    f32 playerWalkStride;    // wider than the walk animation when running
+    u8 playerStandAnim;      // the standing (not floating) idle is playing
 } BossGanon;
 
 // SoH: "Play as Ganondorf"
