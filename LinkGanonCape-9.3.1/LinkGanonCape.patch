@@ -1,7 +1,7 @@
 From 4938a666ba0eb3bc4b3aafe6ac1a9a2746b0967a Mon Sep 17 00:00:00 2001
 From: Link Ganon Cape <infectiousmetal@live.se>
 Date: Fri, 23 Oct 2026 02:23:16 +0200
-Subject: [PATCH] Add Ganondorf's Cape for Link enhancement
+Subject: [PATCH 1/2] Add Ganondorf's Cape for Link enhancement
 
 Spawns Ganondorf's cloth-physics cape (EnGanonMant) on Link, attached to his
 shoulders and scaled to his size. Toggle and tuning under
@@ -565,6 +565,471 @@ index ac169433b..072cf73d2 100644
 +} EnGanonMant;
  
  #endif
+-- 
+2.43.0
+
+
+From 215a2ca2cc85e3d9c374d584bd7804598bdb02f3 Mon Sep 17 00:00:00 2001
+From: Link Ganon Cape <infectiousmetal@live.se>
+Date: Fri, 23 Oct 2026 03:17:31 +0200
+Subject: [PATCH 2/2] Add a hood to Ganondorf's Cape for Link
+
+A rigid hood made from the cape's material, drawn with the cape's own gMantDL
+so it shares its texture and lighting. Its bottom row is the cape's strand
+roots, so hood and cape share an edge. The head shell is baked from the
+vanilla adult/child head meshes. While it's on, the cap's tail is hidden and
+the cap dome in the head mesh is tinted with the hair color.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01C7zQACRLFXxFtRaUPWxEdD
+---
+ .../Enhancements/Graphics/LinkGanonCape.cpp   | 287 +++++++++++++++++-
+ soh/soh/Enhancements/Graphics/LinkGanonCape.h |  11 +
+ soh/soh/SohGui/SohMenuEnhancements.cpp        |  21 ++
+ soh/src/code/z_player_lib.c                   |   7 +
+ .../ovl_En_Ganon_Mant/z_en_ganon_mant.c       |  10 +
+ 5 files changed, 334 insertions(+), 2 deletions(-)
+
+diff --git a/soh/soh/Enhancements/Graphics/LinkGanonCape.cpp b/soh/soh/Enhancements/Graphics/LinkGanonCape.cpp
+index 1787b8ea6..e334cd48a 100644
+--- a/soh/soh/Enhancements/Graphics/LinkGanonCape.cpp
++++ b/soh/soh/Enhancements/Graphics/LinkGanonCape.cpp
+@@ -10,6 +10,18 @@
+ //  - Ganondorf's own cape values are scaled to Link's size by (jointLength / 9.5).
+ //  - The cape uses static textures and vertex buffers, so only one can exist. Link's cape is
+ //    removed while Ganondorf (ACTOR_BOSS_GANON) is loaded.
++//
++// Hood (optional, no physics):
++//  - A 12x12 grid built every frame around Link's head and drawn with the cape's own gMantDL, so it
++//    has the exact same material, texture and lighting. The grid's columns line up with the cape's
++//    12 strands and its bottom row *is* the cape's top row (the strand roots), so there is no gap.
++//  - The top 9 rows are a rigid shell in head space, the last 3 rows drape from the bottom of the
++//    shell down to the cape's collar.
++//  - The shell is a baked table (sHoodShell). It was shrink-wrapped around the vanilla adult and
++//    child head meshes with a margin, so the cap dome and ears sit inside it and the bangs stick out
++//    under the brim. A ray test found no head vertex outside it.
++//  - The cap's tail (PLAYER_LIMB_HAT) is hidden while the hood is on, and the cap dome, which is
++//    part of the head mesh and tinted by the tunic color, is tinted with the hair color instead.
+ 
+ #include <libultraship/bridge/consolevariablebridge.h>
+ 
+@@ -38,7 +50,10 @@ extern PlayState* gPlayState;
+ static Vec3f sZeroVec = { 0.0f, 0.0f, 0.0f };
+ static Vec3f sLeftShoulder;
+ static Vec3f sRightShoulder;
+-static u8 sRecordedLimbs = 0; // bit 0 = left shoulder, bit 1 = right shoulder
++static MtxF sHeadMtx;
++static u8 sRecordedLimbs = 0;    // bit 0 = left shoulder, bit 1 = right shoulder, bit 2 = head
++static bool sHeadValid = false;  // head matrix is from the frame currently being drawn
++static bool sCapeActive = false; // Link's cape exists this frame (used to hide his cap's tail)
+ 
+ static bool ShouldWearCape() {
+     if (!CVarGetInteger(CVAR_CAPE_ENABLED, 0)) {
+@@ -62,6 +77,58 @@ extern "C" void LinkGanonCape_RecordLimb(PlayState* play, Player* player, int li
+     } else if (limbIndex == PLAYER_LIMB_R_SHOULDER) {
+         Matrix_MultVec3f(&sZeroVec, &sRightShoulder);
+         sRecordedLimbs |= 2;
++    } else if (limbIndex == PLAYER_LIMB_HEAD) {
++        Matrix_Get(&sHeadMtx);
++        sRecordedLimbs |= 4;
++    }
++}
++
++static bool HoodEnabled() {
++    return CVarGetInteger(CVAR_CAPE("Hood"), 1) != 0;
++}
++
++static Color_RGB8 sTunicColor;
++static bool sTunicColorValid = false;
++static bool sHeadTinted = false;
++
++extern "C" void LinkGanonCape_SetTunicColor(int valid, unsigned char r, unsigned char g, unsigned char b) {
++    sTunicColorValid = valid;
++    sTunicColor.r = r;
++    sTunicColor.g = g;
++    sTunicColor.b = b;
++}
++
++extern "C" void LinkGanonCape_OverrideLimb(PlayState* play, Player* player, int limbIndex, void** dList) {
++    if (play == NULL || player != GET_PLAYER(play) || !sCapeActive || !HoodEnabled() || !ShouldWearCape()) {
++        sHeadTinted = false;
++        return;
++    }
++
++    if (limbIndex == PLAYER_LIMB_HEAD) {
++        // The cap dome is part of the head mesh and takes its color from the environment color (the tunic
++        // color). Use the hair color while the head is drawn so only "hair" shows under the hood.
++        if (sTunicColorValid) {
++            Color_RGB8 hair = { 255, 173, 27 }; // SoH's default hair cosmetic color
++            if (CVarGetInteger(CVAR_COSMETIC("Link.Hair.Changed"), 0)) {
++                hair = CVarGetColor24(CVAR_COSMETIC("Link.Hair.Value"), hair);
++            }
++
++            OPEN_DISPS(play->state.gfxCtx);
++            gDPSetEnvColor(POLY_OPA_DISP++, hair.r, hair.g, hair.b, 0);
++            CLOSE_DISPS(play->state.gfxCtx);
++            sHeadTinted = true;
++        }
++    } else if (limbIndex == PLAYER_LIMB_HAT) {
++        // The tail of the cap. The hat is drawn right after the head, so this is also where the tunic color
++        // goes back for the rest of Link's body.
++        *dList = NULL;
++
++        if (sHeadTinted) {
++            OPEN_DISPS(play->state.gfxCtx);
++            gDPSetEnvColor(POLY_OPA_DISP++, sTunicColor.r, sTunicColor.g, sTunicColor.b, 0);
++            CLOSE_DISPS(play->state.gfxCtx);
++            sHeadTinted = false;
++        }
+     }
+ }
+ 
+@@ -71,6 +138,7 @@ extern "C" int LinkGanonCape_PrepareDraw(EnGanonMant* cape, PlayState* play) {
+ 
+     // Consume this frame's shoulder positions
+     sRecordedLimbs = 0;
++    sHeadValid = (recorded & 4) != 0;
+ 
+     if (!ShouldWearCape()) {
+         Actor_Kill(&cape->actor);
+@@ -78,7 +146,7 @@ extern "C" int LinkGanonCape_PrepareDraw(EnGanonMant* cape, PlayState* play) {
+     }
+ 
+     // Hide when Link wasn't drawn this frame, or the camera is inside his head (first person)
+-    if (recorded != 3 || (player->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW) || player->unk_6AD == 1 ||
++    if ((recorded & 3) != 3 || (player->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW) || player->unk_6AD == 1 ||
+         player->unk_6AD == 2) {
+         cape->needsReset = true;
+         return false;
+@@ -196,6 +264,7 @@ static void LinkGanonCape_OnPlayerUpdate() {
+     }
+ 
+     EnGanonMant* cape = FindLinkCape(play);
++    sCapeActive = false;
+ 
+     if (!ShouldWearCape() || IsGanondorfLoaded(play)) {
+         if (cape != NULL) {
+@@ -219,6 +288,220 @@ static void LinkGanonCape_OnPlayerUpdate() {
+     }
+ 
+     cape->actor.world.pos = player->actor.world.pos;
++    sCapeActive = true;
++}
++
++// ---------------------------------------------------------------------------------------------
++// Hood
++// ---------------------------------------------------------------------------------------------
++
++#define HOOD_COLS GANON_MANT_NUM_STRANDS // one column per cape strand
++#define HOOD_ROWS GANON_MANT_NUM_JOINTS  // same grid as the cape so gMantDL can draw it
++#define HOOD_SHELL_ROWS 9                // rows 0..8 are rigid on the head, rows 9..11 drape to the collar
++
++// clang-format off
++// Generated by tools/hoodbake.py from gLinkAdultHeadNearDL / gLinkChildHeadNearDL in oot.o2r (SoH 9.3.1).
++// Head-limb space, model units: x = forward, y = down, z = side. [age][row][column] = { x, y, z }
++// Row 0 is the brim around the face, row 8 the bottom of the shell. Column 0 is on the -z side.
++static const s16 sHoodShell[2][HOOD_SHELL_ROWS][HOOD_COLS][3] = {
++    {
++        // adult
++        { { 760, -476, -595 }, { 901, -594, -575 }, { 1009, -723, -518 }, { 1150, -852, -443 }, { 1244, -955, -295 }, { 1281, -1007, -102 }, { 1272, -1004, 101 }, { 1222, -947, 287 }, { 1075, -832, 399 }, { 1000, -722, 510 }, { 890, -596, 564 }, { 747, -482, 578 } },
++        { { 723, -449, -592 }, { 766, -634, -623 }, { 799, -854, -600 }, { 842, -1058, -507 }, { 886, -1210, -334 }, { 911, -1284, -112 }, { 897, -1269, 109 }, { 845, -1170, 309 }, { 823, -1043, 488 }, { 802, -855, 603 }, { 762, -635, 618 }, { 716, -453, 583 } },
++        { { 689, -422, -592 }, { 629, -667, -627 }, { 582, -940, -605 }, { 552, -1180, -507 }, { 549, -1352, -329 }, { 556, -1433, -107 }, { 550, -1417, 105 }, { 541, -1331, 319 }, { 548, -1173, 500 }, { 591, -948, 625 }, { 646, -665, 658 }, { 685, -425, 586 } },
++        { { 653, -397, -588 }, { 513, -692, -616 }, { 396, -998, -582 }, { 289, -1232, -458 }, { 230, -1396, -287 }, { 212, -1476, -90 }, { 213, -1474, 89 }, { 230, -1394, 286 }, { 289, -1247, 471 }, { 405, -1023, 631 }, { 541, -691, 690 }, { 658, -393, 595 } },
++        { { 574, -416, -507 }, { 470, -615, -620 }, { 303, -919, -619 }, { 97, -1189, -494 }, { -38, -1321, -267 }, { -126, -1436, -80 }, { -126, -1436, 80 }, { -40, -1324, 268 }, { 91, -1204, 509 }, { 306, -944, 689 }, { 497, -603, 708 }, { 628, -364, 601 } },
++        { { 556, -382, -527 }, { 429, -533, -633 }, { 239, -780, -768 }, { -38, -1013, -645 }, { -281, -1160, -412 }, { -384, -1204, -125 }, { -384, -1204, 125 }, { -281, -1159, 412 }, { -37, -1013, 643 }, { 239, -780, 769 }, { 451, -509, 724 }, { 599, -333, 607 } },
++        { { 533, -351, -539 }, { 388, -441, -656 }, { 169, -593, -786 }, { -127, -758, -689 }, { -375, -849, -445 }, { -396, -857, -125 }, { -396, -857, 125 }, { -374, -849, 444 }, { -130, -758, 695 }, { 169, -592, 788 }, { 401, -410, 736 }, { 573, -297, 623 } },
++        { { 511, -315, -556 }, { 336, -355, -646 }, { 112, -416, -709 }, { -159, -488, -636 }, { -384, -531, -422 }, { -379, -569, -120 }, { -375, -570, 119 }, { -384, -531, 422 }, { -161, -487, 638 }, { 105, -404, 739 }, { 342, -315, 720 }, { 544, -260, 636 } },
++        { { 482, -286, -562 }, { 280, -279, -609 }, { 67, -264, -592 }, { -132, -251, -497 }, { -260, -264, -315 }, { -343, -257, -111 }, { -343, -257, 111 }, { -249, -272, 309 }, { -138, -244, 504 }, { 53, -234, 632 }, { 280, -230, 679 }, { 510, -230, 639 } },
++    },
++    {
++        // child
++        { { 661, -362, -572 }, { 798, -501, -554 }, { 944, -657, -535 }, { 1020, -792, -420 }, { 1075, -892, -268 }, { 1105, -945, -93 }, { 1089, -936, 91 }, { 1042, -875, 257 }, { 993, -782, 405 }, { 883, -643, 487 }, { 800, -501, 557 }, { 675, -357, 588 } },
++        { { 627, -325, -573 }, { 664, -526, -612 }, { 675, -764, -571 }, { 688, -962, -460 }, { 702, -1094, -290 }, { 715, -1158, -96 }, { 714, -1157, 96 }, { 702, -1095, 291 }, { 682, -957, 455 }, { 671, -762, 567 }, { 666, -526, 616 }, { 646, -317, 596 } },
++        { { 593, -289, -573 }, { 527, -545, -633 }, { 448, -838, -581 }, { 387, -1051, -448 }, { 367, -1201, -281 }, { 367, -1272, -91 }, { 367, -1275, 91 }, { 368, -1203, 282 }, { 387, -1051, 447 }, { 444, -833, 571 }, { 528, -545, 636 }, { 615, -277, 602 } },
++        { { 560, -254, -574 }, { 414, -544, -643 }, { 246, -873, -543 }, { 124, -1092, -409 }, { 56, -1233, -248 }, { 32, -1300, -76 }, { 32, -1300, 77 }, { 56, -1233, 247 }, { 125, -1088, 406 }, { 244, -867, 533 }, { 408, -544, 626 }, { 580, -239, 603 } },
++        { { 524, -221, -569 }, { 359, -456, -618 }, { 168, -760, -591 }, { -62, -1037, -492 }, { -202, -1143, -262 }, { -270, -1202, -76 }, { -270, -1202, 76 }, { -202, -1143, 262 }, { -61, -1036, 491 }, { 168, -757, 584 }, { 361, -455, 623 }, { 543, -205, 599 } },
++        { { 486, -192, -561 }, { 311, -372, -606 }, { 107, -607, -655 }, { -176, -827, -584 }, { -361, -917, -337 }, { -332, -871, -83 }, { -332, -871, 83 }, { -360, -917, 336 }, { -175, -827, 583 }, { 107, -607, 657 }, { 317, -365, 630 }, { 504, -174, 590 } },
++        { { 413, -210, -484 }, { 261, -293, -584 }, { 45, -436, -663 }, { -203, -575, -535 }, { -320, -630, -289 }, { -331, -635, -81 }, { -331, -635, 81 }, { -320, -630, 289 }, { -203, -575, 535 }, { 45, -436, 664 }, { 265, -282, 608 }, { 462, -146, 577 } },
++        { { 375, -195, -463 }, { 209, -229, -535 }, { 0, -282, -582 }, { -205, -362, -465 }, { -335, -409, -279 }, { -319, -440, -78 }, { -319, -440, 78 }, { -335, -409, 279 }, { -206, -362, 465 }, { -1, -281, 583 }, { 211, -218, 553 }, { 386, -178, 487 } },
++        { { 344, -174, -454 }, { 160, -170, -488 }, { -22, -177, -450 }, { -163, -196, -347 }, { -231, -231, -203 }, { -321, -206, -76 }, { -322, -206, 76 }, { -232, -231, 204 }, { -164, -196, 348 }, { -23, -174, 453 }, { 160, -165, 494 }, { 347, -167, 462 } },
++    },
++};
++// Point the hood is scaled around by the Hood Size option (head-limb space)
++static const Vec3f sHoodCenter[2] = { { 280.0f, -700.0f, 0.0f }, { 160.0f, -540.0f, 0.0f } };
++// clang-format on
++
++// How far the drape rows bow outwards between the shell and the collar, world units (adult, child)
++static const f32 sHoodDrapeBulge[2] = { 1.0f, 0.64f };
++
++// The cape's texture coordinates (from gMant1Vtx): v goes across the strands, u down the cape and the
++// top row is u = 186. Continue upwards from there so the texture flows from hood into cape.
++#define HOOD_TC_V(col) (-482 + 241 * (col))
++#define HOOD_TC_U(row) (186 * ((row) - (HOOD_ROWS - 2)))
++
++static Vec3f Vec_Normalize(Vec3f v) {
++    f32 len = sqrtf(SQ(v.x) + SQ(v.y) + SQ(v.z));
++    if (len < 0.00001f) {
++        return v;
++    }
++    v.x /= len;
++    v.y /= len;
++    v.z /= len;
++    return v;
++}
++
++static f32 Vec_Dot(Vec3f a, Vec3f b) {
++    return a.x * b.x + a.y * b.y + a.z * b.z;
++}
++
++static Vec3f Vec_Cross(Vec3f a, Vec3f b) {
++    Vec3f out = { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
++    return out;
++}
++
++static Vec3f Vec_Lerp(Vec3f a, Vec3f b, f32 t) {
++    Vec3f out = { a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t };
++    return out;
++}
++
++// Baked shell point -> world, scaled around the hood's center by the Hood Size option
++static Vec3f Hood_ShellToWorld(s32 age, s32 row, s32 col, f32 size) {
++    const s16* p = sHoodShell[age][row][col];
++    const Vec3f* center = &sHoodCenter[age];
++    Vec3f local;
++    Vec3f world;
++
++    local.x = center->x + (p[0] - center->x) * size;
++    local.y = center->y + (p[1] - center->y) * size;
++    local.z = center->z + (p[2] - center->z) * size;
++    SkinMatrix_Vec3fMtxFMultXYZ(&sHeadMtx, &local, &world);
++    return world;
++}
++
++static Vec3f Hood_CapeNormal(EnGanonMant* cape, s32 strand) {
++    // Same formula as EnGanonMant_UpdateVertices, for joint 0
++    Vec3f up = { 0.0f, 30.0f, 0.0f };
++    Vec3f normal;
++
++    Matrix_Push();
++    Matrix_RotateY(cape->strands[strand].rotations[0].y, MTXMODE_NEW);
++    Matrix_RotateX(cape->strands[strand].rotations[0].x, MTXMODE_APPLY);
++    Matrix_MultVec3f(&up, &normal);
++    Matrix_Pop();
++    return normal;
++}
++
++extern "C" void* LinkGanonCape_BuildHood(EnGanonMant* cape, PlayState* play) {
++    static Vec3f sPos[HOOD_ROWS][HOOD_COLS];
++
++    if (!HoodEnabled() || !sHeadValid) {
++        return NULL;
++    }
++
++    s32 age = LINK_IS_ADULT ? 0 : 1;
++    f32 size = CVarGetFloat(CVAR_CAPE("HoodSize"), 1.0f);
++
++    // Which side of the head is the cape's strand 0 on? Mirror the hood to match.
++    Vec3f side0 = Hood_ShellToWorld(age, HOOD_SHELL_ROWS - 1, 0, size);
++    Vec3f* root0 = &cape->strands[0].root;
++    Vec3f* root11 = &cape->strands[HOOD_COLS - 1].root;
++    bool mirror = (SQ(side0.x - root0->x) + SQ(side0.y - root0->y) + SQ(side0.z - root0->z)) >
++                  (SQ(side0.x - root11->x) + SQ(side0.y - root11->y) + SQ(side0.z - root11->z));
++
++    Vec3f headCenter;
++    SkinMatrix_Vec3fMtxFMultXYZ(&sHeadMtx, (Vec3f*)&sHoodCenter[age], &headCenter);
++
++    for (s32 col = 0; col < HOOD_COLS; col++) {
++        s32 shellCol = mirror ? (HOOD_COLS - 1 - col) : col;
++
++        // Rigid shell on the head
++        for (s32 row = 0; row < HOOD_SHELL_ROWS; row++) {
++            sPos[row][col] = Hood_ShellToWorld(age, row, shellCol, size);
++        }
++
++        // Drape down to the cape's collar. The last row is exactly the strand root, which is also the
++        // cape's first vertex row, so hood and cape share their edge.
++        Vec3f top = sPos[HOOD_SHELL_ROWS - 1][col];
++        Vec3f root = cape->strands[col].root;
++        for (s32 row = HOOD_SHELL_ROWS; row < HOOD_ROWS; row++) {
++            f32 t = (f32)(row - (HOOD_SHELL_ROWS - 1)) / (HOOD_ROWS - HOOD_SHELL_ROWS);
++            Vec3f p = Vec_Lerp(top, root, t);
++
++            if (row != HOOD_ROWS - 1) {
++                Vec3f out = { p.x - cape->anchor.x, 0.0f, p.z - cape->anchor.z };
++                out = Vec_Normalize(out);
++                f32 bulge = sHoodDrapeBulge[age] * sinf(t * M_PI);
++                p.x += out.x * bulge;
++                p.z += out.z * bulge;
++            }
++            sPos[row][col] = p;
++        }
++    }
++
++    // Normals from the grid, pointing away from the head
++    static Vec3f sNormal[HOOD_ROWS][HOOD_COLS];
++    f32 agreement = 0.0f;
++
++    for (s32 row = 0; row < HOOD_ROWS; row++) {
++        for (s32 col = 0; col < HOOD_COLS; col++) {
++            Vec3f* rowPrev = &sPos[MAX(row - 1, 0)][col];
++            Vec3f* rowNext = &sPos[MIN(row + 1, HOOD_ROWS - 1)][col];
++            Vec3f* colPrev = &sPos[row][MAX(col - 1, 0)];
++            Vec3f* colNext = &sPos[row][MIN(col + 1, HOOD_COLS - 1)];
++            Vec3f dRow = { rowNext->x - rowPrev->x, rowNext->y - rowPrev->y, rowNext->z - rowPrev->z };
++            Vec3f dCol = { colNext->x - colPrev->x, colNext->y - colPrev->y, colNext->z - colPrev->z };
++            Vec3f n = Vec_Normalize(Vec_Cross(dRow, dCol));
++            Vec3f away = { sPos[row][col].x - headCenter.x, sPos[row][col].y - headCenter.y,
++                           sPos[row][col].z - headCenter.z };
++
++            if (Vec_Dot(n, away) < 0.0f) {
++                n.x = -n.x;
++                n.y = -n.y;
++                n.z = -n.z;
++            }
++            sNormal[row][col] = n;
++        }
++    }
++
++    // Match the cape's normal convention so the shading carries straight across the seam
++    Vec3f capeNormals[HOOD_COLS];
++    for (s32 col = 0; col < HOOD_COLS; col++) {
++        capeNormals[col] = Hood_CapeNormal(cape, col);
++        agreement += Vec_Dot(capeNormals[col], sNormal[HOOD_ROWS - 1][col]);
++    }
++    f32 flip = (agreement < 0.0f) ? -30.0f : 30.0f;
++
++    Vtx* vertices = (Vtx*)Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * HOOD_ROWS * HOOD_COLS);
++
++    for (s32 row = 0; row < HOOD_ROWS; row++) {
++        for (s32 col = 0; col < HOOD_COLS; col++) {
++            // Same vertex layout as the cape (see sVerticesMap in z_en_ganon_mant.c)
++            Vtx* vtx = &vertices[(HOOD_COLS - 1 - col) + HOOD_COLS * row];
++            Vec3f* p = &sPos[row][col];
++
++            vtx->n.ob[0] = CLAMP((p->x - cape->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
++            vtx->n.ob[1] = CLAMP((p->y - cape->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
++            vtx->n.ob[2] = CLAMP((p->z - cape->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
++            vtx->n.flag = 0;
++            vtx->n.tc[0] = HOOD_TC_U(row);
++            vtx->n.tc[1] = HOOD_TC_V(col);
++
++            if (row == HOOD_ROWS - 1) {
++                vtx->n.n[0] = capeNormals[col].x;
++                vtx->n.n[1] = capeNormals[col].y;
++                vtx->n.n[2] = capeNormals[col].z;
++            } else {
++                vtx->n.n[0] = sNormal[row][col].x * flip;
++                vtx->n.n[1] = sNormal[row][col].y * flip;
++                vtx->n.n[2] = sNormal[row][col].z * flip;
++            }
++            vtx->n.a = 255;
++        }
++    }
++
++    return vertices;
+ }
+ 
+ static void RegisterLinkGanonCape() {
+diff --git a/soh/soh/Enhancements/Graphics/LinkGanonCape.h b/soh/soh/Enhancements/Graphics/LinkGanonCape.h
+index 20ef6f3b7..233381f5f 100644
+--- a/soh/soh/Enhancements/Graphics/LinkGanonCape.h
++++ b/soh/soh/Enhancements/Graphics/LinkGanonCape.h
+@@ -18,6 +18,17 @@ void LinkGanonCape_RecordLimb(struct PlayState* play, struct Player* player, int
+ // values for this frame. Returns 0 when the cape shouldn't be drawn.
+ int LinkGanonCape_PrepareDraw(struct EnGanonMant* cape, struct PlayState* play);
+ 
++// Builds this frame's hood vertices (same 12x12 layout as the cape's, drawn with gMantDL).
++// Returns NULL when the hood is off. Call after the cape's own vertices are updated.
++void* LinkGanonCape_BuildHood(struct EnGanonMant* cape, struct PlayState* play);
++
++// Called from Player_OverrideLimbDrawGameplayCommon. While the hood is on, hides the cap's tail
++// (PLAYER_LIMB_HAT) and tints the cap dome in the head mesh with the hair color. dList is a Gfx**.
++void LinkGanonCape_OverrideLimb(struct PlayState* play, struct Player* player, int limbIndex, void** dList);
++
++// Called from Player_DrawImpl with the tunic color it applied (valid = 0 if it didn't apply one)
++void LinkGanonCape_SetTunicColor(int valid, unsigned char r, unsigned char g, unsigned char b);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/soh/soh/SohGui/SohMenuEnhancements.cpp b/soh/soh/SohGui/SohMenuEnhancements.cpp
+index eb56698f0..5444652eb 100644
+--- a/soh/soh/SohGui/SohMenuEnhancements.cpp
++++ b/soh/soh/SohGui/SohMenuEnhancements.cpp
+@@ -733,6 +733,27 @@ void SohMenu::AddMenuEnhancements() {
+         })
+         .Options(FloatSliderOptions().Min(0.0f).Max(5.0f).DefaultValue(1.5f).Format("%.2f").Tooltip(
+             "Moves the cape's collar behind Link's back. Raise it if the cape clips into Link or a custom model."));
++    AddWidget(path, "Hood", WIDGET_CVAR_CHECKBOX)
++        .CVar(CVAR_ENHANCEMENT("GanonCape.Hood"))
++        .RaceDisable(false)
++        .PreFunc([](WidgetInfo& info) {
++            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
++            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
++        })
++        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
++            "Adds a hood made from the cape's fabric, joined seamlessly to the cape. "
++            "Replaces Link's cap so only his hair shows under the hood.\n"
++            "Fitted to the vanilla Link model; custom models may clip."));
++    AddWidget(path, "Hood Size: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
++        .CVar(CVAR_ENHANCEMENT("GanonCape.HoodSize"))
++        .RaceDisable(false)
++        .PreFunc([](WidgetInfo& info) {
++            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0) ||
++                                     !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Hood"), 1);
++            info.options->disabledTooltip = "Requires the cape and the hood to be enabled.";
++        })
++        .Options(FloatSliderOptions().Min(0.9f).Max(1.4f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
++            "Scales the hood around Link's head. Raise it if his hair or ears poke through."));
+     AddWidget(path, "Models & Textures", WIDGET_SEPARATOR_TEXT);
+     AddWidget(path, "Disable LOD", WIDGET_CVAR_CHECKBOX)
+         .CVar(CVAR_ENHANCEMENT("DisableLOD"))
+diff --git a/soh/src/code/z_player_lib.c b/soh/src/code/z_player_lib.c
+index 45094146c..b69c496cb 100644
+--- a/soh/src/code/z_player_lib.c
++++ b/soh/src/code/z_player_lib.c
+@@ -1085,6 +1085,10 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
+ 
+     if (GameInteractor_Should(VB_APPLY_TUNIC_COLOR, true, data, color)) {
+         gDPSetEnvColor(POLY_OPA_DISP++, color->r, color->g, color->b, 0);
++        // SoH: Ganondorf's Cape hood needs this to restore the tunic color after the head
++        LinkGanonCape_SetTunicColor(true, color->r, color->g, color->b);
++    } else {
++        LinkGanonCape_SetTunicColor(false, 0, 0, 0);
+     }
+ 
+     // If we have a custom link model, always use the most detailed LOD
+@@ -1321,6 +1325,9 @@ s32 Player_OverrideLimbDrawGameplayCommon(PlayState* play, s32 limbIndex, Gfx**
+             D_80160000++;
+         }
+ 
++        // SoH: Ganondorf's Cape hood replaces Link's cap
++        LinkGanonCape_OverrideLimb(play, this, limbIndex, (void**)dList);
++
+         if (limbIndex == PLAYER_LIMB_HEAD) {
+             if (CVarGetInteger(CVAR_COSMETIC("Link.HeadScale.Changed"), 0)) {
+                 f32 scale = CVarGetFloat(CVAR_COSMETIC("Link.HeadScale.Value"), 1.0f);
+diff --git a/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.c b/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.c
+index 4f248e8f7..2b6f3b27c 100644
+--- a/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.c
++++ b/soh/src/overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.c
+@@ -417,6 +417,16 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
+     // draw cloak
+     gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+ 
++    if (this->isLinkCape) {
++        // SoH: Link's hood, same material and grid as the cloak, sharing its top edge
++        void* hoodVtx = LinkGanonCape_BuildHood(this, play);
++
++        if (hoodVtx != NULL) {
++            gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
++            gSPDisplayList(POLY_OPA_DISP++, gMantDL);
++        }
++    }
++
+     CLOSE_DISPS(play->state.gfxCtx);
+ }
+ 
 -- 
 2.43.0
 

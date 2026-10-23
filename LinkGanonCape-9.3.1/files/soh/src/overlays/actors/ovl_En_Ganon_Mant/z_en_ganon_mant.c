@@ -417,6 +417,16 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     // draw cloak
     gSPDisplayList(POLY_OPA_DISP++, gMantDL);
 
+    if (this->isLinkCape) {
+        // SoH: Link's hood, same material and grid as the cloak, sharing its top edge
+        void* hoodVtx = LinkGanonCape_BuildHood(this, play);
+
+        if (hoodVtx != NULL) {
+            gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
+            gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+        }
+    }
+
     CLOSE_DISPS(play->state.gfxCtx);
 }
 

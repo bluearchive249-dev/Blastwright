@@ -1085,6 +1085,10 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
 
     if (GameInteractor_Should(VB_APPLY_TUNIC_COLOR, true, data, color)) {
         gDPSetEnvColor(POLY_OPA_DISP++, color->r, color->g, color->b, 0);
+        // SoH: Ganondorf's Cape hood needs this to restore the tunic color after the head
+        LinkGanonCape_SetTunicColor(true, color->r, color->g, color->b);
+    } else {
+        LinkGanonCape_SetTunicColor(false, 0, 0, 0);
     }
 
     // If we have a custom link model, always use the most detailed LOD
@@ -1320,6 +1324,9 @@ s32 Player_OverrideLimbDrawGameplayCommon(PlayState* play, s32 limbIndex, Gfx** 
         if (*dList != NULL) {
             D_80160000++;
         }
+
+        // SoH: Ganondorf's Cape hood replaces Link's cap
+        LinkGanonCape_OverrideLimb(play, this, limbIndex, (void**)dList);
 
         if (limbIndex == PLAYER_LIMB_HEAD) {
             if (CVarGetInteger(CVAR_COSMETIC("Link.HeadScale.Changed"), 0)) {
