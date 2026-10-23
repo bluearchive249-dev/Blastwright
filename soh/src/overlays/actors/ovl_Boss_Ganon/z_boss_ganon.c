@@ -6009,7 +6009,7 @@ static const Vec3s sGdfSwordPoses[GDF_POSE_MAX][3] = {
 #define GDF_GRIP_X 650.0f
 #define GDF_GRIP_Y 0.0f
 #define GDF_GRIP_Z -100.0f
-#define GDF_SWORD_SCALE 0.9f
+#define GDF_SWORD_SCALE 1.4f // a greatsword: about 62 units of blade on a 100 unit tall Ganondorf
 #define GDF_SWORD_GRIP_Z -500.0f   // where he holds the sword (sword frame)
 #define GDF_SHEATH_GRIP_Z 350.0f   // where he holds the sheath, just under its mouth
 #define GDF_BLADE_BASE_Z -125.0f
@@ -6084,6 +6084,47 @@ static const GdfSwordAttack sGdfSwordAttacks[] = {
     { { { 0, GDF_KEY_FROM }, { 5, GDF_POSE_H1_WIND }, { 9, GDF_POSE_H1_HIT }, { 12, GDF_POSE_H1_FOLLOW },
         { 20, GDF_POSE_REST } },
       20, 7, 11, -1, 0, 9, NA_SE_IT_SWORD_SWING_HARD },
+};
+
+// His whole body moves with the sword: the upper body twists into the swing (positive: turned to his left) and
+// leans (positive: forward), the hips turn a little the other way, and his legs step into a lunge (a frame of the
+// walk with the right foot forward) on the strikes.
+typedef struct {
+    s8 frame;
+    s16 twist;
+    s16 lean;
+    u8 lunge; // percent
+} GdfSwordBodyKey;
+
+#define GDF_LUNGE_FRAME 0.0f // walk frame with the right foot forward and both feet down
+
+static const GdfSwordBodyKey sGdfSwordBody[][6] = {
+    /* NONE */ { { -1 } },
+    /* DRAW: turn to the sheath at his left hip, then unwind into the cut */
+    { { 0, 0, 0, 0 }, { 5, 0x1800, 0x0A00, 20 }, { 7, 0x1C00, 0x0A00, 30 }, { 10, -0x2000, 0x0600, 90 },
+      { 17, -0x1400, 0x0300, 70 }, { 25, 0, 0, 0 } },
+    /* SHEATHE: lift, then turn to the hip and look down at it */
+    { { 0, 0, 0, 0 }, { 6, -0x0C00, -0x0300, 0 }, { 12, 0x1800, 0x0C00, 20 }, { 15, 0x1800, 0x0C00, 20 },
+      { 20, 0, 0, 0 }, { -1 } },
+    /* COMBO1: wind up turned right, unwind to the left */
+    { { 0, 0, 0, 0 }, { 3, -0x2400, 0x0200, 30 }, { 6, 0x1400, 0x0A00, 100 }, { 9, 0x2800, 0x0800, 100 },
+      { 18, 0, 0, 0 }, { -1 } },
+    /* COMBO2: backhand, unwinding to the right */
+    { { 0, 0x2800, 0x0800, 100 }, { 3, -0x0800, 0x0A00, 100 }, { 6, -0x2800, 0x0800, 100 }, { 15, 0, 0, 0 },
+      { -1 } },
+    /* COMBO3: rear back, then bend into the slam */
+    { { 0, -0x2800, 0x0800, 100 }, { 6, -0x0800, -0x0C00, 40 }, { 10, 0, 0x1C00, 100 }, { 20, 0, 0x1800, 100 },
+      { 30, 0, 0, 0 }, { -1 } },
+    /* THRUST: right shoulder forward, leaning into it */
+    { { 0, 0, 0, 0 }, { 3, -0x1400, 0x1000, 100 }, { 11, -0x1000, 0x0C00, 100 }, { 18, 0, 0, 0 }, { -1 } },
+    /* SPIN: crouched forward while he turns */
+    { { 0, 0, 0, 0 }, { 3, 0, 0x0800, 60 }, { 16, 0, 0x0800, 60 }, { 24, 0, 0, 0 }, { -1 } },
+    /* SLAM */
+    { { 0, 0, 0, 0 }, { 8, -0x0800, -0x1000, 40 }, { 12, 0, 0x2000, 100 }, { 24, 0, 0x1C00, 100 }, { 32, 0, 0, 0 },
+      { -1 } },
+    /* WAVE: like the first slash, flung wider */
+    { { 0, 0, 0, 0 }, { 5, -0x2800, 0x0200, 40 }, { 9, 0x1800, 0x0C00, 100 }, { 12, 0x2C00, 0x0800, 100 },
+      { 20, 0, 0, 0 }, { -1 } },
 };
 
 // Persists across areas (the player Ganondorf is spawned again in every scene)
@@ -6315,6 +6356,122 @@ static void BossGanon_Player_ApplyStanceArms(BossGanon* this) {
     BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_GUARD], this->playerGuardWeight);
 }
 
+// ---- Whole-body motion -------------------------------------------------------------------------
+
+static void BossGanon_Player_MtxMul(f32 a[3][3], f32 b[3][3], f32 out[3][3]) {
+    f32 r[3][3];
+    s32 i;
+    s32 j;
+
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            r[i][j] = (a[i][0] * b[0][j]) + (a[i][1] * b[1][j]) + (a[i][2] * b[2][j]);
+        }
+    }
+    memcpy(out, r, sizeof(r));
+}
+
+// Turns a joint (whose parent is the root) by `turn` in his own space (actor space): R' = Rroot^T * turn * Rroot * R
+static void BossGanon_Player_TurnJoint(BossGanon* this, s32 limb, f32 turn[3][3]) {
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 root[3][3];
+    f32 rootT[3][3];
+    f32 joint[3][3];
+    f32 m[3][3];
+    s32 i;
+    s32 j;
+
+    BossGanon_Player_RotToMtx(&joints[1], root);
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            rootT[i][j] = root[j][i];
+        }
+    }
+    BossGanon_Player_RotToMtx(&joints[1 + limb], joint);
+    BossGanon_Player_MtxMul(root, joint, m);
+    BossGanon_Player_MtxMul(turn, m, m);
+    BossGanon_Player_MtxMul(rootT, m, m);
+    BossGanon_Player_MtxToRot(m, &joints[1 + limb]);
+}
+
+static void BossGanon_Player_TwistLean(BossGanon* this, f32 twist, f32 lean) {
+    Vec3s yaw = { 0, 0, 0 };
+    Vec3s pitch = { 0, 0, 0 };
+    f32 my[3][3];
+    f32 mx[3][3];
+    f32 turn[3][3];
+
+    if ((twist == 0.0f) && (lean == 0.0f)) {
+        return;
+    }
+    // Upper body
+    yaw.y = (s16)twist;
+    pitch.x = (s16)lean;
+    BossGanon_Player_RotToMtx(&yaw, my);
+    BossGanon_Player_RotToMtx(&pitch, mx);
+    BossGanon_Player_MtxMul(my, mx, turn);
+    BossGanon_Player_TurnJoint(this, 1, turn);
+    // Hips turn a little the other way
+    yaw.y = (s16)(twist * -0.35f);
+    BossGanon_Player_RotToMtx(&yaw, my);
+    BossGanon_Player_TurnJoint(this, 18, my);
+}
+
+// Body pose of the current attack at `frame`: twist, lean and the lunge
+static void BossGanon_Player_ApplyAttackBody(BossGanon* this, f32 frame) {
+    const GdfSwordBodyKey* keys = sGdfSwordBody[this->playerSwordAttack];
+    const GdfSwordBodyKey* k0 = &keys[0];
+    const GdfSwordBodyKey* k1 = NULL;
+    f32 t;
+    f32 twist;
+    f32 lean;
+    f32 lunge;
+    f32 savedFrame;
+    f32 savedWeight;
+    f32 savedStride;
+    s32 i;
+
+    if (k0->frame < 0) {
+        return;
+    }
+    for (i = 1; i < 6; i++) {
+        if (keys[i].frame < 0) {
+            break;
+        }
+        if (keys[i].frame > frame) {
+            k1 = &keys[i];
+            break;
+        }
+        k0 = &keys[i];
+    }
+    if (k1 == NULL) {
+        twist = k0->twist;
+        lean = k0->lean;
+        lunge = k0->lunge / 100.0f;
+    } else {
+        t = BossGanon_Player_SmoothStep((frame - k0->frame) / (f32)(k1->frame - k0->frame));
+        twist = k0->twist + (k1->twist - k0->twist) * t;
+        lean = k0->lean + (k1->lean - k0->lean) * t;
+        lunge = (k0->lunge + (k1->lunge - k0->lunge) * t) / 100.0f;
+    }
+
+    // Lunge: his legs in the walk's stride with the right foot forward (only on the ground)
+    if (this->playerGrounded && (lunge > this->playerWalkWeight)) {
+        savedFrame = this->playerWalkFrame;
+        savedWeight = this->playerWalkWeight;
+        savedStride = this->playerWalkStride;
+        this->playerWalkFrame = GDF_LUNGE_FRAME;
+        this->playerWalkWeight = lunge;
+        this->playerWalkStride = 1.2f;
+        BossGanon_Player_ApplyWalk(this);
+        this->playerWalkFrame = savedFrame;
+        this->playerWalkWeight = savedWeight;
+        this->playerWalkStride = savedStride;
+    }
+
+    BossGanon_Player_TwistLean(this, twist, lean);
+}
+
 // ---- Stance and attacks ------------------------------------------------------------------------
 
 s32 BossGanon_Player_IsSwordGuarding(BossGanon* this) {
@@ -6519,8 +6676,9 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
         BossGanon_Player_ApplyWalk(this);
     }
 
-    // Left arm keeps the sheath, right arm follows the attack
+    // Left arm keeps the sheath, right arm follows the attack, and his whole body moves with it
     Math_ApproachF(&this->playerSheathArmWeight, 1.0f, 1.0f, 0.2f);
+    BossGanon_Player_ApplyAttackBody(this, this->playerSwordTimer);
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
                               this->playerSheathArmWeight);
     BossGanon_Player_ApplyAttackArm(this, this->playerSwordTimer);
@@ -6655,10 +6813,12 @@ s32 BossGanon_Player_GetDash(Actor* thisx, s16* yaw, f32* speed) {
 
 // From the hand matrix (captured in the limb callback) to the sword's own frame
 static void BossGanon_Player_SwordFrame(MtxF* hand, f32 gripZ) {
+    f32 scale = CVarGetFloat(CVAR_PLAY_AS_GDF("SwordSize"), GDF_SWORD_SCALE);
+
     Matrix_Put(hand);
     Matrix_Translate(GDF_GRIP_X, GDF_GRIP_Y, GDF_GRIP_Z, MTXMODE_APPLY);
     Matrix_RotateX(M_PI, MTXMODE_APPLY);
-    Matrix_Scale(GDF_SWORD_SCALE, GDF_SWORD_SCALE, GDF_SWORD_SCALE, MTXMODE_APPLY);
+    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
     Matrix_Translate(0.0f, 0.0f, -gripZ, MTXMODE_APPLY);
 }
 

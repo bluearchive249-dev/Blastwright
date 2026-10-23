@@ -2210,6 +2210,14 @@ void SohMenu::AddMenuEnhancements() {
             " - C-Left: spin slash. C-Down: ground slam. C-Right: dark energy slash.\n"
             " - D-Pad Left: sheathe the blade. D-Pad Left again: put the sword away.\n\n"
             "The sword model is read from gdf_sword.bin next to the game; without it a plain blade is used."));
+    AddWidget(path, "Sword Size: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordSize"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0;
+        })
+        .Options(FloatSliderOptions().Min(0.8f).Max(2.0f).DefaultValue(1.4f).Format("%.2fx").Tooltip(
+            "Size of his sword and sheath. 1.4 is a greatsword for his size; the hitbox follows the blade."));
     AddWidget(path, "Ganon Form (D-Pad Right)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonForm"))
         .PreFunc([](WidgetInfo& info) {
