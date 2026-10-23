@@ -691,6 +691,69 @@ void SohMenu::AddMenuEnhancements() {
         .RaceDisable(false)
         .Options(IntSliderOptions().Min(4).Max(6).DefaultValue(6).Tooltip(
             "Space between text characters (useful for HD font textures)."));
+    AddWidget(path, "Ganondorf's Cape", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Link Wears Ganondorf's Cape", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("GanonCape.Enabled"))
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip(
+            "Gives Link the cloth-physics cape Ganondorf wears in the Ganon's Tower fight.\n"
+            "The cape is removed while Ganondorf himself is around, since only one can exist at a time."));
+    AddWidget(path, "Cape on Child Link", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("GanonCape.Child"))
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
+            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip("Also show the cape on Child Link (scaled down)."));
+    AddWidget(path, "Cape Length: %.2f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("GanonCape.Length"))
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
+            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
+        })
+        .Options(FloatSliderOptions().Min(2.0f).Max(6.0f).DefaultValue(3.5f).Format("%.2f").Tooltip(
+            "Length of each of the cape's 11 segments. Ganondorf's is 9.5."));
+    AddWidget(path, "Cape Width: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("GanonCape.Width"))
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
+            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
+        })
+        .Options(FloatSliderOptions().Min(0.8f).Max(2.0f).DefaultValue(1.15f).Format("%.2fx").Tooltip(
+            "How far apart the cape is attached, relative to Link's shoulders."));
+    AddWidget(path, "Cape Back Offset: %.2f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("GanonCape.BackOffset"))
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
+            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
+        })
+        .Options(FloatSliderOptions().Min(0.0f).Max(5.0f).DefaultValue(1.5f).Format("%.2f").Tooltip(
+            "Moves the cape's collar behind Link's back. Raise it if the cape clips into Link or a custom model."));
+    AddWidget(path, "Hood", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("GanonCape.Hood"))
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0);
+            info.options->disabledTooltip = "Requires \"Link Wears Ganondorf's Cape\" to be enabled.";
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Adds a hood made from the cape's fabric, joined seamlessly to the cape. "
+            "Replaces Link's cap so only his hair shows under the hood.\n"
+            "Fitted to the vanilla Link model; custom models may clip."));
+    AddWidget(path, "Hood Size: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("GanonCape.HoodSize"))
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Enabled"), 0) ||
+                                     !CVarGetInteger(CVAR_ENHANCEMENT("GanonCape.Hood"), 1);
+            info.options->disabledTooltip = "Requires the cape and the hood to be enabled.";
+        })
+        .Options(FloatSliderOptions().Min(0.9f).Max(1.4f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
+            "Scales the hood around Link's head. Raise it if his hair or ears poke through."));
     AddWidget(path, "Models & Textures", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Disable LOD", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("DisableLOD"))

@@ -8,6 +8,7 @@
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "soh/Enhancements/Graphics/LinkGanonCape.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -107,6 +108,11 @@ void EnGanonMant_Init(Actor* thisx, PlayState* play) {
 
     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
 
+    if (this->actor.params == LINK_GANON_CAPE_PARAMS) {
+        this->isLinkCape = true;
+        this->needsReset = true;
+    }
+
     for (int i = 0; i < ARRAY_COUNT(sMaskTex); i++) {
         sMaskTex[i] = 0;
     }
@@ -190,6 +196,9 @@ void EnGanonMant_UpdateStrand(PlayState* play, EnGanonMant* this, Vec3f* root, V
         }
         // Set length
         jointLength = 6.5f;
+    } else if (this->jointLength > 0.0f) {
+        // SoH: Link's cape uses a shorter, configurable length
+        jointLength = this->jointLength;
     } else {
         jointLength = 9.5f;
     }
@@ -270,21 +279,23 @@ void EnGanonMant_UpdateStrand(PlayState* play, EnGanonMant* this, Vec3f* root, V
             vel->z = (pos->z - z) * 80.0f / 100.0f;
 
             if (this->actor.params != 0x23) {
+                f32 velClamp = (this->velocityClamp > 0.0f) ? this->velocityClamp : 5.0f;
+
                 // Clamp elements of vel into [-5.0, 5.0]
-                if (vel->x > 5.0f) {
-                    vel->x = 5.0f;
-                } else if (vel->x < -5.0f) {
-                    vel->x = -5.0f;
+                if (vel->x > velClamp) {
+                    vel->x = velClamp;
+                } else if (vel->x < -velClamp) {
+                    vel->x = -velClamp;
                 }
-                if (vel->y > 5.0f) {
-                    vel->y = 5.0f;
-                } else if (vel->y < -5.0f) {
-                    vel->y = -5.0f;
+                if (vel->y > velClamp) {
+                    vel->y = velClamp;
+                } else if (vel->y < -velClamp) {
+                    vel->y = -velClamp;
                 }
-                if (vel->z > 5.0f) {
-                    vel->z = 5.0f;
-                } else if (vel->z < -5.0f) {
-                    vel->z = -5.0f;
+                if (vel->z > velClamp) {
+                    vel->z = velClamp;
+                } else if (vel->z < -velClamp) {
+                    vel->z = -velClamp;
                 }
             }
 
@@ -327,9 +338,17 @@ void EnGanonMant_UpdateVertices(EnGanonMant* this) {
     for (i = 0; i < GANON_MANT_NUM_STRANDS; i++, strand++) {
         for (j = 0, k = 0; j < GANON_MANT_NUM_JOINTS; j++, k += GANON_MANT_NUM_JOINTS) {
             vtx = &vertices[sVerticesMap[i + k]];
-            vtx->n.ob[0] = strand->joints[j].x;
-            vtx->n.ob[1] = strand->joints[j].y;
-            vtx->n.ob[2] = strand->joints[j].z;
+            if (this->isLinkCape) {
+                // SoH: store relative to the anchor at higher precision; the small cape would
+                // visibly snap to whole units otherwise
+                vtx->n.ob[0] = CLAMP((strand->joints[j].x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+                vtx->n.ob[1] = CLAMP((strand->joints[j].y - this->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+                vtx->n.ob[2] = CLAMP((strand->joints[j].z - this->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            } else {
+                vtx->n.ob[0] = strand->joints[j].x;
+                vtx->n.ob[1] = strand->joints[j].y;
+                vtx->n.ob[2] = strand->joints[j].z;
+            }
             Matrix_RotateY(strand->rotations[j].y, MTXMODE_NEW);
             Matrix_RotateX(strand->rotations[j].x, MTXMODE_APPLY);
             Matrix_MultVec3f(&up, &normal);
@@ -374,7 +393,13 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     // Invalidate cape texture mask as it may have been torn
     gSPInvalidateTexCache(POLY_OPA_DISP++, sMaskTex);
 
-    Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
+    if (this->isLinkCape) {
+        Matrix_Translate(this->anchor.x, this->anchor.y, this->anchor.z, MTXMODE_NEW);
+        Matrix_Scale(1.0f / LINK_GANON_CAPE_VTX_SCALE, 1.0f / LINK_GANON_CAPE_VTX_SCALE,
+                     1.0f / LINK_GANON_CAPE_VTX_SCALE, MTXMODE_APPLY);
+    } else {
+        Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
+    }
 
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
@@ -391,6 +416,16 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
 
     // draw cloak
     gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+
+    if (this->isLinkCape) {
+        // SoH: Link's hood, same material and grid as the cloak, sharing its top edge
+        void* hoodVtx = LinkGanonCape_BuildHood(this, play);
+
+        if (hoodVtx != NULL) {
+            gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
+            gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+        }
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -411,11 +446,20 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
     Vec3f midpoint;
     s16 nextStrandIdx;
 
+    if (this->isLinkCape && !LinkGanonCape_PrepareDraw(this, play)) {
+        // SoH: Link isn't visible this frame (first person, hidden in a cutscene, ...)
+        return;
+    }
+
     if (this->updateHasRun) {
         // Only run this if update has run since last draw
 
         // Choose endpoints
-        if (this->attachRightArmTimer != 0.0f) {
+        if (this->isLinkCape) {
+            // SoH: Link's cape always hangs from his shoulders; gravity etc. are set in PrepareDraw
+            rightPos = &this->rightShoulderPos;
+            leftPos = &this->leftShoulderPos;
+        } else if (this->attachRightArmTimer != 0.0f) {
             rightPos = &this->rightForearmPos;
             leftPos = &this->leftShoulderPos;
             this->gravity = -13.0f;
@@ -448,6 +492,34 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
         Matrix_RotateY(yaw, MTXMODE_NEW);
         Matrix_RotateX(pitch, MTXMODE_APPLY);
         this->baseYaw = yaw - M_PI / 2.0f;
+
+        if (this->isLinkCape) {
+            this->anchor = midpoint;
+
+            if (this->needsReset) {
+                // SoH: first frame or Link teleported, let every strand hang straight down from its root
+                for (strandIdx = 0; strandIdx < GANON_MANT_NUM_STRANDS; strandIdx++) {
+                    s16 j;
+
+                    Matrix_Push();
+                    strandOffset.x = sinf((strandIdx * M_PI) / (GANON_MANT_NUM_STRANDS - 1)) * diffHalfDist;
+                    strandOffset.y = 0;
+                    strandOffset.z = -cosf((strandIdx * M_PI) / (GANON_MANT_NUM_STRANDS - 1)) * diffHalfDist;
+                    Matrix_MultVec3f(&strandOffset, &strandDivPos);
+                    Matrix_Pop();
+
+                    for (j = 0; j < GANON_MANT_NUM_JOINTS; j++) {
+                        this->strands[strandIdx].joints[j].x = midpoint.x + strandDivPos.x;
+                        this->strands[strandIdx].joints[j].y = midpoint.y + strandDivPos.y - j * this->jointLength;
+                        this->strands[strandIdx].joints[j].z = midpoint.z + strandDivPos.z;
+                        this->strands[strandIdx].velocities[j].x = 0.0f;
+                        this->strands[strandIdx].velocities[j].y = 0.0f;
+                        this->strands[strandIdx].velocities[j].z = 0.0f;
+                    }
+                }
+                this->needsReset = false;
+            }
+        }
 
         for (strandIdx = 0; strandIdx < GANON_MANT_NUM_STRANDS; strandIdx++) {
             Matrix_Push();

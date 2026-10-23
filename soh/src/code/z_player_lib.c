@@ -11,6 +11,7 @@
 #include "soh/Enhancements/Items/BeamosBlaster.h"
 #include "soh/Enhancements/randomizer/draw.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "soh/Enhancements/Graphics/LinkGanonCape.h"
 
 #include <stdlib.h>
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -1095,6 +1096,10 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
 
     if (GameInteractor_Should(VB_APPLY_TUNIC_COLOR, true, data, color)) {
         gDPSetEnvColor(POLY_OPA_DISP++, color->r, color->g, color->b, 0);
+        // SoH: Ganondorf's Cape hood needs this to restore the tunic color after the head
+        LinkGanonCape_SetTunicColor(true, color->r, color->g, color->b);
+    } else {
+        LinkGanonCape_SetTunicColor(false, 0, 0, 0);
     }
 
     // If we have a custom link model, always use the most detailed LOD
@@ -1332,6 +1337,9 @@ s32 Player_OverrideLimbDrawGameplayCommon(PlayState* play, s32 limbIndex, Gfx** 
         if (*dList != NULL) {
             D_80160000++;
         }
+
+        // SoH: Ganondorf's Cape hood replaces Link's cap
+        LinkGanonCape_OverrideLimb(play, this, limbIndex, (void**)dList);
 
         if (limbIndex == PLAYER_LIMB_HEAD) {
             if (CVarGetInteger(CVAR_COSMETIC("Link.HeadScale.Changed"), 0)) {
@@ -1813,6 +1821,9 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
     if (*dList != NULL) {
         Matrix_MultVec3f(&sZeroVec, D_80160000);
     }
+
+    // SoH: remember where Link's shoulders are this frame for Ganondorf's cape
+    LinkGanonCape_RecordLimb(play, this, limbIndex);
 
     if (limbIndex == PLAYER_LIMB_L_HAND) {
         MtxF sp14C;

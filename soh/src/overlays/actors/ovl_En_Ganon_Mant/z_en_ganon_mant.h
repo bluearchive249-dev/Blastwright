@@ -9,6 +9,11 @@ struct EnGanonMant;
 #define GANON_MANT_NUM_JOINTS 12
 #define GANON_MANT_NUM_STRANDS 12
 
+// SoH: params value used for the cape worn by Link
+#define LINK_GANON_CAPE_PARAMS 0x4C4B
+// SoH: Link's cape vertices are stored at this many units per world unit for extra precision
+#define LINK_GANON_CAPE_VTX_SCALE 16.0f
+
 typedef struct {
     /* 0x000 */ Vec3f root;                              // root position along the collar
     /* 0x00C */ Vec3f joints[GANON_MANT_NUM_JOINTS];     // "joints" for deforming the cloak, stemming from root and propagating down the cloak
@@ -37,6 +42,12 @@ typedef struct EnGanonMant {
     /* 0x1704 */ u8 tearTimer; // tear the cloak for x many frames
     /* 0x1705 */ u8 updateHasRun;
     /* 0x1706 */ u8 frameTimer;
-} EnGanonMant; // size = 0x1708
+    // SoH: fields used when the cape is worn by Link (see soh/Enhancements/Graphics/LinkGanonCape.cpp)
+    u8 isLinkCape;     // true when spawned with LINK_GANON_CAPE_PARAMS
+    u8 needsReset;     // snap all joints to hang straight down on the next physics step
+    f32 jointLength;   // strand segment length override, 0 = vanilla
+    f32 velocityClamp; // per-axis velocity clamp override, 0 = vanilla (5.0)
+    Vec3f anchor;      // origin the vertex buffer is stored relative to (Link mode only)
+} EnGanonMant;
 
 #endif
