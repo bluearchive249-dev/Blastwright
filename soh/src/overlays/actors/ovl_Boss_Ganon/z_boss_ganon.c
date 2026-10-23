@@ -5487,11 +5487,12 @@ void SkelAnime_GetFrameData(AnimationHeader* animation, s32 frame, s32 limbCount
 #define GDF_LEFT_FOOT_BODYPART 14
 #define GDF_RIGHT_FOOT_BODYPART 11
 
-// Boss limb -> young Ganondorf limb (-1: keep the boss animation's own rotation)
+// Boss limb -> young Ganondorf limb (-1: keep the boss animation's own rotation). The hands, feet and face keep the
+// boss's own: young Ganondorf's hand and foot bones are rotated differently (his hands would bend 90 degrees).
 static const s8 sGdfBossToYoungLimb[GDF_LIMB_COUNT_PLAYER] = {
-    0,  1,  -1, 2,  3,  4,  -1, 5,  6,  7,  // root, torso, left arm (shoulder, upper, fore, hand), right arm
-    8,  9,  10, 11, -1, -1, 12, 14,         // jewel, lips, mouth, jaw, hair, lip, head
-    15, 16, 17, 18, 20, 21, 22,             // pelvis, legs
+    0,  1,  -1, 2,  3,  -1, -1, 5,  6,  -1, // root, torso, left arm (shoulder, upper, fore, hand), right arm
+    8,  -1, -1, -1, -1, -1, -1, -1,         // jewel (neck), face and hair
+    15, 16, 17, -1, 20, 21, -1,             // pelvis, legs (thigh, shin, foot)
 };
 
 static void BossGanon_Player_RotToMtx(Vec3s* rot, f32 m[3][3]) {
