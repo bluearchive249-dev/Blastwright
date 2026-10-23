@@ -9,6 +9,7 @@
 #include "assets/objects/object_ganon_anime1/object_ganon_anime1.h"
 #include "assets/objects/object_ganon_anime2/object_ganon_anime2.h"
 #include "assets/objects/object_gndd/object_gndd.h"
+#include "soh/Enhancements/ExtraModes/GanondorfSword.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
@@ -78,6 +79,7 @@ static void BossGanon_Player_DrawOrgan(BossGanon* this, PlayState* play);
 static void BossGanon_Init_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Update_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
+static void BossGanon_Player_DrawSword(struct BossGanon* this, PlayState* play);
 static void BossGanon_LightBall_Update_Impl(Actor* thisx, PlayState* play);
 static void func_808E1EB4_Impl(Actor* thisx, PlayState* play);
 static void func_808E2544_Impl(Actor* thisx, PlayState* play);
@@ -585,6 +587,10 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
 
     // SoH: "Play as Ganondorf"
     if (GDF_IS_PLAYER(this)) {
+        Collider_DestroyQuad(play, &this->playerSwordQuad);
+        if ((this->playerSwordBlure >= 0) && (this->playerSwordBlure < TOTAL_EFFECT_COUNT)) {
+            Effect_Delete(play, this->playerSwordBlure);
+        }
         BossGanon_Player_StopOrganMusic(this, play);
         if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
             Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3);
@@ -3515,6 +3521,16 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_2EC[bodyPart]);
     }
 
+    // SoH: "Play as Ganondorf", his hands hold the sword and the sheath
+    if (GDF_IS_PLAYER(this)) {
+        if (limbIndex == 6) {
+            Matrix_Get(&this->playerLeftHandMtx);
+        } else if (limbIndex == 10) {
+            Matrix_Get(&this->playerRightHandMtx);
+            this->playerHandMtxValid = true;
+        }
+    }
+
     if (limbIndex == 2) {
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_1FC);
     } else if (limbIndex == 19) {
@@ -4073,6 +4089,11 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     gSPSegment(POLY_XLU_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gGanondorfNormalEyeTex));
 
     SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, BossGanon_OverrideLimbDraw, BossGanon_PostLimbDraw, &this->actor);
+
+    // SoH: "Play as Ganondorf", sword stance
+    if (GDF_IS_PLAYER(this)) {
+        BossGanon_Player_DrawSword(this, play);
+    }
 
     this->unk_2EC[0].x = this->unk_2EC[1].x;
     this->unk_2EC[0].y = this->unk_2EC[1].y + 30.0f;
@@ -5342,6 +5363,15 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DeflectMagic(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawOrgan(BossGanon* this, PlayState* play);
 static s32 BossGanon_Player_CanStartAttack(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupSwordIdle(BossGanon* this, PlayState* play);
+void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play);
+void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play);
+void BossGanon_Player_SwordDash(BossGanon* this, PlayState* play);
+s32 BossGanon_Player_IsSwordGuarding(BossGanon* this);
+static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play);
+static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play);
+static void BossGanon_Player_UpdateSwordHit(BossGanon* this, PlayState* play);
+static void BossGanon_Player_UpdateAim(BossGanon* this, PlayState* play);
 extern PlayState* gPlayState;
 
 // Ganondorf's own attacks hurt enemies instead of Link
@@ -5415,7 +5445,8 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
     return (this->actionFunc == BossGanon_Player_ChargeLightBall) || (this->actionFunc == BossGanon_Player_Throw) ||
            (this->actionFunc == BossGanon_Player_ChargeBigMagic) || (this->actionFunc == BossGanon_Player_Pound) ||
            (this->actionFunc == BossGanon_Player_Block) || (this->actionFunc == BossGanon_Player_Laugh) ||
-           (this->actionFunc == BossGanon_Player_Organ);
+           (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
+           (this->actionFunc == BossGanon_Player_SwordDash);
 }
 
 // Whether Ganondorf is free to start something (used for levitation)
@@ -5852,6 +5883,10 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
         return;
     }
 
+    if (BossGanon_Player_TryToggleSword(this, play)) {
+        return;
+    }
+
     if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
         if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
             BossGanon_Player_SetupPound(this, play);
@@ -5875,6 +5910,791 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
     } else if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
         BossGanon_Player_SetupBlock(this, play);
     }
+}
+
+
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf", sword stance (D-Pad Left)
+//
+// D-Pad Left: the sword appears in its sheath, the sheath held at his left hip. The first B draws the blade with a
+// cut on the way out; after that B, B, B is a three-hit combo, stick + R a dash (B out of it: a lunging thrust),
+// R alone a guard, and the C-buttons sword skills (spin slash, ground slam, dark energy slash). D-Pad Left puts the
+// blade back in the sheath, and D-Pad Left again puts the sword away.
+//
+// The models come from gdf_sword.bin (GanondorfSword.cpp). The arm poses were solved offline with inverse kinematics
+// on his skeleton (fist position + blade direction) and are blended with quaternions on top of whatever his body is
+// doing (standing, walking, floating). The left arm holds the sheath still while the right arm swings with the walk.
+// ------------------------------------------------------------------------------------------------
+
+#define GDF_SWORD_OFF 0
+#define GDF_SWORD_SHEATHED 1
+#define GDF_SWORD_DRAWN 2
+
+typedef enum {
+    GDF_POSE_REST,
+    GDF_POSE_GRAB,
+    GDF_POSE_DRAW_CUT,
+    GDF_POSE_H1_WIND,
+    GDF_POSE_H1_HIT,
+    GDF_POSE_H1_FOLLOW,
+    GDF_POSE_H2_HIT,
+    GDF_POSE_H2_FOLLOW,
+    GDF_POSE_H3_RAISE,
+    GDF_POSE_H3_SLAM,
+    GDF_POSE_THRUST,
+    GDF_POSE_GUARD,
+    GDF_POSE_SHEATH_HOLD, // left arm
+    GDF_POSE_MAX,
+} GdfSwordPose;
+
+// Upper arm, forearm and hand rotations (the shoulder keeps the animation's)
+static const Vec3s sGdfSwordPoses[GDF_POSE_MAX][3] = {
+    { { 31178, 32720, 22440 }, { 1468, 5156, -12014 }, { 7738, -6307, -5369 } },     // rest
+    { { -28491, -27412, 12397 }, { 3827, 6279, -13343 }, { 14840, 1400, 3925 } },    // grab
+    { { -30505, 29943, 19998 }, { 1157, 6670, -13453 }, { 5791, -546, -2072 } },     // draw_cut
+    { { -27454, -28239, 24488 }, { 1016, 7416, -17620 }, { 3575, 6730, -1523 } },    // h1_wind
+    { { 26378, 26552, 17294 }, { -2367, 6988, -3626 }, { -8979, -1342, 5626 } },     // h1_hit
+    { { -32317, -25398, 11563 }, { 4789, 6465, -17212 }, { 17785, 1823, -1193 } },   // h1_follow
+    { { -32032, 30929, 15720 }, { 806, 6249, -11888 }, { 4225, 490, -1221 } },       // h2_hit
+    { { -28594, -30334, 21404 }, { 1319, 7244, -14911 }, { 4941, 5242, -1844 } },    // h2_follow
+    { { -28763, 16778, 20063 }, { -850, 8991, -9657 }, { -2003, 1892, 787 } },       // h3_raise
+    { { 29705, 29444, 17349 }, { 224, 4670, -7648 }, { 3878, -11108, 283 } },        // h3_slam
+    { { 25446, 23050, 19384 }, { -2119, 5754, -4917 }, { 2745, -13784, 1271 } },     // thrust
+    { { 31230, 28050, 20030 }, { -1132, 6967, -9943 }, { -2981, 1162, 1233 } },      // guard
+    { { 351, 2785, -8876 }, { 1613, -5640, -11036 }, { 978, 19, -3269 } },           // sheath_hold
+};
+
+#define GDF_LEFT_ARM_LIMB 3  // upper arm; forearm and hand follow
+#define GDF_RIGHT_ARM_LIMB 7
+
+// Sword in his hand: fist centre, then the sword frame turned so the blade comes out along the hand's -z
+#define GDF_GRIP_X 650.0f
+#define GDF_GRIP_Y 0.0f
+#define GDF_GRIP_Z -100.0f
+#define GDF_SWORD_SCALE 0.9f
+#define GDF_SWORD_GRIP_Z -500.0f   // where he holds the sword (sword frame)
+#define GDF_SHEATH_GRIP_Z 350.0f   // where he holds the sheath, just under its mouth
+#define GDF_BLADE_BASE_Z -125.0f
+#define GDF_BLADE_TIP_Z 4530.0f
+
+typedef enum {
+    GDF_SWORD_ATK_NONE,
+    GDF_SWORD_ATK_DRAW,
+    GDF_SWORD_ATK_SHEATHE,
+    GDF_SWORD_ATK_COMBO1,
+    GDF_SWORD_ATK_COMBO2,
+    GDF_SWORD_ATK_COMBO3,
+    GDF_SWORD_ATK_THRUST,
+    GDF_SWORD_ATK_SPIN,
+    GDF_SWORD_ATK_SLAM,
+    GDF_SWORD_ATK_WAVE,
+} GdfSwordAttackId;
+
+#define GDF_KEY_FROM -1 // the arm as it was when the attack started
+#define GDF_KEY_END -2
+
+typedef struct {
+    s8 frame;
+    s8 pose;
+} GdfSwordKey;
+
+typedef struct {
+    GdfSwordKey keys[6];
+    s8 length;      // frames until back to the stance
+    s8 activeStart; // blade hits on these frames
+    s8 activeEnd;
+    s8 comboFrom;   // B from this frame queues the next hit
+    s8 next;        // the next hit of the combo
+    s8 impactFrame; // ground slam / dark wave
+    u16 swingSfx;
+} GdfSwordAttack;
+
+static const GdfSwordAttack sGdfSwordAttacks[] = {
+    /* NONE */ { { { 0, GDF_KEY_END } }, 0, -1, -1, -1, 0, -1, 0 },
+    // Draws the blade from the sheath at his hip and cuts outward in one motion
+    /* DRAW */
+    { { { 0, GDF_KEY_FROM }, { 5, GDF_POSE_GRAB }, { 7, GDF_POSE_GRAB }, { 10, GDF_POSE_DRAW_CUT },
+        { 17, GDF_POSE_DRAW_CUT }, { 25, GDF_POSE_REST } },
+      25, 7, 12, -1, 0, -1, NA_SE_IT_SWORD_SWING_HARD },
+    // Back into the sheath, with a click
+    /* SHEATHE */
+    { { { 0, GDF_KEY_FROM }, { 6, GDF_POSE_DRAW_CUT }, { 12, GDF_POSE_GRAB }, { 15, GDF_POSE_GRAB },
+        { 20, GDF_KEY_END } },
+      20, -1, -1, -1, 0, -1, 0 },
+    /* COMBO1: horizontal slash from his right */
+    { { { 0, GDF_KEY_FROM }, { 3, GDF_POSE_H1_WIND }, { 6, GDF_POSE_H1_HIT }, { 9, GDF_POSE_H1_FOLLOW },
+        { 18, GDF_POSE_REST } },
+      18, 4, 9, 5, GDF_SWORD_ATK_COMBO2, -1, NA_SE_IT_SWORD_SWING_HARD },
+    /* COMBO2: backhand */
+    { { { 0, GDF_KEY_FROM }, { 3, GDF_POSE_H2_HIT }, { 6, GDF_POSE_H2_FOLLOW }, { 15, GDF_POSE_REST } },
+      15, 1, 6, 3, GDF_SWORD_ATK_COMBO3, -1, NA_SE_IT_SWORD_SWING_HARD },
+    /* COMBO3: overhead slam */
+    { { { 0, GDF_KEY_FROM }, { 6, GDF_POSE_H3_RAISE }, { 10, GDF_POSE_H3_SLAM }, { 20, GDF_POSE_H3_SLAM },
+        { 30, GDF_POSE_REST } },
+      30, 7, 11, -1, 0, 10, NA_SE_IT_SWORD_SWING_HARD },
+    /* THRUST: out of a dash */
+    { { { 0, GDF_KEY_FROM }, { 3, GDF_POSE_THRUST }, { 11, GDF_POSE_THRUST }, { 18, GDF_POSE_REST } },
+      18, 2, 10, -1, 0, -1, NA_SE_IT_SWORD_SWING_HARD },
+    /* SPIN: a full turn with the blade out */
+    { { { 0, GDF_KEY_FROM }, { 3, GDF_POSE_H1_HIT }, { 16, GDF_POSE_H1_HIT }, { 24, GDF_POSE_REST } },
+      24, 3, 16, -1, 0, -1, NA_SE_IT_ROLLING_CUT },
+    /* SLAM: overhead into the ground, with a shockwave */
+    { { { 0, GDF_KEY_FROM }, { 8, GDF_POSE_H3_RAISE }, { 12, GDF_POSE_H3_SLAM }, { 24, GDF_POSE_H3_SLAM },
+        { 32, GDF_POSE_REST } },
+      32, 9, 13, -1, 0, 12, NA_SE_IT_SWORD_SWING_HARD },
+    /* WAVE: a slash that sends dark energy flying */
+    { { { 0, GDF_KEY_FROM }, { 5, GDF_POSE_H1_WIND }, { 9, GDF_POSE_H1_HIT }, { 12, GDF_POSE_H1_FOLLOW },
+        { 20, GDF_POSE_REST } },
+      20, 7, 11, -1, 0, 9, NA_SE_IT_SWORD_SWING_HARD },
+};
+
+// Persists across areas (the player Ganondorf is spawned again in every scene)
+static u8 sPlayerSwordState = GDF_SWORD_OFF;
+
+static ColliderQuadInit sPlayerSwordQuadInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER,
+        AC_NONE,
+        OC1_NONE,
+        OC2_NONE,
+        COLSHAPE_QUAD,
+    },
+    {
+        ELEMTYPE_UNK2,
+        { DMG_GANONDORF_PLAYER, 0x00, 0x08 },
+        { 0x00000000, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NORMAL,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } } },
+};
+
+// A dark trail behind the blade
+static EffectBlureInit2 sPlayerSwordBlureInit = {
+    0, 8, 0, { 200, 120, 255, 255 }, { 90, 0, 140, 160 }, { 60, 0, 100, 0 }, { 30, 0, 60, 0 }, 6,
+    0, 2, 0, { 200, 120, 255, 255 }, { 90, 0, 140, 160 }, TRAIL_TYPE_SWORDS,
+};
+
+// ---- Quaternion blending of joint rotations ----------------------------------------------------
+
+typedef struct {
+    f32 w, x, y, z;
+} GdfQuat;
+
+static GdfQuat BossGanon_Player_RotToQuat(Vec3s* rot) {
+    f32 m[3][3];
+    GdfQuat q;
+    f32 trace;
+    f32 s;
+
+    BossGanon_Player_RotToMtx(rot, m);
+    trace = m[0][0] + m[1][1] + m[2][2];
+    if (trace > 0.0f) {
+        s = sqrtf(trace + 1.0f) * 2.0f;
+        q.w = 0.25f * s;
+        q.x = (m[2][1] - m[1][2]) / s;
+        q.y = (m[0][2] - m[2][0]) / s;
+        q.z = (m[1][0] - m[0][1]) / s;
+    } else if ((m[0][0] > m[1][1]) && (m[0][0] > m[2][2])) {
+        s = sqrtf(1.0f + m[0][0] - m[1][1] - m[2][2]) * 2.0f;
+        q.w = (m[2][1] - m[1][2]) / s;
+        q.x = 0.25f * s;
+        q.y = (m[0][1] + m[1][0]) / s;
+        q.z = (m[0][2] + m[2][0]) / s;
+    } else if (m[1][1] > m[2][2]) {
+        s = sqrtf(1.0f + m[1][1] - m[0][0] - m[2][2]) * 2.0f;
+        q.w = (m[0][2] - m[2][0]) / s;
+        q.x = (m[0][1] + m[1][0]) / s;
+        q.y = 0.25f * s;
+        q.z = (m[1][2] + m[2][1]) / s;
+    } else {
+        s = sqrtf(1.0f + m[2][2] - m[0][0] - m[1][1]) * 2.0f;
+        q.w = (m[1][0] - m[0][1]) / s;
+        q.x = (m[0][2] + m[2][0]) / s;
+        q.y = (m[1][2] + m[2][1]) / s;
+        q.z = 0.25f * s;
+    }
+    return q;
+}
+
+static void BossGanon_Player_QuatToRot(GdfQuat q, Vec3s* rot) {
+    f32 m[3][3];
+
+    m[0][0] = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
+    m[0][1] = 2.0f * (q.x * q.y - q.z * q.w);
+    m[0][2] = 2.0f * (q.x * q.z + q.y * q.w);
+    m[1][0] = 2.0f * (q.x * q.y + q.z * q.w);
+    m[1][1] = 1.0f - 2.0f * (q.x * q.x + q.z * q.z);
+    m[1][2] = 2.0f * (q.y * q.z - q.x * q.w);
+    m[2][0] = 2.0f * (q.x * q.z - q.y * q.w);
+    m[2][1] = 2.0f * (q.y * q.z + q.x * q.w);
+    m[2][2] = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
+    BossGanon_Player_MtxToRot(m, rot);
+}
+
+// Rotation part way from `a` to `b`
+static void BossGanon_Player_SlerpRot(Vec3s* a, Vec3s* b, f32 t, Vec3s* out) {
+    GdfQuat qa;
+    GdfQuat qb;
+    GdfQuat q;
+    f32 dot;
+    f32 len;
+
+    if (t <= 0.0f) {
+        *out = *a;
+        return;
+    }
+    if (t >= 1.0f) {
+        *out = *b;
+        return;
+    }
+
+    qa = BossGanon_Player_RotToQuat(a);
+    qb = BossGanon_Player_RotToQuat(b);
+    dot = qa.w * qb.w + qa.x * qb.x + qa.y * qb.y + qa.z * qb.z;
+    if (dot < 0.0f) {
+        qb.w = -qb.w;
+        qb.x = -qb.x;
+        qb.y = -qb.y;
+        qb.z = -qb.z;
+        dot = -dot;
+    }
+
+    if (dot > 0.9995f) {
+        q.w = qa.w + (qb.w - qa.w) * t;
+        q.x = qa.x + (qb.x - qa.x) * t;
+        q.y = qa.y + (qb.y - qa.y) * t;
+        q.z = qa.z + (qb.z - qa.z) * t;
+    } else {
+        f32 theta = acosf(dot);
+        f32 sinTheta = sinf(theta);
+        f32 wa = sinf((1.0f - t) * theta) / sinTheta;
+        f32 wb = sinf(t * theta) / sinTheta;
+
+        q.w = qa.w * wa + qb.w * wb;
+        q.x = qa.x * wa + qb.x * wb;
+        q.y = qa.y * wa + qb.y * wb;
+        q.z = qa.z * wa + qb.z * wb;
+    }
+    len = sqrtf(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+    q.w /= len;
+    q.x /= len;
+    q.y /= len;
+    q.z /= len;
+    BossGanon_Player_QuatToRot(q, out);
+}
+
+// Moves an arm's three joints (upper arm, forearm, hand) part way towards `pose`
+static void BossGanon_Player_BlendArm(BossGanon* this, s32 firstLimb, const Vec3s* pose, f32 weight) {
+    Vec3s* joints = this->skelAnime.jointTable;
+    s32 i;
+
+    if (weight <= 0.0f) {
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        Vec3s target = pose[i];
+        BossGanon_Player_SlerpRot(&joints[1 + firstLimb + i], &target, weight, &joints[1 + firstLimb + i]);
+    }
+}
+
+static f32 BossGanon_Player_SmoothStep(f32 t) {
+    t = CLAMP(t, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+// The right arm at `frame` of the current attack: blends between its keyframes
+static void BossGanon_Player_ApplyAttackArm(BossGanon* this, f32 frame) {
+    const GdfSwordAttack* atk = &sGdfSwordAttacks[this->playerSwordAttack];
+    Vec3s from[3];
+    Vec3s to[3];
+    Vec3s* joints = this->skelAnime.jointTable;
+    const GdfSwordKey* k0 = &atk->keys[0];
+    const GdfSwordKey* k1 = NULL;
+    f32 t;
+    s32 i;
+
+    for (i = 1; i < ARRAY_COUNT(atk->keys); i++) {
+        if ((atk->keys[i].frame == 0) && (atk->keys[i].pose == 0) && (i > 1)) {
+            break; // unused
+        }
+        if (atk->keys[i].frame > frame) {
+            k1 = &atk->keys[i];
+            break;
+        }
+        k0 = &atk->keys[i];
+    }
+
+    // The pose of a key; "from" is the arm when the attack started, "end" lets the animation take over
+    for (i = 0; i < 3; i++) {
+        from[i] = (k0->pose >= 0) ? sGdfSwordPoses[k0->pose][i]
+                                  : ((k0->pose == GDF_KEY_FROM) ? this->playerArmFrom[i] : joints[1 + GDF_RIGHT_ARM_LIMB + i]);
+    }
+    if (k1 == NULL) {
+        for (i = 0; i < 3; i++) {
+            joints[1 + GDF_RIGHT_ARM_LIMB + i] = from[i];
+        }
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        to[i] = (k1->pose >= 0) ? sGdfSwordPoses[k1->pose][i] : joints[1 + GDF_RIGHT_ARM_LIMB + i];
+    }
+    t = BossGanon_Player_SmoothStep((frame - k0->frame) / (f32)(k1->frame - k0->frame));
+    for (i = 0; i < 3; i++) {
+        BossGanon_Player_SlerpRot(&from[i], &to[i], t, &joints[1 + GDF_RIGHT_ARM_LIMB + i]);
+    }
+}
+
+// Left arm holds the sheath still; the right arm rests with the blade lowered when standing, and swings with the
+// walk (blade or empty hand) when walking
+static void BossGanon_Player_ApplyStanceArms(BossGanon* this) {
+    f32 restWeight;
+
+    Math_ApproachF(&this->playerSheathArmWeight, (sPlayerSwordState != GDF_SWORD_OFF) ? 1.0f : 0.0f, 1.0f, 0.2f);
+    BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
+                              this->playerSheathArmWeight);
+
+    restWeight = (sPlayerSwordState == GDF_SWORD_DRAWN) ? (1.0f - this->playerWalkWeight) : 0.0f;
+    Math_ApproachF(&this->playerSwordArmWeight, restWeight, 1.0f, 0.2f);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_REST], this->playerSwordArmWeight);
+
+    // Guard: the blade up in front of him
+    Math_ApproachF(&this->playerGuardWeight, this->playerSwordGuard ? 1.0f : 0.0f, 1.0f, 0.25f);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_GUARD], this->playerGuardWeight);
+}
+
+// ---- Stance and attacks ------------------------------------------------------------------------
+
+s32 BossGanon_Player_IsSwordGuarding(BossGanon* this) {
+    return GDF_IS_PLAYER(this) && !this->playerHidden && (this->actionFunc == BossGanon_Player_SwordIdle) &&
+           this->playerSwordGuard && (this->playerGuardWeight > 0.5f);
+}
+
+static void BossGanon_Player_SetSwordBody(BossGanon* this, PlayState* play) {
+    if (this->playerGrounded) {
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -8.0f);
+    } else {
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -8.0f);
+    }
+    this->playerStandAnim = this->playerGrounded;
+}
+
+void BossGanon_Player_SetupSwordIdle(BossGanon* this, PlayState* play) {
+    BossGanon_Player_SetSwordBody(this, play);
+    this->actionFunc = BossGanon_Player_SwordIdle;
+    this->playerSwordAttack = GDF_SWORD_ATK_NONE;
+    this->playerSwordQueued = false;
+    this->playerSpinYaw = 0;
+    this->playerBtnHeld = 0;
+    this->useOpenHand = false;
+}
+
+static void BossGanon_Player_SetupSwordAttack(BossGanon* this, PlayState* play, u8 attack) {
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        this->playerArmFrom[i] = this->skelAnime.jointTable[1 + GDF_RIGHT_ARM_LIMB + i];
+    }
+    this->playerSwordAttack = attack;
+    this->playerSwordTimer = 0;
+    this->playerSwordQueued = false;
+    this->playerSwordGuard = false;
+    this->playerGuardWeight = 0.0f;
+    this->playerSwordArmWeight = 0.0f;
+    this->actionFunc = BossGanon_Player_SwordAttack;
+
+    // Attacks go the way he faces; the dark wave and the slam turn to what he's aiming at
+    this->actor.yawTowardsPlayer = this->actor.shape.rot.y;
+    if ((attack == GDF_SWORD_ATK_WAVE) || (attack == GDF_SWORD_ATK_SLAM)) {
+        BossGanon_Player_UpdateAim(this, play);
+    }
+    if (attack == GDF_SWORD_ATK_SPIN) {
+        this->playerDashYaw = this->actor.shape.rot.y;
+        this->playerSpinYaw = 0;
+    }
+    if (attack == GDF_SWORD_ATK_DRAW) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PICKOUT_GANON);
+    }
+}
+
+static void BossGanon_Player_SetupSwordDash(BossGanon* this, PlayState* play, s16 yaw) {
+    Player* player = GET_PLAYER(play);
+
+    this->playerDashYaw = yaw;
+    this->playerDashSpeed = 26.0f;
+    this->playerDashTimer = 0;
+    this->playerSwordGuard = false;
+    this->actor.yawTowardsPlayer = yaw;
+    this->actionFunc = BossGanon_Player_SwordDash;
+    // A moment where nothing can hurt him
+    if (player->invincibilityTimer == 0) {
+        player->invincibilityTimer = -8;
+    }
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FLOAT);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_AT_RETURN);
+}
+
+// Stick direction in the world (camera-relative), or -1 when the stick is neutral
+static s32 BossGanon_Player_StickYaw(PlayState* play) {
+    Input* input = &play->state.input[0];
+    f32 magnitude;
+    s16 angle;
+
+    func_80077D10(&magnitude, &angle, input);
+    if (magnitude < 30.0f) {
+        return -1;
+    }
+    return (u16)(Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + angle);
+}
+
+// D-Pad Left with the sword out or away, from his normal moveset
+static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
+    Input* input = &play->state.input[0];
+
+    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("SwordStance"), 1) || !CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
+        return false;
+    }
+    if (sPlayerSwordState == GDF_SWORD_OFF) {
+        sPlayerSwordState = GDF_SWORD_SHEATHED;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+        BossGanon_Player_SetupSwordIdle(this, play);
+        return true;
+    }
+    return false;
+}
+
+void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
+    Input* input = &play->state.input[0];
+    s32 stickYaw;
+
+    if (this->playerStandAnim != this->playerGrounded) {
+        BossGanon_Player_SetSwordBody(this, play);
+    }
+
+    sCape->backPush = -2.0f;
+    sCape->backSwayMagnitude = 0.25f;
+    sCape->sideSwayMagnitude = -1.0f;
+    sCape->minDist = 0.0f;
+
+    SkelAnime_Update(&this->skelAnime);
+    if (this->playerGrounded) {
+        BossGanon_Player_UpdateWalk(this, play);
+    } else {
+        this->playerWalkWeight = 0.0f;
+        this->legSwayEnabled = true;
+    }
+
+    this->playerSwordGuard = (sPlayerSwordState == GDF_SWORD_DRAWN) && CHECK_BTN_ALL(input->cur.button, BTN_R) &&
+                             (BossGanon_Player_StickYaw(play) < 0) && BossGanon_Player_CanStartAttack(this, play);
+    BossGanon_Player_ApplyStanceArms(this);
+
+    if (!BossGanon_Player_CanStartAttack(this, play)) {
+        return;
+    }
+
+    // D-Pad Left: blade back into the sheath, or the sword away
+    if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
+        if (sPlayerSwordState == GDF_SWORD_DRAWN) {
+            BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_SHEATHE);
+        } else {
+            sPlayerSwordState = GDF_SWORD_OFF;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+            BossGanon_Player_SetupFloat(this, play);
+        }
+        return;
+    }
+
+    // Stick + R: dash
+    stickYaw = BossGanon_Player_StickYaw(play);
+    if (CHECK_BTN_ALL(input->press.button, BTN_R) && (stickYaw >= 0)) {
+        BossGanon_Player_SetupSwordDash(this, play, (s16)stickYaw);
+        return;
+    }
+
+    if (sPlayerSwordState == GDF_SWORD_SHEATHED) {
+        if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+            BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_DRAW);
+        }
+        return;
+    }
+
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_COMBO1);
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_CLEFT)) {
+        BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_SPIN);
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_CDOWN)) {
+        BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_SLAM);
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_CRIGHT)) {
+        BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_WAVE);
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
+        BossGanon_Player_SetupLaugh(this, play);
+    }
+}
+
+// The ground slam: a quake, dust and a shockwave that hits everything around the impact
+static void BossGanon_Player_SwordImpact(BossGanon* this, PlayState* play, f32 radius) {
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    Vec3f pos = this->playerBladeTip;
+
+    pos.y = this->playerFloorY + 2.0f;
+    Actor_RequestQuakeAndRumble(&this->actor, play, 6, 20);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
+    Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
+    EffectSsBlast_SpawnWhiteShockwave(play, &pos, &zero, &zero);
+    Actor_SpawnFloorDustRing(play, &this->actor, &pos, radius * 0.4f, 16, 8.0f, 700, 30, true);
+
+    this->collider.dim.radius = (s16)radius;
+    this->collider.dim.height = 80;
+    this->collider.dim.yShift = 0;
+    this->collider.dim.pos.x = (s16)pos.x;
+    this->collider.dim.pos.y = (s16)(pos.y - 20.0f);
+    this->collider.dim.pos.z = (s16)pos.z;
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+}
+
+void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
+    const GdfSwordAttack* atk = &sGdfSwordAttacks[this->playerSwordAttack];
+    Input* input = &play->state.input[0];
+    s16 rotX;
+    s16 rotY;
+    s32 stickYaw;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->playerWalkWeight, 1.0f, 0.2f);
+    if (this->playerGrounded) {
+        BossGanon_Player_ApplyWalk(this);
+    }
+
+    // Left arm keeps the sheath, right arm follows the attack
+    Math_ApproachF(&this->playerSheathArmWeight, 1.0f, 1.0f, 0.2f);
+    BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
+                              this->playerSheathArmWeight);
+    BossGanon_Player_ApplyAttackArm(this, this->playerSwordTimer);
+
+    sCape->backPush = -3.0f;
+    sCape->backSwayMagnitude = 1.0f;
+    sCape->sideSwayMagnitude = -2.0f;
+    sCape->minDist = 10.0f;
+
+    // The blade leaves the sheath / goes back in
+    if ((this->playerSwordAttack == GDF_SWORD_ATK_DRAW) && (this->playerSwordTimer == 6)) {
+        sPlayerSwordState = GDF_SWORD_DRAWN;
+    }
+    if ((this->playerSwordAttack == GDF_SWORD_ATK_SHEATHE) && (this->playerSwordTimer == 13)) {
+        sPlayerSwordState = GDF_SWORD_SHEATHED;
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PUTAWAY);
+    }
+    if ((this->playerSwordAttack == GDF_SWORD_ATK_DRAW) && (this->playerSwordTimer == 18)) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+    }
+
+    if (this->playerSwordTimer == atk->activeStart) {
+        Audio_PlayActorSound2(&this->actor, atk->swingSfx);
+        if (this->playerSwordAttack != GDF_SWORD_ATK_DRAW) {
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_AT_RETURN);
+        }
+    }
+
+    // The spin turns his whole body once around
+    if (this->playerSwordAttack == GDF_SWORD_ATK_SPIN) {
+        if ((this->playerSwordTimer >= 3) && (this->playerSwordTimer < 16)) {
+            this->playerSpinYaw += 0x10000 / 13;
+        } else if (this->playerSwordTimer >= 16) {
+            this->playerSpinYaw = 0;
+        }
+    }
+
+    if (this->playerSwordTimer == atk->impactFrame) {
+        if (this->playerSwordAttack == GDF_SWORD_ATK_WAVE) {
+            // Dark energy flies off the blade towards whatever he's facing
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+            BossGanon_Player_AimRot(&this->playerBladeTip, &this->playerAimPos, &rotX, &rotY);
+            Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->playerBladeTip.x,
+                               this->playerBladeTip.y, this->playerBladeTip.z, rotX, rotY, 0,
+                               GDF_PARAMS_PLAYER_LIGHT_BALL);
+        } else {
+            BossGanon_Player_SwordImpact(this, play, (this->playerSwordAttack == GDF_SWORD_ATK_SLAM) ? 260.0f : 150.0f);
+        }
+    }
+    // The slam's shockwave keeps hitting for a moment
+    if ((this->playerSwordAttack == GDF_SWORD_ATK_SLAM) && (this->playerSwordTimer > atk->impactFrame) &&
+        (this->playerSwordTimer < atk->impactFrame + 4)) {
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+    }
+
+    // Next hit of the combo
+    if ((atk->comboFrom >= 0) && (this->playerSwordTimer >= atk->comboFrom) &&
+        CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        this->playerSwordQueued = true;
+    }
+    if (this->playerSwordQueued && (this->playerSwordTimer >= atk->activeEnd) &&
+        BossGanon_Player_CanStartAttack(this, play)) {
+        BossGanon_Player_SetupSwordAttack(this, play, atk->next);
+        return;
+    }
+
+    // Stick + R cancels the recovery into a dash
+    stickYaw = BossGanon_Player_StickYaw(play);
+    if ((this->playerSwordTimer > atk->activeEnd) && (sPlayerSwordState == GDF_SWORD_DRAWN) &&
+        CHECK_BTN_ALL(input->press.button, BTN_R) && (stickYaw >= 0) && BossGanon_Player_CanStartAttack(this, play)) {
+        BossGanon_Player_SetupSwordDash(this, play, (s16)stickYaw);
+        return;
+    }
+
+    this->playerSwordTimer++;
+    if (this->playerSwordTimer >= atk->length) {
+        BossGanon_Player_SetupSwordIdle(this, play);
+    }
+}
+
+#define GDF_DASH_FRAMES 9
+
+// A quick dash; B during it turns into a lunging thrust
+void BossGanon_Player_SwordDash(BossGanon* this, PlayState* play) {
+    Input* input = &play->state.input[0];
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->playerWalkWeight, 1.0f, 0.3f);
+    BossGanon_Player_ApplyStanceArms(this);
+
+    this->playerDashTimer++;
+    if (this->playerDashTimer > GDF_DASH_FRAMES / 2) {
+        Math_ApproachZeroF(&this->playerDashSpeed, 1.0f, 5.0f);
+    }
+
+    if ((sPlayerSwordState == GDF_SWORD_DRAWN) && CHECK_BTN_ALL(input->press.button, BTN_B) &&
+        BossGanon_Player_CanStartAttack(this, play)) {
+        this->playerDashSpeed = 30.0f;
+        this->playerDashTimer = 0;
+        BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_THRUST);
+        return;
+    }
+
+    if (this->playerDashTimer >= GDF_DASH_FRAMES) {
+        this->playerDashSpeed = 0.0f;
+        BossGanon_Player_SetupSwordIdle(this, play);
+    }
+}
+
+// Used by PlayAsGanondorf.cpp to move Link along with the dash and the thrust
+s32 BossGanon_Player_GetDash(Actor* thisx, s16* yaw, f32* speed) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    if ((thisx == NULL) || !GDF_IS_PLAYER(this)) {
+        return false;
+    }
+    if (this->actionFunc == BossGanon_Player_SwordDash) {
+        *yaw = this->playerDashYaw;
+        *speed = this->playerDashSpeed;
+        return this->playerDashSpeed > 0.0f;
+    }
+    if ((this->actionFunc == BossGanon_Player_SwordAttack) && (this->playerSwordAttack == GDF_SWORD_ATK_THRUST) &&
+        (this->playerSwordTimer < 10)) {
+        *yaw = this->actor.shape.rot.y;
+        *speed = 30.0f - (this->playerSwordTimer * 3.0f);
+        return true;
+    }
+    return false;
+}
+
+// ---- Drawing and hits --------------------------------------------------------------------------
+
+// From the hand matrix (captured in the limb callback) to the sword's own frame
+static void BossGanon_Player_SwordFrame(MtxF* hand, f32 gripZ) {
+    Matrix_Put(hand);
+    Matrix_Translate(GDF_GRIP_X, GDF_GRIP_Y, GDF_GRIP_Z, MTXMODE_APPLY);
+    Matrix_RotateX(M_PI, MTXMODE_APPLY);
+    Matrix_Scale(GDF_SWORD_SCALE, GDF_SWORD_SCALE, GDF_SWORD_SCALE, MTXMODE_APPLY);
+    Matrix_Translate(0.0f, 0.0f, -gripZ, MTXMODE_APPLY);
+}
+
+static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play) {
+    static Vec3f sBase = { 0.0f, 0.0f, GDF_BLADE_BASE_Z };
+    static Vec3f sTip = { 0.0f, 0.0f, GDF_BLADE_TIP_Z };
+    Gfx* swordDL;
+    Gfx* sheathDL;
+    const GdfSwordAttack* atk = &sGdfSwordAttacks[this->playerSwordAttack];
+    u8 swinging;
+
+    if ((sPlayerSwordState == GDF_SWORD_OFF) || !this->playerHandMtxValid) {
+        this->playerBladeValid = false;
+        return;
+    }
+    swordDL = GanondorfSword_GetSwordDL();
+    sheathDL = GanondorfSword_GetSheathDL();
+    if (swordDL == NULL) {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Push();
+
+    // Sheath in his left hand, with the sword in it when it's sheathed
+    BossGanon_Player_SwordFrame(&this->playerLeftHandMtx, GDF_SHEATH_GRIP_Z);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    if (sheathDL != NULL) {
+        gSPDisplayList(POLY_OPA_DISP++, sheathDL);
+    }
+    if (sPlayerSwordState == GDF_SWORD_SHEATHED) {
+        gSPDisplayList(POLY_OPA_DISP++, swordDL);
+        this->playerBladeValid = false;
+    } else {
+        // Drawn, in his right hand
+        Vec3f base;
+        Vec3f tip;
+
+        BossGanon_Player_SwordFrame(&this->playerRightHandMtx, GDF_SWORD_GRIP_Z);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, swordDL);
+
+        Matrix_MultVec3f(&sBase, &base);
+        Matrix_MultVec3f(&sTip, &tip);
+        if (this->playerBladeValid) {
+            this->playerBladeBasePrev = this->playerBladeBase;
+            this->playerBladeTipPrev = this->playerBladeTip;
+        } else {
+            this->playerBladeBasePrev = base;
+            this->playerBladeTipPrev = tip;
+        }
+        this->playerBladeBase = base;
+        this->playerBladeTip = tip;
+        this->playerBladeValid = true;
+
+        // Trail while swinging
+        swinging = (this->actionFunc == BossGanon_Player_SwordAttack) &&
+                   (this->playerSwordTimer >= atk->activeStart - 1) && (this->playerSwordTimer <= atk->activeEnd + 1);
+        if ((this->playerSwordBlure >= 0) && (this->playerSwordBlure < TOTAL_EFFECT_COUNT)) {
+            if (swinging) {
+                EffectBlure_AddVertex(Effect_GetByIndex(this->playerSwordBlure), &tip, &base);
+            } else {
+                EffectBlure_AddSpace(Effect_GetByIndex(this->playerSwordBlure));
+            }
+        }
+    }
+
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// The blade's hitbox: the area it swept since the last frame
+static void BossGanon_Player_UpdateSwordHit(BossGanon* this, PlayState* play) {
+    const GdfSwordAttack* atk = &sGdfSwordAttacks[this->playerSwordAttack];
+
+    if ((this->actionFunc != BossGanon_Player_SwordAttack) || !this->playerBladeValid || this->playerHidden) {
+        return;
+    }
+    if ((this->playerSwordTimer < atk->activeStart) || (this->playerSwordTimer > atk->activeEnd)) {
+        return;
+    }
+    Collider_SetQuadVertices(&this->playerSwordQuad, &this->playerBladeTipPrev, &this->playerBladeTip,
+                             &this->playerBladeBasePrev, &this->playerBladeBase);
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->playerSwordQuad.base);
 }
 
 void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
@@ -5919,6 +6739,13 @@ void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
     Actor_ChangeCategory(play, &play->actorCtx, thisx, ACTORCAT_MISC);
 
     this->playerFloorY = player->actor.floorHeight;
+    Collider_InitQuad(play, &this->playerSwordQuad);
+    Collider_SetQuad(play, &this->playerSwordQuad, thisx, &sPlayerSwordQuadInit);
+    this->playerSwordBlure = TOTAL_EFFECT_COUNT;
+    Effect_Add(play, &this->playerSwordBlure, EFFECT_BLURE2, 0, 0, &sPlayerSwordBlureInit);
+    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("SwordStance"), 1)) {
+        sPlayerSwordState = GDF_SWORD_OFF;
+    }
     this->playerPrevInvincibilityTimer = player->invincibilityTimer;
     this->playerOrganSink = GDF_ORGAN_SINK_DEPTH;
     this->triforceType = GDF_TRIFORCE_DORF;
@@ -5966,6 +6793,11 @@ void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play) {
 }
 
 void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play) {
+    // With the sword out, his idle is the sword stance
+    if (sPlayerSwordState != GDF_SWORD_OFF) {
+        BossGanon_Player_SetupSwordIdle(this, play);
+        return;
+    }
     if (this->playerGrounded) {
         BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
         Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -10.0f);
@@ -6484,7 +7316,8 @@ s32 BossGanon_Player_IsCapeUp(Actor* thisx) {
     BossGanon* this = (BossGanon*)thisx;
 
     return (thisx != NULL) && GDF_IS_PLAYER(this) && !this->playerHidden &&
-           (this->actionFunc == BossGanon_Player_Block) && (this->unk_1C2 == 0);
+           (((this->actionFunc == BossGanon_Player_Block) && (this->unk_1C2 == 0)) ||
+            BossGanon_Player_IsSwordGuarding(this));
 }
 
 // While the cape is up it works as Link's shield, for everything that checks for one: a large hard shield
@@ -6833,12 +7666,14 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     if (this->playerGrounded) {
         BossGanon_Player_UpdateGroundOffset(this, play);
     }
+    BossGanon_Player_UpdateSwordHit(this, play);
 
     controlY = (this->actionFunc != BossGanon_Player_Pound) && (this->actionFunc != BossGanon_Player_Downed) &&
                (this->actionFunc != BossGanon_Player_Organ);
 
     // The organ sinks back into the ground once he stops playing, and the area music comes back
     if (this->actionFunc != BossGanon_Player_Organ) {
+        Math_ApproachZeroF(&this->actor.shape.yOffset, 0.3f, 700.0f);
         BossGanon_Player_StopOrganMusic(this, play);
         if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
             // Grinds while it sinks, and stops once it's gone
@@ -6857,7 +7692,10 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
     BossGanon_Player_Follow(this, play, controlY);
 
-    if (BossGanon_Player_IsBusy(thisx)) {
+    if ((this->actionFunc == BossGanon_Player_SwordAttack) && (this->playerSwordAttack == GDF_SWORD_ATK_SPIN) &&
+        (this->playerSpinYaw != 0)) {
+        this->actor.shape.rot.y = this->playerDashYaw + this->playerSpinYaw;
+    } else if (BossGanon_Player_IsBusy(thisx)) {
         Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 3, 0x1000);
     } else if (this->actionFunc != BossGanon_Player_Downed) {
         Math_ApproachS(&this->actor.shape.rot.y, player->actor.shape.rot.y, 2, 0x2000);
@@ -7423,6 +8261,8 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
 
     this->actor.yawTowardsPlayer = this->playerOrganYaw;
     Math_ApproachF(&this->actor.world.pos.y, this->playerOrganPos.y + GDF_ORGAN_SEAT_HEIGHT, 0.2f, 10.0f);
+    // Seated on the bench: his intro lowers the model by 70 with this offset
+    Math_ApproachF(&this->actor.shape.yOffset, -7000.0f, 0.3f, 700.0f);
 
     sCape->backPush = -3.0f;
     sCape->backSwayMagnitude = 0.25f;

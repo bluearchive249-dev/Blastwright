@@ -2190,6 +2190,18 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(30.0f).Max(150.0f).DefaultValue(70.0f).Format("%.0f").Tooltip(
             "How high Ganondorf floats above the ground. He floats at 150 in his boss fight."));
+    AddWidget(path, "Sword Stance (D-Pad Left)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "D-Pad Left: his sword appears sheathed, the sheath in his left hand.\n"
+            " - B: draw the blade (it cuts on the way out). Then B, B, B: three-hit combo.\n"
+            " - Stick + R: dash (B during it: lunging thrust). R alone: guard.\n"
+            " - C-Left: spin slash. C-Down: ground slam. C-Right: dark energy slash.\n"
+            " - D-Pad Left: sheathe the blade. D-Pad Left again: put the sword away.\n\n"
+            "The sword model is read from gdf_sword.bin next to the game; without it a plain blade is used."));
     AddWidget(path, "Ganon Form (D-Pad Right)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonForm"))
         .PreFunc([](WidgetInfo& info) {

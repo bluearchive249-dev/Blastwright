@@ -367,6 +367,21 @@ static void UpdateGanonMusic(PlayState* play, bool on) {
     sGanonMusicNewArea = false;
 }
 
+// Sword stance: the dash (stick + R) and the lunging thrust carry Link along
+static void UpdateSwordDash(PlayState* play, Player* player, BossGanon* dorf) {
+    s16 yaw;
+    f32 speed;
+
+    if (!BossGanon_Player_GetDash(&dorf->actor, &yaw, &speed) || (speed <= 0.0f)) {
+        return;
+    }
+    player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = yaw;
+    player->actor.world.pos.x += Math_SinS(yaw) * speed;
+    player->actor.world.pos.z += Math_CosS(yaw) * speed;
+    player->linearVelocity = 0.0f;
+    Actor_UpdateBgCheckInfo(play, &player->actor, 26.0f, 18.0f, Player_GetHeight(player), 1 | 4);
+}
+
 // D-Pad Right: Ganondorf transforms into Ganon (standing on the ground), and Ganon turns back. Ganon comes back
 // right away in the next area if it allows him.
 static void UpdateGanon(PlayState* play, Player* player, BossGanon* dorf) {
@@ -479,6 +494,7 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
         UpdateGanon(play, player, dorf);
         if (FindPlayerGanon(play) == NULL) {
             UpdateLevitation(play, player, dorf);
+            UpdateSwordDash(play, player, dorf);
         }
     }
     UpdateCapeShield(play, player, dorf);
@@ -505,6 +521,9 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
 
     if (IsGanonFormEnabled()) {
         blocked |= BTN_DRIGHT;
+    }
+    if (CVarGetInteger(CVAR_PLAY_AS_GDF("SwordStance"), 1)) {
+        blocked |= BTN_DLEFT;
     }
     // Ganon's claws can't hold items
     if ((ganon != NULL) || !CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0)) {

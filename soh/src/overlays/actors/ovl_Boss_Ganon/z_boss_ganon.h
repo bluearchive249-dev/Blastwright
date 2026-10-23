@@ -192,6 +192,29 @@ typedef struct BossGanon {
     f32 playerWalkWeight;    // 0 standing .. 1 walking
     f32 playerWalkStride;    // wider than the walk animation when running
     u8 playerStandAnim;      // the standing (not floating) idle is playing
+    // Sword stance (D-Pad Left)
+    u8 playerSwordAttack;       // which attack is playing (GDF_SWORD_ATK_*)
+    u8 playerSwordQueued;       // B pressed during a swing: the next hit of the combo
+    u8 playerSwordGuard;        // R held with the sword out
+    u8 playerHandMtxValid;
+    u8 playerBladeValid;        // blade positions from the last two draws
+    s16 playerSwordTimer;
+    s16 playerDashTimer;
+    s16 playerDashYaw;
+    s16 playerSpinYaw;          // extra body turn for the spin slash
+    f32 playerDashSpeed;
+    f32 playerSheathArmWeight;  // left arm holding the sheath at his hip
+    f32 playerSwordArmWeight;   // right arm in a sword pose
+    f32 playerGuardWeight;
+    Vec3s playerArmFrom[3];     // right arm when the attack started, to blend from
+    MtxF playerLeftHandMtx;
+    MtxF playerRightHandMtx;
+    Vec3f playerBladeBase;
+    Vec3f playerBladeTip;
+    Vec3f playerBladeBasePrev;
+    Vec3f playerBladeTipPrev;
+    ColliderQuad playerSwordQuad;
+    s32 playerSwordBlure;
 } BossGanon;
 
 // SoH: "Play as Ganondorf"
@@ -201,6 +224,7 @@ s32 BossGanon_IsPlayerAttack(Actor* actor);
 s32 BossGanon_Player_CanAct(Actor* thisx);
 s32 BossGanon_Player_IsCapeUp(Actor* thisx);
 void BossGanon_Player_UpdateCapeShield(Actor* thisx, PlayState* play);
+s32 BossGanon_Player_GetDash(Actor* thisx, s16* yaw, f32* speed);
 // Shared with Ganon (Boss_Ganon2)
 s32 BossGanon_Player_ShouldHideAnyForm(PlayState* play);
 s32 BossGanon_Player_LinkCanAttack(PlayState* play);
