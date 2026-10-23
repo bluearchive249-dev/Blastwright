@@ -6396,6 +6396,54 @@ static void BossGanon_Player_TurnJoint(BossGanon* this, s32 limb, f32 turn[3][3]
     BossGanon_Player_MtxToRot(m, &joints[1 + limb]);
 }
 
+// On the ground, his legs stand (from his standing idle) while his upper body plays the action. The block, light
+// ball and magic animations are made for floating: their legs fold up or hang down, which sank him into the floor.
+// The pelvis is set so his legs keep their standing direction whatever the animation does with his root.
+static void BossGanon_Player_StandLegs(BossGanon* this) {
+    static Vec3s sStand[GDF_LIMB_COUNT_PLAYER + 1];
+    static u8 sStandRead = false;
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 weight = this->playerStandLegsWeight;
+    f32 root[3][3];
+    f32 standRoot[3][3];
+    f32 standPelvis[3][3];
+    f32 m[3][3];
+    Vec3s pelvis;
+    s32 i;
+    s32 j;
+
+    if (weight <= 0.0f) {
+        return;
+    }
+    if (!sStandRead) {
+        SkelAnime_GetFrameData((AnimationHeader*)gGanondorfStandIdleAnim, 0, GDF_LIMB_COUNT_PLAYER + 1, sStand);
+        sStandRead = true;
+    }
+
+    // pelvis = root^T * standRoot * standPelvis
+    BossGanon_Player_RotToMtx(&joints[1], root);
+    BossGanon_Player_RotToMtx(&sStand[1], standRoot);
+    BossGanon_Player_RotToMtx(&sStand[1 + 18], standPelvis);
+    BossGanon_Player_MtxMul(standRoot, standPelvis, m);
+    for (i = 0; i < 3; i++) {
+        for (j = i + 1; j < 3; j++) {
+            f32 t = root[i][j];
+
+            root[i][j] = root[j][i];
+            root[j][i] = t;
+        }
+    }
+    BossGanon_Player_MtxMul(root, m, m);
+    BossGanon_Player_MtxToRot(m, &pelvis);
+
+    BossGanon_Player_SlerpRot(&joints[1 + 18], &pelvis, weight, &joints[1 + 18]);
+    for (i = 19; i <= 24; i++) {
+        BossGanon_Player_SlerpRot(&joints[1 + i], &sStand[1 + i], weight, &joints[1 + i]);
+    }
+    // His standing height, so crouching poses bend at the hips instead of pushing his legs into the floor
+    joints[0].y = (s16)(joints[0].y + (sStand[0].y - joints[0].y) * weight);
+}
+
 static void BossGanon_Player_TwistLean(BossGanon* this, f32 twist, f32 lean) {
     Vec3s yaw = { 0, 0, 0 };
     Vec3s pitch = { 0, 0, 0 };
@@ -8022,6 +8070,22 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     this->actionFunc(this, play);
+
+    {
+        u8 standLegs = this->playerGrounded && !this->playerHidden &&
+                       ((this->actionFunc == BossGanon_Player_Block) ||
+                        (this->actionFunc == BossGanon_Player_ChargeLightBall) ||
+                        (this->actionFunc == BossGanon_Player_Throw) ||
+                        (this->actionFunc == BossGanon_Player_ChargeBigMagic) ||
+                        (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Hurt));
+
+        Math_ApproachF(&this->playerStandLegsWeight, standLegs ? 1.0f : 0.0f, 1.0f, 0.15f);
+        if (this->playerGrounded) {
+            BossGanon_Player_StandLegs(this);
+        } else {
+            this->playerStandLegsWeight = 0.0f;
+        }
+    }
 
     // Link isn't drawn, so his body part positions (used by enemies for grabs, effects and aiming) would go stale.
     // Use Ganondorf's from his last draw instead.

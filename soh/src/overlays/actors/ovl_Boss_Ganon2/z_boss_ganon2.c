@@ -3338,7 +3338,9 @@ static void BossGanon2_Player_Init(BossGanon2* this, PlayState* play) {
     Collider_SetCylinder(play, &this->playerCollider, thisx, &sPlayerBodyCylinderInit);
 
     this->unk_228 = 1.0f;
-    this->playerHeadHeight = 330.0f;
+    // The camera follows his head height: Ganondorf's while he transforms (rising to Ganon's as he emerges), so it
+    // doesn't look up past him into the sky
+    this->playerHeadHeight = skipTransformation ? 330.0f : 140.0f;
     this->playerPrevInvincibilityTimer = player->invincibilityTimer;
 
     thisx->world.pos = player->actor.world.pos;
