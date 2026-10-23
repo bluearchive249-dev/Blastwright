@@ -8499,6 +8499,7 @@ void BossGanon_Player_Laugh(BossGanon* this, PlayState* play) {
 // run is the one batch of carpet vertices loaded from this byte offset of the organ's vertex data.
 #define GDF_ORGAN_CARPET_TEX_HASH 0x556DB73EBD8DB734ULL
 #define GDF_ORGAN_CARPET_RUN_VTX_OFFSET 0x2C0
+#define GDF_ORGAN_VTX_PATH "__OTR__overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_OrganVtx_0019E8"
 
 static s32 BossGanon_Player_IsTwoPartGfx(u8 opcode) {
     return (opcode == G_SETTIMG_OTR_HASH) || (opcode == G_DL_OTR_HASH) || (opcode == G_VTX_OTR_HASH) ||
@@ -8549,8 +8550,7 @@ static Gfx* BossGanon_Player_BuildOrganDL(PlayState* play) {
 
                 // Once the real organ has been drawn, the renderer has replaced the offset with a pointer
                 if (offset > 0xFFFFF) {
-                    u64 hash = ((u64)(u32)src[i + 1].words.w0 << 32) | (u64)(u32)src[i + 1].words.w1;
-                    Vtx* base = ResourceMgr_LoadVtxByCRC(hash);
+                    Vtx* base = ResourceMgr_LoadVtxByName(GDF_ORGAN_VTX_PATH);
 
                     offset = (base != NULL) ? (offset - (uintptr_t)base) : 0;
                 }
