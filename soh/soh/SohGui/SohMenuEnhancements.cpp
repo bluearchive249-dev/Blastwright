@@ -2157,7 +2157,16 @@ void SohMenu::AddMenuEnhancements() {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
         })
         .Options(FloatSliderOptions().Min(0.6f).Max(2.0f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
-            "How far back and how high the camera sits. 1.0 frames all of Ganondorf."));
+            "How far back and how high the camera sits indoors (houses, dungeons, ...). 1.0 frames all of "
+            "Ganondorf."));
+    AddWidget(path, "Ganondorf Camera Distance (Open Areas): %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CameraDistanceOutdoors"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(FloatSliderOptions().Min(0.45f).Max(2.0f).DefaultValue(0.75f).Format("%.2fx").Tooltip(
+            "How far back and how high the camera sits in open areas under the sky (Hyrule Field, Lake Hylia, "
+            "Kakariko, ...). Changes right away, so you can adjust it while playing."));
     AddWidget(path, "Ganondorf Hover Height: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.HoverHeight"))
         .PreFunc([](WidgetInfo& info) {

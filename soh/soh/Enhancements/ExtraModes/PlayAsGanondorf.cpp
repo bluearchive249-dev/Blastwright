@@ -367,8 +367,12 @@ extern "C" f32 PlayAsGanondorf_GetCameraHeight(Player* player) {
     f32 height = Player_GetHeight(player);
 
     if (ShouldHideLink(gPlayState, player)) {
-        f32 ganondorfHeight = (CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_HEAD_ABOVE_ROOT) *
-                              CVarGetFloat(CVAR_PLAY_AS_GDF("CameraDistance"), 1.0f);
+        // Open areas (anywhere with the open sky: Hyrule Field, Lake Hylia, ...) use wider camera settings, so they
+        // have their own distance
+        bool outdoors = (gPlayState->skyboxId == SKYBOX_NORMAL_SKY) && !gPlayState->envCtx.skyboxDisabled;
+        f32 distance = outdoors ? CVarGetFloat(CVAR_PLAY_AS_GDF("CameraDistanceOutdoors"), 0.75f)
+                                : CVarGetFloat(CVAR_PLAY_AS_GDF("CameraDistance"), 1.0f);
+        f32 ganondorfHeight = (CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_HEAD_ABOVE_ROOT) * distance;
 
         if (ganondorfHeight > height) {
             height = ganondorfHeight;
