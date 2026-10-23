@@ -2151,6 +2151,14 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Link's voice clips (idling, getting hurt, ...) use Ganondorf's voice instead."));
+    AddWidget(path, "Ganondorf Run Speed: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.RunSpeed"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(FloatSliderOptions().Min(1.0f).Max(2.5f).DefaultValue(1.5f).Format("%.2fx").Tooltip(
+            "How fast Ganondorf moves compared to Link, on the ground, in jumps and while levitating. "
+            "1.0 is Link's speed."));
     AddWidget(path, "Ganondorf Camera Distance: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CameraDistance"))
         .PreFunc([](WidgetInfo& info) {

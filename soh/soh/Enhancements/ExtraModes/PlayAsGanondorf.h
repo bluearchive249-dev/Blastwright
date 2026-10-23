@@ -31,6 +31,9 @@ f32 PlayAsGanondorf_GetCameraHeight(Player* player);
 // First-person look (C-Up): fills in Ganondorf's eye position and returns true, so the camera looks from there
 s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye);
 
+// How much faster than Link Ganondorf runs (1.0 when he isn't out)
+f32 PlayAsGanondorf_GetRunSpeedFactor(PlayState* play, Player* player);
+
 // Called from Player_PlaySfx for Link's voice clips: Ganondorf's voice instead, or PLAY_AS_GANONDORF_MUTE.
 u16 PlayAsGanondorf_GetVoiceSfx(Player* player, u16 sfxId);
 

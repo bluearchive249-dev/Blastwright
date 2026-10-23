@@ -226,7 +226,8 @@ static void UpdateLevitation(PlayState* play, Player* player, BossGanon* dorf) {
         stickMagnitude = 0.0f;
     }
 
-    f32 targetSpeed = (stickMagnitude / 60.0f) * ((f32)R_RUN_SPEED_LIMIT / 100.0f);
+    f32 targetSpeed = (stickMagnitude / 60.0f) * ((f32)R_RUN_SPEED_LIMIT / 100.0f) *
+                      PlayAsGanondorf_GetRunSpeedFactor(play, player);
     Math_StepToF(&sLevitateSpeed, targetSpeed, (targetSpeed > sLevitateSpeed) ? 1.5f : 2.0f);
 
     if (stickMagnitude > 0.0f) {
@@ -349,6 +350,13 @@ extern "C" s32 PlayAsGanondorf_IsCapeShielding(void) {
 
 extern "C" s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player) {
     return ShouldHideLinkModel(play, player) || PlayAsGanondorf_IsTitleScreen(play);
+}
+
+extern "C" f32 PlayAsGanondorf_GetRunSpeedFactor(PlayState* play, Player* player) {
+    if (!ShouldHideLink(play, player)) {
+        return 1.0f;
+    }
+    return CVarGetFloat(CVAR_PLAY_AS_GDF("RunSpeed"), 1.5f);
 }
 
 extern "C" s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye) {
