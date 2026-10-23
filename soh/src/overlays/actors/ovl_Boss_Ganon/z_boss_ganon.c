@@ -8494,21 +8494,25 @@ void BossGanon_Player_Laugh(BossGanon* this, PlayState* play) {
 #define GDF_ORGAN_SEAT_HEIGHT 112.0f
 #define GDF_ORGAN_SEAT_DIST 333.0f
 // CRC64 of "overlays/ovl_En_Ganon_Organ/sRoomCarpetTex". The organ model also contains the long carpet of his
-// chamber; its triangles are left out so only the organ on its dais appears.
+// chamber. The carpet on the raised stone slab (its top, the steps and the hanging part behind the organ) stays, so
+// he has something to stand on; the flat run of carpet beyond the slab, across the chamber floor, is left out. That
+// run is the one batch of carpet vertices loaded from this byte offset of the organ's vertex data.
 #define GDF_ORGAN_CARPET_TEX_HASH 0x556DB73EBD8DB734ULL
+#define GDF_ORGAN_CARPET_RUN_VTX_OFFSET 0x2C0
 
 static s32 BossGanon_Player_IsTwoPartGfx(u8 opcode) {
     return (opcode == G_SETTIMG_OTR_HASH) || (opcode == G_DL_OTR_HASH) || (opcode == G_VTX_OTR_HASH) ||
            (opcode == G_BRANCH_Z_OTR) || (opcode == G_MARKER) || (opcode == G_MTX_OTR) || (opcode == G_MOVEMEM_OTR);
 }
 
-// Copy of sRoomOrganAndFloorDL without the carpet
+// Copy of sRoomOrganAndFloorDL without the carpet beyond the stone slab
 static Gfx* BossGanon_Player_BuildOrganDL(PlayState* play) {
     Gfx* src = ResourceMgr_LoadGfxByName(sRoomOrganAndFloorDL);
     Gfx* dst;
     s32 count = 0;
     s32 i;
     u8 isCarpet = false;
+    u8 isCarpetRun = false;
 
     if (src == NULL) {
         return NULL;
@@ -8540,12 +8544,23 @@ static Gfx* BossGanon_Player_BuildOrganDL(PlayState* play) {
             if (opcode == G_SETTIMG_OTR_HASH) {
                 u64 hash = ((u64)(u32)src[i + 1].words.w0 << 32) | (u64)(u32)src[i + 1].words.w1;
                 isCarpet = (hash == GDF_ORGAN_CARPET_TEX_HASH);
+            } else if (opcode == G_VTX_OTR_HASH) {
+                uintptr_t offset = src[i].words.w1;
+
+                // Once the real organ has been drawn, the renderer has replaced the offset with a pointer
+                if (offset > 0xFFFFF) {
+                    u64 hash = ((u64)(u32)src[i + 1].words.w0 << 32) | (u64)(u32)src[i + 1].words.w1;
+                    Vtx* base = ResourceMgr_LoadVtxByCRC(hash);
+
+                    offset = (base != NULL) ? (offset - (uintptr_t)base) : 0;
+                }
+                isCarpetRun = (offset == GDF_ORGAN_CARPET_RUN_VTX_OFFSET);
             }
             i++;
             continue;
         }
 
-        if (isCarpet && ((opcode == G_TRI1) || (opcode == G_TRI2) || (opcode == G_QUAD))) {
+        if (isCarpet && isCarpetRun && ((opcode == G_TRI1) || (opcode == G_TRI2) || (opcode == G_QUAD))) {
             dst[i].words.w0 = (uintptr_t)G_NOOP << 24;
             dst[i].words.w1 = 0;
         }
