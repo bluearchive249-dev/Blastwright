@@ -18,7 +18,11 @@ typedef void (*BossGanonActionFunc)(struct BossGanon*, PlayState*);
 // Ganondorf's attacks carry every damage type in the game, so they break rocks and walls, hit switches and hurt
 // anything Link could hurt with any weapon. Only "blocked by a shield" is left out: enemies treat that one as a
 // harmless shield push. Which damage-table entry is used is decided in CollisionCheck_ApplyDamage.
-#define DMG_GANONDORF_PLAYER ((u32)~DMG_SHIELD)
+// Every damage type except the shield and the ones that only stun or freeze (Deku Nut, Boomerang, Hookshot, ice).
+// Many enemies check the hit's types directly and take the stun/freeze branch first (Gohma larvae, for one), so
+// with those included his attacks would only ever paralyze them.
+#define DMG_GANONDORF_PLAYER \
+    ((u32) ~(DMG_SHIELD | DMG_DEKU_NUT | DMG_BOOMERANG | DMG_HOOKSHOT | DMG_ARROW_ICE | DMG_MAGIC_ICE))
 
 typedef enum {
     /*  0 */ GDF_FWORK_0,

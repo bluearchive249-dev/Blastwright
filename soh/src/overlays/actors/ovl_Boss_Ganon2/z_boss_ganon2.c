@@ -3208,7 +3208,7 @@ void BossGanon2_Reset(void) {
 // apart from the sword trail buffers (the real Ganon fight can't have both).
 // ================================================================================================
 
-#define GANON2_DMG_PLAYER ((u32)~DMG_SHIELD)
+#define GANON2_DMG_PLAYER DMG_GANONDORF_PLAYER // see z_boss_ganon.h
 
 #define GANON2_ANIM_NONE 0
 #define GANON2_ANIM_IDLE 1
