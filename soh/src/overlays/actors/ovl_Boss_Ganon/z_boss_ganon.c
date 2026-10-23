@@ -8122,13 +8122,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Math_ApproachZeroF(&this->actor.shape.yOffset, 0.3f, 700.0f);
         BossGanon_Player_StopOrganMusic(this, play);
         if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
-            // Grinds while it sinks, and stops once it's gone
+            // Silently (no more grinding sound, it kept looping)
             Math_ApproachF(&this->playerOrganSink, GDF_ORGAN_SINK_DEPTH, 1.0f, 25.0f);
-            if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
-                Actor_PlaySfx_Flagged(&this->actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
-            } else {
-                Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
-            }
         }
     }
 
@@ -8712,7 +8707,6 @@ void BossGanon_Player_SetupOrgan(BossGanon* this, PlayState* play) {
 
     Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -5.0f);
     Actor_RequestQuakeAndRumble(&this->actor, play, 6, 20);
-    Audio_PlayActorSound2(&this->actor, NA_SE_EV_STONE_STATUE_OPEN);
 }
 
 void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
@@ -8732,13 +8726,13 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
 
     switch (this->unk_1C2) {
         case 0: // the organ rises
+            // Rises silently, then slams into place
             Math_ApproachZeroF(&this->playerOrganSink, 1.0f, 25.0f);
-            Actor_PlaySfx_Flagged(&this->actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
 
             if (this->playerOrganSink == 0.0f) {
-                Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_STONE_BOUND);
-                Actor_RequestQuakeAndRumble(&this->actor, play, 4, 10);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
+                Actor_RequestQuakeAndRumble(&this->actor, play, 6, 12);
                 BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
                 Animation_MorphToLoop(&this->skelAnime, &gGanondorfPlayOrganAnim, -5.0f);
                 // As his ocarina, the songs are the music
