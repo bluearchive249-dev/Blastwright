@@ -215,6 +215,9 @@ typedef struct BossGanon {
     Vec3f playerBladeTipPrev;
     ColliderQuad playerSwordQuad;
     s32 playerSwordBlure;
+    u8 playerWasAirborne;  // Link was jumping or falling
+    f32 playerJumpTopY;    // highest point of the jump, for the landing
+    f32 playerAirWeight;   // 0 on the ground .. 1 in the air (jump pose)
     u8 playerOrganOcarina; // the organ is played as his ocarina (Link's songs), not for Ganondorf's Theme
 } BossGanon;
 

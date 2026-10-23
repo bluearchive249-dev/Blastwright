@@ -5367,6 +5367,7 @@ void BossGanon_Player_SetupSwordIdle(BossGanon* this, PlayState* play);
 void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play);
 void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play);
 void BossGanon_Player_SwordDash(BossGanon* this, PlayState* play);
+void BossGanon_Player_Land(BossGanon* this, PlayState* play);
 s32 BossGanon_Player_IsSwordGuarding(BossGanon* this);
 static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play);
@@ -5446,7 +5447,7 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
            (this->actionFunc == BossGanon_Player_ChargeBigMagic) || (this->actionFunc == BossGanon_Player_Pound) ||
            (this->actionFunc == BossGanon_Player_Block) || (this->actionFunc == BossGanon_Player_Laugh) ||
            (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
-           (this->actionFunc == BossGanon_Player_SwordDash);
+           (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land);
 }
 
 // Whether Ganondorf is free to start something (used for levitation)
@@ -5842,7 +5843,8 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
     this->actor.world.pos.z += dz * 0.5f;
 
     if (controlY) {
-        this->actor.world.pos.y += dy * 0.25f;
+        // Keeps up with Link's jumps
+        this->actor.world.pos.y += dy * ((this->playerAirWeight > 0.0f) ? 0.7f : 0.25f);
     }
 }
 
@@ -6472,6 +6474,122 @@ static void BossGanon_Player_ApplyAttackBody(BossGanon* this, f32 frame) {
     BossGanon_Player_TwistLean(this, twist, lean);
 }
 
+
+// ---- Jumping ------------------------------------------------------------------------------------
+//
+// Like Link's jumps (Link still does the jumping): a leap with both knees pulled up, but with Ganondorf's flair: arms
+// spread wide (with the blade out, raised overhead), and after a big drop a heavy landing on one knee from his boss
+// fight that shakes the ground, then he rises.
+
+static const Vec3s sGdfJumpArmPoses[2][3] = {
+    { { -30128, -32436, 27559 }, { 310, 6473, -7851 }, { 2331, 1984, -1421 } }, // right, spread
+    { { -2258, 4986, -2650 }, { 1116, -5525, -6703 }, { -724, -575, -1517 } },   // left, spread
+};
+
+#define GDF_JUMP_LEFT_KNEE_FRAME 5   // walk frames with that knee highest
+#define GDF_JUMP_RIGHT_KNEE_FRAME 20
+#define GDF_BIG_LANDING_HEIGHT 100.0f
+
+static s32 BossGanon_Player_IsJumping(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    return !(player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
+           !(player->stateFlags1 & (PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_HANGING_OFF_LEDGE |
+                                    PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_IN_WATER | PLAYER_STATE1_ON_HORSE)) &&
+           !(player->stateFlags2 & PLAYER_STATE2_CRAWLING);
+}
+
+static void BossGanon_Player_ApplyJump(BossGanon* this, PlayState* play) {
+    static Vec3s sKneeL[GDF_YOUNG_WALK_JOINTS];
+    static Vec3s sKneeR[GDF_YOUNG_WALK_JOINTS];
+    static u8 sKneesRead = false;
+    static const s8 sLegLimbs[] = { 18, 19, 20, 22, 23 }; // pelvis, left thigh and shin, right thigh and shin
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 weight;
+    s32 i;
+
+    Math_ApproachF(&this->playerAirWeight, (this->playerGrounded && BossGanon_Player_IsJumping(play)) ? 1.0f : 0.0f,
+                   1.0f, 0.2f);
+    weight = this->playerAirWeight;
+    if (weight <= 0.0f) {
+        return;
+    }
+
+    if (!sKneesRead) {
+        SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, GDF_JUMP_LEFT_KNEE_FRAME,
+                               GDF_YOUNG_WALK_JOINTS, sKneeL);
+        SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, GDF_JUMP_RIGHT_KNEE_FRAME,
+                               GDF_YOUNG_WALK_JOINTS, sKneeR);
+        sKneesRead = true;
+    }
+
+    // Both knees up: each leg from the walk frame where its knee is highest
+    for (i = 0; i < ARRAY_COUNT(sLegLimbs); i++) {
+        s32 limb = sLegLimbs[i];
+        Vec3s* src = (limb >= 22) ? sKneeR : sKneeL;
+
+        BossGanon_Player_SlerpRot(&joints[1 + limb], &src[1 + sGdfBossToYoungLimb[limb]], weight, &joints[1 + limb]);
+    }
+
+    // Arms
+    if (sPlayerSwordState == GDF_SWORD_DRAWN) {
+        BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_H3_RAISE], weight);
+    } else {
+        BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfJumpArmPoses[0], weight);
+    }
+    if (sPlayerSwordState == GDF_SWORD_OFF) {
+        BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfJumpArmPoses[1], weight);
+    }
+}
+
+void BossGanon_Player_SetupLand(BossGanon* this, PlayState* play, f32 height) {
+    Vec3f pos = this->actor.world.pos;
+
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfLandAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfLandAnim, -2.0f);
+    this->actionFunc = BossGanon_Player_Land;
+    this->unk_1C2 = 0;
+    this->playerAirWeight = 0.0f;
+    this->playerWalkWeight = 0.0f;
+
+    pos.y = this->playerFloorY;
+    Actor_RequestQuakeAndRumble(&this->actor, play, (height > 250.0f) ? 5 : 3, 12);
+    Actor_SpawnFloorDustRing(play, &this->actor, &pos, 40.0f, 10, 6.0f, 400, 25, true);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND);
+}
+
+// Down on one knee, a moment, then he rises
+void BossGanon_Player_Land(BossGanon* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+
+    if (sPlayerSwordState != GDF_SWORD_OFF) {
+        BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD], 1.0f);
+    }
+    sCape->minDist = 0.0f;
+
+    switch (this->unk_1C2) {
+        case 0:
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                this->timers[0] = 6;
+                this->unk_1C2 = 1;
+            }
+            break;
+        case 1:
+            if (this->timers[0] == 0) {
+                this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfGetUp3Anim);
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfGetUp3Anim, -4.0f);
+                this->unk_1C2 = 2;
+            }
+            break;
+        case 2:
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+                BossGanon_Player_SetupFloat(this, play);
+            }
+            break;
+    }
+}
+
 // ---- Stance and attacks ------------------------------------------------------------------------
 
 s32 BossGanon_Player_IsSwordGuarding(BossGanon* this) {
@@ -6598,6 +6716,7 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
     this->playerSwordGuard = (sPlayerSwordState == GDF_SWORD_DRAWN) && CHECK_BTN_ALL(input->cur.button, BTN_R) &&
                              (BossGanon_Player_StickYaw(play) < 0) && BossGanon_Player_CanStartAttack(this, play);
     BossGanon_Player_ApplyStanceArms(this);
+    BossGanon_Player_ApplyJump(this, play);
 
     if (!BossGanon_Player_CanStartAttack(this, play)) {
         return;
@@ -7037,6 +7156,7 @@ void BossGanon_Player_Float(BossGanon* this, PlayState* play) {
 
         SkelAnime_Update(&this->skelAnime);
         BossGanon_Player_UpdateWalk(this, play);
+        BossGanon_Player_ApplyJump(this, play);
         Math_ApproachZeroF(&this->handLightBallScale, 1.0f, 1.0f);
         BossGanon_Player_ReadButtons(this, play);
         return;
@@ -7824,6 +7944,24 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
     // On the ground he stands and walks; he only floats while levitating
     this->playerGrounded = CVarGetInteger(CVAR_PLAY_AS_GDF("WalkOnGround"), 1) && !PlayAsGanondorf_IsLevitating();
+
+    // Jumps: remember the highest point, and land heavily after a big drop
+    if (this->playerGrounded && BossGanon_Player_IsJumping(play)) {
+        if (!this->playerWasAirborne) {
+            this->playerWasAirborne = true;
+            this->playerJumpTopY = player->actor.world.pos.y;
+        }
+        this->playerJumpTopY = MAX(this->playerJumpTopY, player->actor.world.pos.y);
+    } else if (this->playerWasAirborne) {
+        f32 drop = this->playerJumpTopY - player->actor.world.pos.y;
+
+        this->playerWasAirborne = false;
+        if (this->playerGrounded && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && !this->playerHidden &&
+            (drop > GDF_BIG_LANDING_HEIGHT) &&
+            ((this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_SwordIdle))) {
+            BossGanon_Player_SetupLand(this, play, drop);
+        }
+    }
 
     // The organ is his ocarina: when Link plays it, Ganondorf plays the organ
     if ((player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING) && PlayAsGanondorf_UseOrganOcarina() &&
