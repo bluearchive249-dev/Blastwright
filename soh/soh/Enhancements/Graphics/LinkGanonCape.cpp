@@ -432,7 +432,7 @@ extern "C" void* LinkGanonCape_BuildHood(EnGanonMant* cape, PlayState* play) {
             if (row != HOOD_ROWS - 1) {
                 Vec3f out = { p.x - cape->anchor.x, 0.0f, p.z - cape->anchor.z };
                 out = Vec_Normalize(out);
-                f32 bulge = sHoodDrapeBulge[age] * sinf(t * M_PI);
+                f32 bulge = sHoodDrapeBulge[age] * sinf(t * (f32)M_PI);
                 p.x += out.x * bulge;
                 p.z += out.z * bulge;
             }
@@ -481,21 +481,21 @@ extern "C" void* LinkGanonCape_BuildHood(EnGanonMant* cape, PlayState* play) {
             Vtx* vtx = &vertices[(HOOD_COLS - 1 - col) + HOOD_COLS * row];
             Vec3f* p = &sPos[row][col];
 
-            vtx->n.ob[0] = CLAMP((p->x - cape->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
-            vtx->n.ob[1] = CLAMP((p->y - cape->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
-            vtx->n.ob[2] = CLAMP((p->z - cape->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            vtx->n.ob[0] = (s16)CLAMP((p->x - cape->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            vtx->n.ob[1] = (s16)CLAMP((p->y - cape->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            vtx->n.ob[2] = (s16)CLAMP((p->z - cape->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
             vtx->n.flag = 0;
             vtx->n.tc[0] = HOOD_TC_U(row);
             vtx->n.tc[1] = HOOD_TC_V(col);
 
             if (row == HOOD_ROWS - 1) {
-                vtx->n.n[0] = capeNormals[col].x;
-                vtx->n.n[1] = capeNormals[col].y;
-                vtx->n.n[2] = capeNormals[col].z;
+                vtx->n.n[0] = (s8)capeNormals[col].x;
+                vtx->n.n[1] = (s8)capeNormals[col].y;
+                vtx->n.n[2] = (s8)capeNormals[col].z;
             } else {
-                vtx->n.n[0] = sNormal[row][col].x * flip;
-                vtx->n.n[1] = sNormal[row][col].y * flip;
-                vtx->n.n[2] = sNormal[row][col].z * flip;
+                vtx->n.n[0] = (s8)(sNormal[row][col].x * flip);
+                vtx->n.n[1] = (s8)(sNormal[row][col].y * flip);
+                vtx->n.n[2] = (s8)(sNormal[row][col].z * flip);
             }
             vtx->n.a = 255;
         }
