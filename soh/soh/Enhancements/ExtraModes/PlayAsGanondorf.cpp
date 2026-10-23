@@ -130,6 +130,14 @@ static bool IsGanonAllowedHere(PlayState* play) {
     return (scene >= SCENE_HYRULE_FIELD) && (scene <= SCENE_OUTSIDE_GANONS_CASTLE);
 }
 
+extern "C" s32 PlayAsGanondorf_UseOrganOcarina(void) {
+    PlayState* play = gPlayState;
+
+    return IsEnabled() && CVarGetInteger(CVAR_PLAY_AS_GDF("OrganOcarina"), 1) && (play != NULL) &&
+           (gSaveContext.gameMode == GAMEMODE_NORMAL) && (FindPlayerGanondorf(play) != NULL) &&
+           (FindPlayerGanon(play) == NULL);
+}
+
 extern "C" s32 PlayAsGanondorf_IsLevitating(void) {
     return sLevitating;
 }

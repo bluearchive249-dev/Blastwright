@@ -2190,6 +2190,14 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(30.0f).Max(150.0f).DefaultValue(70.0f).Format("%.0f").Tooltip(
             "How high Ganondorf floats above the ground. He floats at 150 in his boss fight."));
+    AddWidget(path, "Organ Instead of Ocarina", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganOcarina"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "When Link plays the ocarina, Ganondorf raises his organ and plays the song on it instead, with an organ "
+            "sound (the windmill's organ). Needs Keep C-Button Items to take the ocarina out."));
     AddWidget(path, "Sword Stance (D-Pad Left)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"))
         .PreFunc([](WidgetInfo& info) {

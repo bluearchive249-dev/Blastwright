@@ -31,6 +31,9 @@ f32 PlayAsGanondorf_GetCameraHeight(Player* player);
 // First-person look (C-Up): fills in Ganondorf's eye position and returns true, so the camera looks from there
 s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye);
 
+// Link's ocarina is Ganondorf's organ: he plays it, and the songs use an organ sound
+s32 PlayAsGanondorf_UseOrganOcarina(void);
+
 // L/Z levitation is active (Ganondorf floats; otherwise he stands and walks on the ground)
 s32 PlayAsGanondorf_IsLevitating(void);
 

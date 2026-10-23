@@ -7615,6 +7615,19 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     // On the ground he stands and walks; he only floats while levitating
     this->playerGrounded = CVarGetInteger(CVAR_PLAY_AS_GDF("WalkOnGround"), 1) && !PlayAsGanondorf_IsLevitating();
 
+    // The organ is his ocarina: when Link plays it, Ganondorf plays the organ
+    if ((player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING) && PlayAsGanondorf_UseOrganOcarina() &&
+        (this->actionFunc != BossGanon_Player_Organ) && (this->actionFunc != BossGanon_Player_Downed)) {
+        BossGanon_Player_StopOrganMusic(this, play);
+        BossGanon_Player_SetupOrgan(this, play);
+        this->playerOrganOcarina = true;
+        // Straight into playing: the first notes come right away
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfPlayOrganAnim, -5.0f);
+    } else if (this->actionFunc != BossGanon_Player_Organ) {
+        this->playerOrganOcarina = false;
+    }
+
     this->playerHidden = BossGanon_Player_ShouldHide(this, play);
     if (sCape->actor.update != NULL) {
         sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
@@ -8280,14 +8293,18 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
                 Actor_RequestQuakeAndRumble(&this->actor, play, 4, 10);
                 BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
                 Animation_MorphToLoop(&this->skelAnime, &gGanondorfPlayOrganAnim, -5.0f);
-                BossGanon_Player_StartOrganMusic(this);
+                // As his ocarina, the songs are the music
+                if (!this->playerOrganOcarina) {
+                    BossGanon_Player_StartOrganMusic(this);
+                }
                 this->unk_1C2 = 1;
             }
             break;
 
-        case 1: // playing, until D-pad Down, B or A
-            if (CHECK_BTN_ANY(input->press.button, BTN_DDOWN | BTN_B | BTN_A) ||
-                !BossGanon_Player_CanStartAttack(this, play)) {
+        case 1: // playing, until D-pad Down, B or A (as his ocarina: until Link puts it away)
+            if (this->playerOrganOcarina ? !(GET_PLAYER(play)->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING)
+                                         : (CHECK_BTN_ANY(input->press.button, BTN_DDOWN | BTN_B | BTN_A) ||
+                                            !BossGanon_Player_CanStartAttack(this, play))) {
                 this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfStopPlayingOrganAnim);
                 Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfStopPlayingOrganAnim, -5.0f);
                 BossGanon_Player_StopOrganMusic(this, play);

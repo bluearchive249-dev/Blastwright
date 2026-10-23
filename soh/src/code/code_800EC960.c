@@ -6,6 +6,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include <libultraship/bridge/consolevariablebridge.h>
 
 // TODO: can these macros be shared between files? code_800F9280 seems to use
@@ -1985,6 +1986,11 @@ void AudioOcarina_EnableInput(u8 inputEnabled) {
  * For all ocarina instrument ids, turn the ocarina on with the instrument id
  */
 void AudioOcarina_SetInstrument(u8 ocarinaInstrumentId) {
+    // SoH: "Play as Ganondorf", his ocarina is an organ
+    if ((ocarinaInstrumentId == OCARINA_INSTRUMENT_DEFAULT) && PlayAsGanondorf_UseOrganOcarina()) {
+        ocarinaInstrumentId = OCARINA_INSTRUMENT_GRIND_ORGAN;
+    }
+
     if (sOcarinaInstrumentId == ocarinaInstrumentId) {
         return;
     }

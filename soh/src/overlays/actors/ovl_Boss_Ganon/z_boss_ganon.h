@@ -215,6 +215,7 @@ typedef struct BossGanon {
     Vec3f playerBladeTipPrev;
     ColliderQuad playerSwordQuad;
     s32 playerSwordBlure;
+    u8 playerOrganOcarina; // the organ is played as his ocarina (Link's songs), not for Ganondorf's Theme
 } BossGanon;
 
 // SoH: "Play as Ganondorf"
