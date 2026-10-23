@@ -4,6 +4,8 @@
 // from the player's own model file, see the format below). Without the file a plain stand-in blade is drawn and
 // there's no sheath.
 //
+// It's looked for next to soh.exe, then in its mods folder. Copy it into every new build folder.
+//
 // gdf_sword.bin (little endian):
 //   char[4] "GDFS", u16 version (1), u16 partCount
 //   part:  u8 kind, u8 r, u8 g, u8 b, u16 batchCount
@@ -142,8 +144,19 @@ void BuildStandIn(Model& m, std::vector<PendingPart>& parts) {
 }
 
 bool ReadFile(Model& m, std::vector<PendingPart>& parts) {
-    std::string path = Ship::Context::GetPathRelativeToAppDirectory("gdf_sword.bin");
-    FILE* file = fopen(path.c_str(), "rb");
+    // Next to the game, in its mods folder, or in the working directory
+    const std::string candidates[] = {
+        Ship::Context::GetPathRelativeToAppDirectory("gdf_sword.bin"),
+        Ship::Context::GetPathRelativeToAppDirectory("mods/gdf_sword.bin"),
+        "gdf_sword.bin",
+    };
+    FILE* file = nullptr;
+    for (const std::string& path : candidates) {
+        file = fopen(path.c_str(), "rb");
+        if (file != nullptr) {
+            break;
+        }
+    }
     if (file == nullptr) {
         return false;
     }

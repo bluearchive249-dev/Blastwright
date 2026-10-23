@@ -5944,6 +5944,8 @@ typedef enum {
     GDF_POSE_THRUST,
     GDF_POSE_GUARD,
     GDF_POSE_SHEATH_HOLD, // left arm
+    GDF_POSE_SWING_FWD,   // walking with the blade: fist forward
+    GDF_POSE_SWING_BACK,  // ...and back
     GDF_POSE_MAX,
 } GdfSwordPose;
 
@@ -5962,6 +5964,8 @@ static const Vec3s sGdfSwordPoses[GDF_POSE_MAX][3] = {
     { { 25446, 23050, 19384 }, { -2119, 5754, -4917 }, { 2745, -13784, 1271 } },     // thrust
     { { 31230, 28050, 20030 }, { -1132, 6967, -9943 }, { -2981, 1162, 1233 } },      // guard
     { { 351, 2785, -8876 }, { 1613, -5640, -11036 }, { 978, 19, -3269 } },           // sheath_hold
+    { { 31750, 31012, 21654 }, { 1588, 5211, -11697 }, { 10051, -4439, -7505 } },    // swing_fwd
+    { { 28994, -30288, 24533 }, { 727, 4682, -10943 }, { 4703, -7841, -3760 } },     // swing_back
 };
 
 #define GDF_LEFT_ARM_LIMB 3  // upper arm; forearm and hand follow
@@ -6247,18 +6251,30 @@ static void BossGanon_Player_ApplyAttackArm(BossGanon* this, f32 frame) {
     }
 }
 
-// Left arm holds the sheath still; the right arm rests with the blade lowered when standing, and swings with the
-// walk (blade or empty hand) when walking
+// Left arm holds the sheath still. The right arm swings with the walk; with the blade out it rests the blade lowered
+// when standing, and swings between two poses that keep the blade pointing forward and down when walking.
 static void BossGanon_Player_ApplyStanceArms(BossGanon* this) {
-    f32 restWeight;
+    Vec3s swing[3];
+    Vec3s pose[3];
+    f32 phase;
+    s32 i;
 
     Math_ApproachF(&this->playerSheathArmWeight, (sPlayerSwordState != GDF_SWORD_OFF) ? 1.0f : 0.0f, 1.0f, 0.2f);
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
                               this->playerSheathArmWeight);
 
-    restWeight = (sPlayerSwordState == GDF_SWORD_DRAWN) ? (1.0f - this->playerWalkWeight) : 0.0f;
-    Math_ApproachF(&this->playerSwordArmWeight, restWeight, 1.0f, 0.2f);
-    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_REST], this->playerSwordArmWeight);
+    Math_ApproachF(&this->playerSwordArmWeight, (sPlayerSwordState == GDF_SWORD_DRAWN) ? 1.0f : 0.0f, 1.0f, 0.2f);
+    // In time with the walk: the fist is furthest back at frame 0 and furthest forward at frame 15
+    phase = 0.5f - (0.5f * Math_CosS((s16)(this->playerWalkFrame * (0x10000 / GDF_WALK_CYCLE_FRAMES))));
+    for (i = 0; i < 3; i++) {
+        Vec3s back = sGdfSwordPoses[GDF_POSE_SWING_BACK][i];
+        Vec3s fwd = sGdfSwordPoses[GDF_POSE_SWING_FWD][i];
+        Vec3s rest = sGdfSwordPoses[GDF_POSE_REST][i];
+
+        BossGanon_Player_SlerpRot(&back, &fwd, phase, &swing[i]);
+        BossGanon_Player_SlerpRot(&rest, &swing[i], this->playerWalkWeight, &pose[i]);
+    }
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, pose, this->playerSwordArmWeight);
 
     // Guard: the blade up in front of him
     Math_ApproachF(&this->playerGuardWeight, this->playerSwordGuard ? 1.0f : 0.0f, 1.0f, 0.25f);
