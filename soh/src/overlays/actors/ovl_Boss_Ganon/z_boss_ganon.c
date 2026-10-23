@@ -5989,12 +5989,12 @@ typedef enum {
 static const Vec3s sGdfSwordPoses[GDF_POSE_MAX][3] = {
     { { 32010, 29971, 23028 }, { 1209, 4825, -8607 }, { 4289, -13661, -1643 } }, // rest
     { { -24427, -31715, 8174 }, { 2889, 4607, -6547 }, { 16078, -601, 4283 } }, // grab
-    { { -25963, 26804, 26283 }, { 2003, 6421, -10509 }, { 13257, -2434, -5503 } }, // draw_cut
+    { { -28730, 29878, 24638 }, { 1853, 5778, -9964 }, { 13918, -710, -7349 } }, // draw_cut
     { { -24122, -27454, 32439 }, { 2425, 6842, -11812 }, { 14006, -239, -3192 } }, // h1_wind
-    { { 29529, 14818, 29226 }, { -862, 6427, -7106 }, { -454, -8220, 3036 } }, // h1_hit
-    { { 21725, 24653, 10678 }, { -2807, 6477, -8603 }, { -14965, -203, 4219 } }, // h1_follow
-    { { -30478, 26141, 15360 }, { 1178, 5956, -10246 }, { 7092, -2789, 353 } }, // h2_hit
-    { { -23952, 31201, 25906 }, { 2086, 6918, -11038 }, { 11433, -312, -223 } }, // h2_follow
+    { { 24675, 28341, 14931 }, { -1745, 5958, -2439 }, { -13920, -554, 8581 } }, // h1_hit
+    { { -29516, -23484, 10321 }, { 3176, 5670, -12897 }, { 17519, 2549, -4039 } }, // h1_follow
+    { { -30391, 30387, 16607 }, { 1421, 5733, -9965 }, { 8524, -2000, -1621 } }, // h2_hit
+    { { -25361, -31449, 24174 }, { 2409, 6432, -11162 }, { 13317, 370, -1941 } }, // h2_follow
     { { -16998, -32175, -23642 }, { 2219, 8469, -11946 }, { 11727, 1137, 2273 } }, // h3_raise
     { { 30798, 24401, 18203 }, { 793, 4581, -7324 }, { 3763, -17056, -153 } }, // h3_slam
     { { -29810, 25473, 11710 }, { 2110, 5219, -9589 }, { 14782, 17209, -12905 } }, // thrust
@@ -6064,10 +6064,10 @@ static const GdfSwordAttack sGdfSwordAttacks[] = {
     /* COMBO1: horizontal slash from his right */
     { { { 0, GDF_KEY_FROM }, { 3, GDF_POSE_H1_WIND }, { 6, GDF_POSE_H1_HIT }, { 9, GDF_POSE_H1_FOLLOW },
         { 18, GDF_POSE_REST } },
-      18, 4, 9, 5, GDF_SWORD_ATK_COMBO2, -1, NA_SE_IT_SWORD_SWING_HARD },
+      18, 3, 10, 5, GDF_SWORD_ATK_COMBO2, -1, NA_SE_IT_SWORD_SWING_HARD },
     /* COMBO2: backhand */
     { { { 0, GDF_KEY_FROM }, { 3, GDF_POSE_H2_HIT }, { 6, GDF_POSE_H2_FOLLOW }, { 15, GDF_POSE_REST } },
-      15, 1, 6, 3, GDF_SWORD_ATK_COMBO3, -1, NA_SE_IT_SWORD_SWING_HARD },
+      15, 1, 7, 3, GDF_SWORD_ATK_COMBO3, -1, NA_SE_IT_SWORD_SWING_HARD },
     /* COMBO3: overhead slam */
     { { { 0, GDF_KEY_FROM }, { 6, GDF_POSE_H3_RAISE }, { 10, GDF_POSE_H3_SLAM }, { 20, GDF_POSE_H3_SLAM },
         { 30, GDF_POSE_REST } },
@@ -7024,6 +7024,27 @@ static void BossGanon_Player_UpdateSwordHit(BossGanon* this, PlayState* play) {
     Collider_SetQuadVertices(&this->playerSwordQuad, &this->playerBladeTipPrev, &this->playerBladeTip,
                              &this->playerBladeBasePrev, &this->playerBladeBase);
     CollisionCheck_SetAT(play, &play->colChkCtx, &this->playerSwordQuad.base);
+
+    // He's far taller than most enemies, so the blade alone passes over small ones. While a slash is active, the
+    // space in front of him from the floor up to the blade hits too, as far out as the blade reaches.
+    if ((this->playerSwordAttack != GDF_SWORD_ATK_SLAM) && (this->playerSwordAttack != GDF_SWORD_ATK_COMBO3) &&
+        (this->playerSwordAttack != GDF_SWORD_ATK_WAVE)) {
+        f32 dx = this->playerBladeTip.x - this->actor.world.pos.x;
+        f32 dz = this->playerBladeTip.z - this->actor.world.pos.z;
+        f32 reach = sqrtf(SQ(dx) + SQ(dz));
+        f32 sinY = Math_SinS(this->actor.shape.rot.y);
+        f32 cosY = Math_CosS(this->actor.shape.rot.y);
+        f32 top = MAX(this->playerBladeTip.y, this->playerBladeBase.y) - this->playerFloorY;
+
+        reach = CLAMP(reach, 60.0f, 220.0f);
+        this->collider.dim.radius = (s16)(reach * 0.55f);
+        this->collider.dim.height = (s16)CLAMP(top + 10.0f, 50.0f, 160.0f);
+        this->collider.dim.yShift = 0;
+        this->collider.dim.pos.x = (s16)(this->actor.world.pos.x + sinY * reach * 0.5f);
+        this->collider.dim.pos.y = (s16)(this->playerFloorY - 5.0f);
+        this->collider.dim.pos.z = (s16)(this->actor.world.pos.z + cosY * reach * 0.5f);
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+    }
 }
 
 void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
