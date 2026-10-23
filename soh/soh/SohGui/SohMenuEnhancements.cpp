@@ -2165,6 +2165,12 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(30.0f).Max(150.0f).DefaultValue(70.0f).Format("%.0f").Tooltip(
             "How high Ganondorf floats above the ground. He floats at 150 in his boss fight."));
+    AddWidget(path, "Ganondorf Title Screen", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleScreen"))
+        .Options(CheckboxOptions().Tooltip(
+            "The title screen takes place in Ganondorf's chamber at the top of his tower: he plays his theme on the "
+            "organ forever, seen from behind. Works with or without Play as Ganondorf.\n\n"
+            "Takes effect the next time the title screen loads (restart, or quit to the title screen)."));
     AddWidget(path, "Hurt Container Mode", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("HurtContainer"))
         .Options(CheckboxOptions().Tooltip("Changes Heart Piece and Heart Container functionality.\n\n"

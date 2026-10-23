@@ -31,6 +31,13 @@ f32 PlayAsGanondorf_GetCameraHeight(Player* player);
 // Called from Player_PlaySfx for Link's voice clips: Ganondorf's voice instead, or PLAY_AS_GANONDORF_MUTE.
 u16 PlayAsGanondorf_GetVoiceSfx(Player* player, u16 sfxId);
 
+// Title screen option: the game opens in Ganondorf's chamber, with him playing the organ, instead of Hyrule Field.
+// Checked by the opening when it picks where the title screen takes place.
+s32 PlayAsGanondorf_UseTitleScreen(void);
+
+// True while that title screen is running
+s32 PlayAsGanondorf_IsTitleScreen(PlayState* play);
+
 #ifdef __cplusplus
 }
 #endif

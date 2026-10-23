@@ -5,6 +5,7 @@
  */
 
 #include "global.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 
 void Sram_InitDebugSave(void);
 
@@ -17,6 +18,13 @@ void Opening_SetupTitleScreen(OpeningContext* this) {
     Sram_InitDebugSave();
     gSaveContext.cutsceneIndex = 0xFFF3;
     gSaveContext.sceneLayer = 7;
+
+    // SoH: "Play as Ganondorf" title screen, in his chamber instead of Hyrule Field (see BossGanon_TitleScreen)
+    if (PlayAsGanondorf_UseTitleScreen()) {
+        gSaveContext.entranceIndex = ENTR_GANON_BOSS_0;
+        gSaveContext.cutsceneIndex = 0;
+        gSaveContext.sceneLayer = 0;
+    }
     SET_NEXT_GAMESTATE(&this->state, Play_Init, PlayState);
 }
 

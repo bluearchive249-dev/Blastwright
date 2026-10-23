@@ -8,6 +8,7 @@
 #include "assets/objects/object_ganon/object_ganon.h"
 #include "assets/objects/object_ganon_anime1/object_ganon_anime1.h"
 #include "assets/objects/object_ganon_anime2/object_ganon_anime2.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
@@ -653,6 +654,68 @@ void BossGanon_SetIntroCsCamera(BossGanon* this, u8 camPosIndex) {
     this->csCamAt.z = camPos->at.z;
 }
 
+// SoH: "Play as Ganondorf" title screen. Instead of the Hyrule Field title cutscene, the game opens in his
+// chamber at the top of the tower: he plays Ganondorf's Theme on the organ forever, seen from behind, with the
+// logo and "Press Start" on top. Link is there too, hidden and frozen at the door.
+// The camera sits behind and above him and drifts slowly from side to side.
+#define GDF_TITLE_CAM_EYE_Y 225.0f
+#define GDF_TITLE_CAM_EYE_Z -95.0f
+#define GDF_TITLE_CAM_AT_Y 150.0f
+#define GDF_TITLE_CAM_AT_Z -470.0f
+
+static void BossGanon_TitleScreen(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 drift;
+
+    if (this->csState == 0) {
+        this->actor.world.pos.x = 0.0f;
+        this->actor.world.pos.y = 112.0f;
+        this->actor.world.pos.z = -333.0f;
+        this->actor.shape.yOffset = -7000.0f;
+        this->actor.shape.rot.y = 0;
+        this->useOpenHand = true;
+
+        this->csCamIndex = Play_CreateSubCamera(play);
+        Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
+        Play_ChangeCameraStatus(play, this->csCamIndex, CAM_STAT_ACTIVE);
+        this->csCamFov = 60.0f;
+
+        Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_GANON_ORGAN, 0.0f, 0.0f, 0.0f, 0, 0, 0, 1);
+        sCape->minY = 57.0f;
+
+        // The logo and "Press Start". It starts the file select by itself.
+        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_MAG, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0);
+
+        this->csState = 1;
+        this->csTimer = 0;
+    }
+
+    // Ganondorf's Theme loops on its own; start it if the scene didn't
+    if ((this->csTimer == 1) && ((func_800FA0B4(SEQ_PLAYER_BGM_MAIN) & 0xFF) != NA_BGM_GANON_TOWER)) {
+        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_GANON_TOWER);
+    }
+
+    if (player != NULL) {
+        player->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
+    }
+
+    // The dark, stormy lighting from his intro
+    this->envLightMode = 3;
+
+    drift = Math_SinS((s16)(this->csTimer * 0x30));
+    this->csCamEye.x = drift * 30.0f;
+    this->csCamEye.y = GDF_TITLE_CAM_EYE_Y;
+    this->csCamEye.z = GDF_TITLE_CAM_EYE_Z;
+    this->csCamAt.x = drift * 10.0f;
+    this->csCamAt.y = GDF_TITLE_CAM_AT_Y;
+    this->csCamAt.z = GDF_TITLE_CAM_AT_Z;
+
+    if (this->csCamIndex != 0) {
+        Play_CameraSetAtEye(play, this->csCamIndex, &this->csCamAt, &this->csCamEye);
+        Play_CameraSetFov(play, this->csCamIndex, this->csCamFov);
+    }
+}
+
 void BossGanon_IntroCutscene(BossGanon* this, PlayState* play) {
     u8 moveCam = false;
     Player* player = GET_PLAYER(play);
@@ -671,6 +734,12 @@ void BossGanon_IntroCutscene(BossGanon* this, PlayState* play) {
     this->csTimer++;
 
     SkelAnime_Update(&this->skelAnime);
+
+    // SoH: "Play as Ganondorf" title screen, he keeps playing the organ
+    if (PlayAsGanondorf_IsTitleScreen(play)) {
+        BossGanon_TitleScreen(this, play);
+        return;
+    }
 
     switch (this->csState) {
         case 0:

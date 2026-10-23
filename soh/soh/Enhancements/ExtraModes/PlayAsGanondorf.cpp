@@ -18,7 +18,8 @@
 //  - in water Ganondorf always walks the bottom like with Iron Boots (and doesn't need air); levitation
 //    brings him back up,
 //  - gives Link's voice clips Ganondorf's voice,
-//  - tells the camera how tall Ganondorf is.
+//  - tells the camera how tall Ganondorf is,
+//  - optional title screen in his chamber, with him playing the organ (see BossGanon_TitleScreen).
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -56,6 +57,15 @@ static f32 sLevitateSpeed = 0.0f;
 
 static bool IsEnabled() {
     return CVarGetInteger(CVAR_PLAY_AS_GDF_ENABLED, 0) != 0;
+}
+
+extern "C" s32 PlayAsGanondorf_UseTitleScreen(void) {
+    return CVarGetInteger(CVAR_PLAY_AS_GDF("TitleScreen"), 0) != 0;
+}
+
+extern "C" s32 PlayAsGanondorf_IsTitleScreen(PlayState* play) {
+    return (play != NULL) && (gSaveContext.gameMode == GAMEMODE_TITLE_SCREEN) &&
+           (play->sceneNum == SCENE_GANON_BOSS) && PlayAsGanondorf_UseTitleScreen();
 }
 
 static BossGanon* FindPlayerGanondorf(PlayState* play) {
@@ -236,6 +246,16 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
 
     BossGanon* dorf = FindPlayerGanondorf(play);
 
+    // Title screen: Link stays hidden and frozen, and no second Ganondorf
+    if (PlayAsGanondorf_IsTitleScreen(play)) {
+        if (dorf != NULL) {
+            KillPlayerGanondorf(play, dorf);
+        }
+        player->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
+        SetLinkShadowHidden(player, true);
+        return;
+    }
+
     if (!IsEnabled()) {
         if (dorf != NULL) {
             KillPlayerGanondorf(play, dorf);
@@ -270,6 +290,9 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
     }
 
     BossGanon* dorf = FindPlayerGanondorf(play);
+    if (dorf == NULL) {
+        return;
+    }
     bool busy = BossGanon_Player_IsBusy(&dorf->actor);
 
     // B = sword, R = shield, Z = targeting, L = levitate. D-pad Up/Down are the laugh and the organ.
@@ -307,7 +330,7 @@ extern "C" s32 PlayAsGanondorf_IsCapeShielding(void) {
 }
 
 extern "C" s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player) {
-    return ShouldHideLink(play, player);
+    return ShouldHideLink(play, player) || PlayAsGanondorf_IsTitleScreen(play);
 }
 
 // Every camera mode scales its distance and height from the player's height, so report Ganondorf's
