@@ -5518,11 +5518,11 @@ void SkelAnime_GetFrameData(AnimationHeader* animation, s32 frame, s32 limbCount
 #define GDF_LEFT_FOOT_BODYPART 14
 #define GDF_RIGHT_FOOT_BODYPART 11
 
-// Boss limb -> young Ganondorf limb (-1: keep the boss animation's own rotation). The hands, feet and face keep the
-// boss's own: young Ganondorf's hand and foot bones are rotated differently (his hands would bend 90 degrees).
+// Boss limb -> young Ganondorf limb (-1: keep the boss animation's own rotation). The legs come from the walk; the
+// feet, face and torso keep his own (young Ganondorf's feet are rotated differently, and his torso is narrower).
 static const s8 sGdfBossToYoungLimb[GDF_LIMB_COUNT_PLAYER] = {
-    0,  1,  -1, 2,  3,  -1, -1, 5,  6,  -1, // root, torso, left arm (shoulder, upper, fore, hand), right arm
-    8,  -1, -1, -1, -1, -1, -1, -1,         // jewel (neck), face and hair
+    0,  1,  -1, -1, -1, -1, -1, -1, -1, -1, // root, torso (see below), arms (their own poses, see sGdfWalkArmPoses)
+    -1, -1, -1, -1, -1, -1, -1, -1,         // neck, face and hair
     15, 16, 17, -1, 20, 21, -1,             // pelvis, legs (thigh, shin, foot)
 };
 
@@ -5561,39 +5561,67 @@ static s16 BossGanon_Player_ScaleAngle(s16 base, s16 target, f32 scale) {
 }
 
 // Blends the walk over the current (standing) pose in jointTable
+static void BossGanon_Player_BlendArm(BossGanon* this, s32 firstLimb, const Vec3s* pose, f32 weight);
+static void BossGanon_Player_SlerpRot(Vec3s* a, Vec3s* b, f32 t, Vec3s* out);
+
+// His arms while walking: solved like the sword poses (fists close to his body, forward and back), because young
+// Ganondorf's arms hang differently from his torso and swing far out on the boss model
+static const Vec3s sGdfWalkArmPoses[4][3] = {
+    { { 15506, 758, -14779 }, { -685, -4771, -6823 }, { 2315, 1027, -1733 } },     // right forward
+    { { 19634, -5749, -14194 }, { -1134, -4536, -6861 }, { 2247, 1229, -2127 } },  // right back
+    { { -15893, 251, -13672 }, { 25, 2864, -5541 }, { -790, 20, -1990 } },         // left forward
+    { { -18870, 6804, -16061 }, { 524, 1983, -4121 }, { -845, 196, -2362 } },      // left back
+};
+
+// How far through the swing the right arm is: back at frame 0, forward at frame 15 (the left arm is opposite)
+static f32 BossGanon_Player_WalkArmPhase(BossGanon* this) {
+    return 0.5f - (0.5f * Math_CosS((s16)(this->playerWalkFrame * (0x10000 / GDF_WALK_CYCLE_FRAMES))));
+}
+
 static void BossGanon_Player_ApplyWalk(BossGanon* this) {
     static Vec3s sYoungA[GDF_YOUNG_WALK_JOINTS];
     static Vec3s sYoungB[GDF_YOUNG_WALK_JOINTS];
     static Vec3s sYoung[GDF_YOUNG_WALK_JOINTS];
     static Vec3s sYoungRest;
+    static Vec3s sYoungTorsoMean;
     static u8 sYoungRestRead = false;
     Vec3s walk[GDF_LIMB_COUNT_PLAYER + 1];
+    Vec3s arm[3];
     Vec3s* joints = this->skelAnime.jointTable;
     f32 speed = this->playerWalkWeight;
     s32 frameA = (s32)this->playerWalkFrame;
     s32 frameB = (frameA + 1) % (s32)GDF_WALK_CYCLE_FRAMES;
     f32 frac = this->playerWalkFrame - frameA;
     f32 stride;
-    f32 shoulder[3][3];
-    f32 arm[3][3];
-    f32 corrected[3][3];
+    f32 phase;
     s32 b;
     s32 i;
-    s32 j;
-    s32 k;
 
     if (this->playerWalkWeight <= 0.0f) {
         return;
     }
 
+    if (!sYoungRestRead) {
+        f32 sum[3] = { 0.0f, 0.0f, 0.0f };
+
+        for (i = 0; i < (s32)GDF_WALK_CYCLE_FRAMES; i++) {
+            SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, i, GDF_YOUNG_WALK_JOINTS, sYoungA);
+            if (i == 0) {
+                sYoungRest = sYoungA[0];
+            }
+            sum[0] += sYoungA[2].x;
+            sum[1] += sYoungA[2].y;
+            sum[2] += sYoungA[2].z;
+        }
+        sYoungTorsoMean.x = (s16)(sum[0] / GDF_WALK_CYCLE_FRAMES);
+        sYoungTorsoMean.y = (s16)(sum[1] / GDF_WALK_CYCLE_FRAMES);
+        sYoungTorsoMean.z = (s16)(sum[2] / GDF_WALK_CYCLE_FRAMES);
+        sYoungRestRead = true;
+    }
+
     SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, frameA, GDF_YOUNG_WALK_JOINTS, sYoungA);
     SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, frameB, GDF_YOUNG_WALK_JOINTS, sYoungB);
     SkelAnime_InterpFrameTable(GDF_YOUNG_WALK_JOINTS, sYoung, sYoungA, sYoungB, frac);
-    if (!sYoungRestRead) {
-        SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, 0, GDF_YOUNG_WALK_JOINTS, sYoungA);
-        sYoungRest = sYoungA[0];
-        sYoungRestRead = true;
-    }
 
     stride = CLAMP(this->playerWalkStride, 1.0f, GDF_WALK_MAX_STRIDE);
 
@@ -5603,21 +5631,10 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
         walk[1 + b] = (y >= 0) ? sYoung[1 + y] : joints[1 + b];
     }
 
-    // The boss model's shoulders: rotate the upper arms so the arms hang and swing like young Ganondorf's
-    for (k = 0; k < 2; k++) {
-        s32 shoulderLimb = (k == 0) ? 2 : 6;
-        s32 armLimb = shoulderLimb + 1;
-
-        BossGanon_Player_RotToMtx(&joints[1 + shoulderLimb], shoulder);
-        BossGanon_Player_RotToMtx(&sYoung[1 + sGdfBossToYoungLimb[armLimb]], arm);
-        for (i = 0; i < 3; i++) {
-            for (j = 0; j < 3; j++) {
-                corrected[i][j] = (shoulder[0][i] * arm[0][j]) + (shoulder[1][i] * arm[1][j]) +
-                                  (shoulder[2][i] * arm[2][j]);
-            }
-        }
-        BossGanon_Player_MtxToRot(corrected, &walk[1 + armLimb]);
-    }
+    // His own upright torso, with a little of the walk's sway
+    walk[2].x = (s16)(joints[2].x + (s16)(sYoung[2].x - sYoungTorsoMean.x) * 0.35f);
+    walk[2].y = (s16)(joints[2].y + (s16)(sYoung[2].y - sYoungTorsoMean.y) * 0.35f);
+    walk[2].z = (s16)(joints[2].z + (s16)(sYoung[2].z - sYoungTorsoMean.z) * 0.35f);
 
     // Wider stride when running
     for (b = 1; b <= GDF_LIMB_COUNT_PLAYER; b++) {
@@ -5631,6 +5648,23 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
     walk[0].y += (s16)((sYoung[0].y - sYoungRest.y) * stride);
 
     SkelAnime_InterpFrameTable(GDF_LIMB_COUNT_PLAYER + 1, joints, joints, walk, speed);
+
+    // Arms swing close to his body, opposite to the legs
+    phase = BossGanon_Player_WalkArmPhase(this);
+    for (i = 0; i < 3; i++) {
+        Vec3s fwd = sGdfWalkArmPoses[0][i];
+        Vec3s back = sGdfWalkArmPoses[1][i];
+
+        BossGanon_Player_SlerpRot(&back, &fwd, phase, &arm[i]);
+    }
+    BossGanon_Player_BlendArm(this, 7, arm, speed);
+    for (i = 0; i < 3; i++) {
+        Vec3s fwd = sGdfWalkArmPoses[2][i];
+        Vec3s back = sGdfWalkArmPoses[3][i];
+
+        BossGanon_Player_SlerpRot(&fwd, &back, phase, &arm[i]);
+    }
+    BossGanon_Player_BlendArm(this, 3, arm, speed);
 }
 
 // Standing and walking, while not levitating: the walk cycle follows Link's speed
