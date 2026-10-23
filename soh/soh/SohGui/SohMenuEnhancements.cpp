@@ -2202,6 +2202,13 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "When Link plays the ocarina, Ganondorf raises his organ and plays the song on it instead, with an organ "
             "sound (the windmill's organ). Needs Keep C-Button Items to take the ocarina out."));
+    AddWidget(path, "Organ Close-Up Camera", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganCamera"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "While he plays the organ, the camera lies on the keys a little to his right and looks up at him."));
     AddWidget(path, "D-Pad Left Mode Toggle", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"))
         .PreFunc([](WidgetInfo& info) {

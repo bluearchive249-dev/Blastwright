@@ -78,6 +78,7 @@ void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play);
 void BossGanon_Player_StopOrganMusic(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawOrgan(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawDarkAura(BossGanon* this, PlayState* play);
+static void BossGanon_Player_ReleaseOrganCam(BossGanon* this, PlayState* play);
 static void BossGanon_Init_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Update_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
@@ -594,6 +595,7 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
             Effect_Delete(play, this->playerSwordBlure);
         }
         BossGanon_Player_StopOrganMusic(this, play);
+        BossGanon_Player_ReleaseOrganCam(this, play);
         if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
             Audio_StopSfxById(NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
         }
@@ -8185,6 +8187,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     if (this->actionFunc != BossGanon_Player_Organ) {
         Math_ApproachZeroF(&this->actor.shape.yOffset, 0.3f, 700.0f);
         BossGanon_Player_StopOrganMusic(this, play);
+        BossGanon_Player_ReleaseOrganCam(this, play);
         if (this->playerOrganSink < GDF_ORGAN_SINK_DEPTH) {
             // Silently (no more grinding sound, it kept looping)
             Math_ApproachF(&this->playerOrganSink, GDF_ORGAN_SINK_DEPTH, 1.0f, 25.0f);
@@ -8997,6 +9000,54 @@ void BossGanon_Player_SetupOrgan(BossGanon* this, PlayState* play) {
     Actor_RequestQuakeAndRumble(&this->actor, play, 6, 20);
 }
 
+// Close-up camera while he plays: as if a phone were lying on the keys a little to his right, looking up at him
+#define GDF_ORGAN_CAM_SIDE 38.0f    // organ space: he faces the keys along -z, so +x is his right
+#define GDF_ORGAN_CAM_HEIGHT 120.0f // just above the keyboard (y 110)
+#define GDF_ORGAN_CAM_Z -392.0f     // on the keys (z -397 to -373); he sits at z -333
+
+static void BossGanon_Player_ReleaseOrganCam(BossGanon* this, PlayState* play) {
+    if (this->playerOrganCam != 0) {
+        Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_ACTIVE);
+        Play_ClearCamera(play, this->playerOrganCam);
+        this->playerOrganCam = 0;
+    }
+}
+
+// Organ space (the organ model's own coordinates) to the world
+static void BossGanon_Player_OrganToWorld(BossGanon* this, f32 x, f32 y, f32 z, Vec3f* out) {
+    f32 s = Math_SinS(this->playerOrganYaw);
+    f32 c = Math_CosS(this->playerOrganYaw);
+
+    out->x = this->playerOrganPos.x + (x * c) + (z * s);
+    out->y = this->playerOrganPos.y - this->playerOrganSink + y;
+    out->z = this->playerOrganPos.z - (x * s) + (z * c);
+}
+
+static void BossGanon_Player_UpdateOrganCam(BossGanon* this, PlayState* play) {
+    Vec3f eye;
+    Vec3f at;
+
+    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("OrganCamera"), 1) || this->playerHidden) {
+        BossGanon_Player_ReleaseOrganCam(this, play);
+        return;
+    }
+    if (this->playerOrganCam == 0) {
+        this->playerOrganCam = Play_CreateSubCamera(play);
+        if (this->playerOrganCam == 0) {
+            return;
+        }
+        Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
+        Play_ChangeCameraStatus(play, this->playerOrganCam, CAM_STAT_ACTIVE);
+    }
+
+    BossGanon_Player_OrganToWorld(this, GDF_ORGAN_CAM_SIDE, GDF_ORGAN_CAM_HEIGHT, GDF_ORGAN_CAM_Z, &eye);
+    // His face and chest (head body part, a little lower)
+    at = this->unk_2EC[2];
+    at.y -= 15.0f;
+    Play_CameraSetAtEye(play, this->playerOrganCam, &at, &eye);
+    Play_CameraSetFov(play, this->playerOrganCam, 70.0f);
+}
+
 void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
     Input* input = &play->state.input[0];
 
@@ -9032,12 +9083,14 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
             break;
 
         case 1: // playing, until D-pad Down, B or A (as his ocarina: until Link puts it away)
+            BossGanon_Player_UpdateOrganCam(this, play);
             if (this->playerOrganOcarina ? !(GET_PLAYER(play)->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING)
                                          : (CHECK_BTN_ANY(input->press.button, BTN_DDOWN | BTN_B | BTN_A) ||
                                             !BossGanon_Player_CanStartAttack(this, play))) {
                 this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfStopPlayingOrganAnim);
                 Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfStopPlayingOrganAnim, -5.0f);
                 BossGanon_Player_StopOrganMusic(this, play);
+                BossGanon_Player_ReleaseOrganCam(this, play);
                 this->unk_1C2 = 2;
             }
             break;
