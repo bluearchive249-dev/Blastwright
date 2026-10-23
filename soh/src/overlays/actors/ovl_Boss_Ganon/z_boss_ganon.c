@@ -5579,6 +5579,29 @@ static f32 BossGanon_Player_WalkArmPhase(BossGanon* this) {
     return 0.5f - (0.5f * Math_CosS((s16)(this->playerWalkFrame * (0x10000 / GDF_WALK_CYCLE_FRAMES))));
 }
 
+// Young Ganondorf's pelvis sits turned about 20 degrees on the boss skeleton through the whole walk cycle, which
+// swung his legs out to one side (his lower body looked skewed) and crossed his feet. Turned back by this (in actor
+// space), his legs run straight on two tracks.
+#define GDF_WALK_PELVIS_YAW -3641
+
+// out = (transposeA ? a^T : a) * b
+static void BossGanon_Player_Mul3(f32 a[3][3], f32 b[3][3], f32 out[3][3], s32 transposeA) {
+    f32 r[3][3];
+    s32 i;
+    s32 j;
+    s32 k;
+
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            r[i][j] = 0.0f;
+            for (k = 0; k < 3; k++) {
+                r[i][j] += (transposeA ? a[k][i] : a[i][k]) * b[k][j];
+            }
+        }
+    }
+    memcpy(out, r, sizeof(r));
+}
+
 static void BossGanon_Player_ApplyWalk(BossGanon* this) {
     static Vec3s sYoungA[GDF_YOUNG_WALK_JOINTS];
     static Vec3s sYoungB[GDF_YOUNG_WALK_JOINTS];
@@ -5642,6 +5665,22 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
         walk[b].x = BossGanon_Player_ScaleAngle(joints[b].x, walk[b].x, stride);
         walk[b].y = BossGanon_Player_ScaleAngle(joints[b].y, walk[b].y, stride);
         walk[b].z = BossGanon_Player_ScaleAngle(joints[b].z, walk[b].z, stride);
+    }
+
+    // Straighten his pelvis: pelvis = root^T * turn * root * pelvis
+    {
+        Vec3s turnRot = { 0, GDF_WALK_PELVIS_YAW, 0 };
+        f32 root[3][3];
+        f32 turn[3][3];
+        f32 m[3][3];
+
+        BossGanon_Player_RotToMtx(&walk[1], root);
+        BossGanon_Player_RotToMtx(&turnRot, turn);
+        BossGanon_Player_RotToMtx(&walk[1 + 18], m);
+        BossGanon_Player_Mul3(root, m, m, false);
+        BossGanon_Player_Mul3(turn, m, m, false);
+        BossGanon_Player_Mul3(root, m, m, true);
+        BossGanon_Player_MtxToRot(m, &walk[1 + 18]);
     }
 
     // His own standing height, with the walk's bob
@@ -8176,8 +8215,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         this->unk_19C--;
     }
 
-    // Leg sway, from BossGanon_Update
-    if (this->legSwayEnabled) {
+    // Leg sway, from BossGanon_Update. Only while floating: on the ground it bent his standing legs into the floor
+    if (this->legSwayEnabled && !this->playerGrounded) {
         f32 velX = CLAMP(this->actor.velocity.x, -6.0f, 6.0f);
         f32 velZ = CLAMP(this->actor.velocity.z, -6.0f, 6.0f);
 
