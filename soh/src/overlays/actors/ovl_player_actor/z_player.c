@@ -144,6 +144,7 @@ s32 func_80834B5C(Player* this, PlayState* play);
 s32 func_80834C74(Player* this, PlayState* play);
 s32 func_8083501C(Player* this, PlayState* play);
 s32 func_80834D2C(Player* this, PlayState* play);
+s32 Player_UpperAction_GunStance(Player* this, PlayState* play);
 s32 func_80834EB8(Player* this, PlayState* play);
 s32 func_808351D4(Player* this, PlayState* play); // Arrow nocked
 s32 func_808353D8(Player* this, PlayState* play); // Aiming in first person
@@ -2679,7 +2680,9 @@ s32 func_8083442C(Player* this, PlayState* play) {
         this->unk_834 = 14;
 
         if (this->unk_860 >= 0) {
-            Player_PlaySfx(this, D_80854398[ABS(this->unk_860) - 1]);
+            if (!BeamosBlaster_IsGunAction(this->heldItemAction)) {
+                Player_PlaySfx(this, D_80854398[ABS(this->unk_860) - 1]);
+            }
 
             if (!Player_HoldsHookshot(this) && !BeamosBlaster_IsGunAction(this->heldItemAction) &&
                 (func_80834380(play, this, &item, &arrowType) > 0)) {
@@ -2833,12 +2836,51 @@ s32 Player_UpperAction_Sword(Player* this, PlayState* play) {
                 return true;
             }
         } else if (BeamosBlaster_ConsumeHipFire()) {
-            // Quick tap of B: fire from the hip without aiming.
+            // Quick tap of B: fire from the hip without aiming. Link stands in a gun-gripping stance for a moment.
             BeamosBlaster_Fire(play, this);
-            return false;
+            BeamosBlaster_StartStance();
+            Player_SetUpperActionFunc(this, Player_UpperAction_GunStance);
+            LinkAnimation_PlayOnce(play, &this->upperSkelAnime, &gPlayerAnim_link_bow_bow_ready);
+            return true;
         }
     }
 
+    return false;
+}
+
+/**
+ * Beamos Blaster: the short standing stance after a hip-fire tap. The upper body holds the bow-ready pose (the arms are
+ * re-posed for a two-handed grip while drawing), and a new tap keeps shooting from it.
+ */
+s32 Player_UpperAction_GunStance(Player* this, PlayState* play) {
+    if (func_80834758(play, this) || func_8083499C(this, play)) {
+        return true;
+    }
+
+    LinkAnimation_Update(play, &this->upperSkelAnime);
+
+    if (BeamosBlaster_WantsAim() && !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) &&
+        (this->doorType == PLAYER_DOORTYPE_NONE)) {
+        this->unk_860 = 1;
+        if (func_80834D2C(this, play)) {
+            func_80834EB8(this, play);
+            return true;
+        }
+    }
+
+    if (BeamosBlaster_ConsumeHipFire()) {
+        BeamosBlaster_Fire(play, this);
+        BeamosBlaster_StartStance();
+    }
+
+    if (BeamosBlaster_StanceActive()) {
+        return true;
+    }
+
+    // Stance is over: back to the gun's normal idle.
+    Player_SetUpperActionFunc(this, Player_UpperAction_Sword);
+    LinkAnimation_PlayLoop(play, &this->upperSkelAnime, GET_PLAYER_ANIM(PLAYER_ANIMGROUP_wait, this->modelAnimType));
+    this->idleType = PLAYER_IDLE_DEFAULT;
     return false;
 }
 

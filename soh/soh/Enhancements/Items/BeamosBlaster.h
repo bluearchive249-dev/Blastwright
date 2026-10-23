@@ -31,8 +31,19 @@ s32 BeamosBlaster_ConsumeHipFire(void);
 // Spawns one beam from Link's gun. Uses the first-person aim angles when aiming, else his Z-target / facing.
 void BeamosBlaster_Fire(PlayState* play, Player* player);
 
-// Draws the gun model (and aiming laser sight) in Link's hand (left hand limb, where swords live). Called from the limb post-draw.
-void BeamosBlaster_DrawInHand(PlayState* play, Player* player);
+// Draws the gun model in Link's hand. Called from both hand limbs' post-draw; `rightHand` says which limb is being
+// drawn. The gun sits in the left hand (where swords live) normally and moves to the aiming hand while posed.
+void BeamosBlaster_DrawInHand(PlayState* play, Player* player, s32 rightHand);
+
+// Standing "gripping the gun" stance after a hip-fire tap. Start it when firing; it runs out by itself.
+void BeamosBlaster_StartStance(void);
+s32 BeamosBlaster_StanceActive(void);
+
+// Called for every limb while drawing Link: poses the arms (two-handed grip, recoil) while a gun is held ready.
+void BeamosBlaster_AdjustLimb(PlayState* play, Player* player, s32 limbIndex, Vec3s* rot);
+
+// True when the first-person arms should hold the gun (so the bow / slingshot arm is not drawn).
+s32 BeamosBlaster_UseGunArms(Player* player);
 
 #ifdef __cplusplus
 }

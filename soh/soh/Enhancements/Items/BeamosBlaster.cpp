@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -45,6 +46,19 @@ extern PlayState* gPlayState;
 #define CVAR_BLASTER_TAP_FRAMES CVAR_ENHANCEMENT("BeamosBlaster.TapFrames")
 #define CVAR_BLASTER_BEAM_WIDTH CVAR_ENHANCEMENT("BeamosBlaster.BeamWidth")
 #define CVAR_BLASTER_GLOW_SIZE CVAR_ENHANCEMENT("BeamosBlaster.GlowSize")
+#define CVAR_BLASTER_AIM_LEFT CVAR_ENHANCEMENT("BeamosBlaster.AimWithLeftHand")
+#define CVAR_BLASTER_MIRROR CVAR_ENHANCEMENT("BeamosBlaster.PoseMirror")
+#define CVAR_BLASTER_RECOIL CVAR_ENHANCEMENT("BeamosBlaster.RecoilStrength")
+#define CVAR_BLASTER_RECOIL_AXIS CVAR_ENHANCEMENT("BeamosBlaster.RecoilAxis")
+#define CVAR_BLASTER_AIM_ORIENT CVAR_ENHANCEMENT("BeamosBlaster.AimOrientation")
+#define CVAR_BLASTER_AIM_OFF_X CVAR_ENHANCEMENT("BeamosBlaster.AimOffsetX")
+#define CVAR_BLASTER_AIM_OFF_Y CVAR_ENHANCEMENT("BeamosBlaster.AimOffsetY")
+#define CVAR_BLASTER_AIM_OFF_Z CVAR_ENHANCEMENT("BeamosBlaster.AimOffsetZ")
+#define CVAR_BLASTER_FP_SIZE CVAR_ENHANCEMENT("BeamosBlaster.FirstPersonSize")
+#define CVAR_BLASTER_FP_OFF_X CVAR_ENHANCEMENT("BeamosBlaster.FirstPersonOffsetX")
+#define CVAR_BLASTER_FP_OFF_Y CVAR_ENHANCEMENT("BeamosBlaster.FirstPersonOffsetY")
+#define CVAR_BLASTER_FP_OFF_Z CVAR_ENHANCEMENT("BeamosBlaster.FirstPersonOffsetZ")
+#define CVAR_BLASTER_POSE(name) CVAR_ENHANCEMENT("BeamosBlaster.Pose" name)
 #define CVAR_BLASTER_MODEL_SCALE CVAR_ENHANCEMENT("BeamosBlaster.ModelScale")
 #define CVAR_BLASTER_MODEL_ORIENT CVAR_ENHANCEMENT("BeamosBlaster.ModelOrientation")
 #define CVAR_BLASTER_MODEL_OFF_X CVAR_ENHANCEMENT("BeamosBlaster.ModelOffsetX")
@@ -101,6 +115,11 @@ static bool sAimLatched = false;
 static int sHipFirePending = 0; // updates left before a pending hip-fire request expires
 static int sCooldown = 0;
 
+// Pose / animation state
+static int sStanceFrames = 0;    // updates left of the standing "gripping the gun" stance after a hip-fire tap
+static f32 sRecoil = 0.0f;       // 1.0 right after a shot, decays to 0
+static f32 sPoseWeight = 0.0f;   // 0..1 blend of the two-handed grip pose
+
 // Last known world position of Link's gun hand, recorded while the gun is drawn.
 static Vec3f sHandPos = { 0.0f, 0.0f, 0.0f };
 static u32 sHandPosFrame = 0;
@@ -139,11 +158,113 @@ extern "C" s32 BeamosBlaster_ConsumeHipFire(void) {
     return 0;
 }
 
+extern "C" void BeamosBlaster_StartStance(void) {
+    sStanceFrames = 18;
+}
+
+extern "C" s32 BeamosBlaster_StanceActive(void) {
+    return sStanceFrames > 0;
+}
+
+static bool PoseWanted(Player* player) {
+    return BeamosBlaster_IsGunAction(player->heldItemAction) && player->itemAction == player->heldItemAction &&
+           ((player->stateFlags1 & PLAYER_STATE1_READY_TO_FIRE) || sStanceFrames > 0);
+}
+
+static bool AimHandIsRight() {
+    return CVarGetInteger(CVAR_BLASTER_AIM_LEFT, 0) == 0;
+}
+
+extern "C" s32 BeamosBlaster_UseGunArms(Player* player) {
+    return sEnabled && BeamosBlaster_IsGunAction(player->heldItemAction);
+}
+
+// Rotation of one joint of Link's skeleton as the animation currently has it.
+static Vec3s& JointRot(Player* player, int limb) {
+    return player->skelAnime.jointTable[limb];
+}
+
+static s16 BlendAngle(s16 from, s16 to, f32 w) {
+    return (s16)(from + (s16)(to - from) * w);
+}
+
+static s16 Deg(int d) {
+    return (s16)(d * (32768.0f / 180.0f));
+}
+
+extern "C" void BeamosBlaster_AdjustLimb(PlayState* play, Player* player, s32 limbIndex, Vec3s* rot) {
+    if (!sEnabled || sPoseWeight <= 0.001f || !BeamosBlaster_IsGunAction(player->heldItemAction)) {
+        return;
+    }
+
+    const bool gunRight = AimHandIsRight();
+    const int gunShoulder = gunRight ? PLAYER_LIMB_R_SHOULDER : PLAYER_LIMB_L_SHOULDER;
+    const int gunForearm = gunRight ? PLAYER_LIMB_R_FOREARM : PLAYER_LIMB_L_FOREARM;
+    const int supShoulder = gunRight ? PLAYER_LIMB_L_SHOULDER : PLAYER_LIMB_R_SHOULDER;
+    const int supForearm = gunRight ? PLAYER_LIMB_L_FOREARM : PLAYER_LIMB_R_FOREARM;
+
+    const bool isGunArm = (limbIndex == gunShoulder || limbIndex == gunForearm);
+    const bool isSupArm = (limbIndex == supShoulder || limbIndex == supForearm);
+    if (!isGunArm && !isSupArm) {
+        return;
+    }
+    const bool isShoulder = (limbIndex == gunShoulder || limbIndex == supShoulder);
+    const f32 w = sPoseWeight;
+
+    Vec3s target = *rot;
+    if (isSupArm) {
+        // Two-handed grip: the supporting arm copies the gun arm (the one the bow animation already holds out in
+        // front of Link), mirrored. Mirror mode bits 1/2/4 negate the x / y / z rotation.
+        const Vec3s& src = JointRot(player, isShoulder ? gunShoulder : gunForearm);
+        const int mode = CVarGetInteger(CVAR_BLASTER_MIRROR, 6);
+        target.x = (mode & 1) ? -src.x : src.x;
+        target.y = (mode & 2) ? -src.y : src.y;
+        target.z = (mode & 4) ? -src.z : src.z;
+    }
+
+    // Hand tuned offsets (degrees), per arm and joint.
+    const char* arm = isGunArm ? "Gun" : "Sup";
+    const char* joint = isShoulder ? "Shoulder" : "Forearm";
+    char name[96];
+    int d[3];
+    const char* axes[3] = { "X", "Y", "Z" };
+    for (int a = 0; a < 3; a++) {
+        snprintf(name, sizeof(name), "%s.BeamosBlaster.Pose%s%s%s", CVAR_PREFIX_ENHANCEMENT, arm, joint, axes[a]);
+        d[a] = CVarGetInteger(name, 0);
+    }
+    target.x += Deg(d[0]);
+    target.y += Deg(d[1]);
+    target.z += Deg(d[2]);
+
+    // Recoil: a quick kick on the gun arm's shoulder that fades out.
+    if (isGunArm && isShoulder && sRecoil > 0.01f) {
+        const s16 kick = (s16)(CVarGetInteger(CVAR_BLASTER_RECOIL, 40) * 30.0f * sRecoil);
+        switch (CVarGetInteger(CVAR_BLASTER_RECOIL_AXIS, 0)) {
+            case 1:
+                target.y += kick;
+                break;
+            case 2:
+                target.z += kick;
+                break;
+            default:
+                target.x += kick;
+                break;
+        }
+    }
+
+    rot->x = BlendAngle(rot->x, target.x, w);
+    rot->y = BlendAngle(rot->y, target.y, w);
+    rot->z = BlendAngle(rot->z, target.z, w);
+}
+
 static void ResetInputState() {
     sHeldFrames = 0;
     sBWasDown = false;
     sAimLatched = false;
     sHipFirePending = 0;
+    sStanceFrames = 0;
+    sRecoil = 0.0f;
+    sPoseWeight = 0.0f;
 }
 
 static void TrackInput(Player* player, Input* input) {
@@ -159,6 +280,13 @@ static void TrackInput(Player* player, Input* input) {
         ResetInputState();
         return;
     }
+
+    if (sStanceFrames > 0) {
+        sStanceFrames--;
+    }
+    sRecoil = (sRecoil > 0.02f) ? sRecoil * 0.7f : 0.0f;
+    const f32 poseTarget = PoseWanted(player) ? 1.0f : 0.0f;
+    sPoseWeight += std::clamp(poseTarget - sPoseWeight, -0.34f, 0.34f);
 
     const int tapFrames = CVarGetInteger(CVAR_BLASTER_TAP_FRAMES, 5);
     const bool bDown = CHECK_BTN_ALL(input->cur.button, BTN_B);
@@ -216,6 +344,22 @@ static void ComputeShot(Player* player, Vec3f* muzzle, s16* yaw, s16* pitch) {
         // Aimed like a bow: stick / gyro / right stick drive focus.rot.
         *yaw = player->actor.focus.rot.y;
         *pitch = player->actor.focus.rot.x;
+
+        // The gun is held off to the side, so aim from the gun at the point the camera's centre is looking at.
+        if (gPlayState != nullptr) {
+            Vec3f camDir;
+            AnglesToDir(*yaw, *pitch, &camDir);
+            const Vec3f eye = gPlayState->view.eye;
+            Vec3f far = { eye.x + camDir.x * 1500.0f, eye.y + camDir.y * 1500.0f, eye.z + camDir.z * 1500.0f };
+            CollisionPoly* camPoly = nullptr;
+            s32 camBgId = 0;
+            Vec3f camHit;
+            if (BgCheck_ProjectileLineTest(&gPlayState->colCtx, (Vec3f*)&eye, &far, &camHit, &camPoly, true, true,
+                                           true, true, &camBgId)) {
+                far = camHit;
+            }
+            DirToAngles(origin, far, yaw, pitch);
+        }
     } else if (player->focusActor != nullptr && player->focusActor->update != nullptr) {
         // Z-targeting: fire at the target.
         DirToAngles(origin, player->focusActor->focus.pos, yaw, pitch);
@@ -301,6 +445,7 @@ struct EnBeamosShot {
     u8 tier;
     u8 pierceLeft;
     u8 dying;
+    u8 impactSfx; // updates left of the impact sound
 };
 
 static ColliderQuadInit sShotColliderInit = {
@@ -326,7 +471,6 @@ static ColliderQuadInit sShotColliderInit = {
 static void BeamShot_Impact(PlayState* play, const Vec3f& pos, int tier, bool wall) {
     Vec3f p = pos;
     EffectSsHitMark_SpawnCustomScale(play, 0, wall ? 120 : 170, &p);
-    Sfx_PlaySfxAtPos(&p, wall ? NA_SE_IT_HOOKSHOT_REFLECT : NA_SE_IT_ARROW_STICK_CRE);
     (void)tier;
 }
 
@@ -340,6 +484,7 @@ static void BeamShot_Init(Actor* thisx, PlayState* play) {
     self->timer = stats.lifetime;
     self->fadeTimer = 0;
     self->dying = 0;
+    self->impactSfx = 0;
     self->yaw = thisx->shape.rot.y;
     self->pitch = thisx->shape.rot.x;
     AnglesToDir(self->yaw, self->pitch, &self->dir);
@@ -407,12 +552,20 @@ static void BeamShot_Update(Actor* thisx, PlayState* play) {
     EnBeamosShot* self = (EnBeamosShot*)thisx;
     const TierStats& stats = kTiers[self->tier];
 
+    // The Beamos laser sounds are sustained: like the real Beamos, ask for them every update while they should play.
+    if (self->impactSfx > 0) {
+        self->impactSfx--;
+        Audio_PlayActorSound2(thisx, NA_SE_EN_BIMOS_LAZER_GND - SFX_FLAG);
+    }
+
     if (self->dying) {
         if (--self->fadeTimer <= 0) {
             Actor_Kill(thisx);
         }
         return;
     }
+
+    Audio_PlayActorSound2(thisx, NA_SE_EN_BIMOS_LAZER - SFX_FLAG);
 
     if (--self->timer <= 0) {
         BeamShot_Die(self);
@@ -430,6 +583,7 @@ static void BeamShot_Update(Actor* thisx, PlayState* play) {
             hitPos.z = self->collider.info.atHitInfo->bumper.hitPos.z;
         }
         BeamShot_Impact(play, hitPos, self->tier, false);
+        self->impactSfx = 5;
 
         if ((self->collider.base.atFlags & AT_BOUNCED) || self->pierceLeft == 0) {
             thisx->world.pos = hitPos;
@@ -453,6 +607,7 @@ static void BeamShot_Update(Actor* thisx, PlayState* play) {
                                    true, &bgId)) {
         thisx->world.pos = hitPoint;
         BeamShot_Impact(play, hitPoint, self->tier, true);
+        self->impactSfx = 6;
         BeamShot_UpdateCollider(self, play, thisx->prevPos, thisx->world.pos);
         BeamShot_Die(self);
         return;
@@ -527,6 +682,7 @@ extern "C" void BeamosBlaster_Fire(PlayState* play, Player* player) {
     s32 bgId = 0;
     Vec3f hitPoint;
     sCooldown = kTiers[tier].cooldown;
+    sRecoil = 1.0f;
     if (BgCheck_ProjectileLineTest(&play->colCtx, &chest, &muzzle, &hitPoint, &poly, true, true, true, true, &bgId)) {
         BeamShot_Impact(play, hitPoint, tier, true);
         return;
@@ -538,7 +694,6 @@ extern "C" void BeamosBlaster_Fire(PlayState* play, Player* player) {
         return;
     }
 
-    Sfx_PlaySfxAtPos(&muzzle, NA_SE_IT_MAGIC_ARROW_SHOT); // one-shot (the Beamos laser sfx is a loop)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -767,11 +922,19 @@ static void DrawGunMesh(PlayState* play, int tier) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-extern "C" void BeamosBlaster_DrawInHand(PlayState* play, Player* player) {
+extern "C" void BeamosBlaster_DrawInHand(PlayState* play, Player* player, s32 rightHand) {
     const int tier = GetTier(player->heldItemAction);
     if (!sEnabled || tier < 0) {
         return;
     }
+
+    // Normally the gun is in the left hand (where swords are). While posed it moves to the aiming hand.
+    const bool posed = sPoseWeight > 0.5f;
+    const bool gunOnRight = posed && AimHandIsRight();
+    if ((rightHand != 0) != gunOnRight) {
+        return;
+    }
+    const bool firstPerson = (player->unk_6AD == 2) && posed;
 
     // Remember where the hand is in the world: shots start here.
     static Vec3f zero = { 0.0f, 0.0f, 0.0f };
@@ -781,14 +944,31 @@ extern "C" void BeamosBlaster_DrawInHand(PlayState* play, Player* player) {
 
     // Model transform: hand limb space is ~100 units per cm of Link's model.
     const f32 userScale = CVarGetInteger(CVAR_BLASTER_MODEL_SCALE, 65) / 100.0f;
-    const f32 scale = 10.0f * userScale * kTiers[tier].modelScale;
+    f32 scale = 10.0f * userScale * kTiers[tier].modelScale;
     const f32 offStep = 25.0f;
 
+    int offX = CVarGetInteger(CVAR_BLASTER_MODEL_OFF_X, 0);
+    int offY = CVarGetInteger(CVAR_BLASTER_MODEL_OFF_Y, 0);
+    int offZ = CVarGetInteger(CVAR_BLASTER_MODEL_OFF_Z, 0);
+    int orient = CVarGetInteger(CVAR_BLASTER_MODEL_ORIENT, 8);
+    if (gunOnRight) {
+        // The aiming hand has its own placement, since its limb axes are mirrored compared to the left hand's.
+        offX = CVarGetInteger(CVAR_BLASTER_AIM_OFF_X, 0);
+        offY = CVarGetInteger(CVAR_BLASTER_AIM_OFF_Y, 0);
+        offZ = CVarGetInteger(CVAR_BLASTER_AIM_OFF_Z, 0);
+        orient = CVarGetInteger(CVAR_BLASTER_AIM_ORIENT, 8);
+    }
+    if (firstPerson) {
+        // In first person the hand is right next to the camera, so the gun is shown much smaller.
+        scale *= CVarGetInteger(CVAR_BLASTER_FP_SIZE, 35) / 100.0f;
+        offX += CVarGetInteger(CVAR_BLASTER_FP_OFF_X, 0);
+        offY += CVarGetInteger(CVAR_BLASTER_FP_OFF_Y, 0);
+        offZ += CVarGetInteger(CVAR_BLASTER_FP_OFF_Z, 0);
+    }
+
     Matrix_Push();
-    Matrix_Translate(CVarGetInteger(CVAR_BLASTER_MODEL_OFF_X, 0) * offStep,
-                     CVarGetInteger(CVAR_BLASTER_MODEL_OFF_Y, 0) * offStep,
-                     CVarGetInteger(CVAR_BLASTER_MODEL_OFF_Z, 0) * offStep, MTXMODE_APPLY);
-    ApplyOrientationPreset(CVarGetInteger(CVAR_BLASTER_MODEL_ORIENT, 8));
+    Matrix_Translate(offX * offStep, offY * offStep, offZ * offStep, MTXMODE_APPLY);
+    ApplyOrientationPreset(orient);
     const f32 deg = (f32)M_PI / 180.0f;
     Matrix_RotateX(CVarGetInteger(CVAR_BLASTER_MODEL_ROT_X, 0) * deg, MTXMODE_APPLY);
     Matrix_RotateY(CVarGetInteger(CVAR_BLASTER_MODEL_ROT_Y, 0) * deg, MTXMODE_APPLY);

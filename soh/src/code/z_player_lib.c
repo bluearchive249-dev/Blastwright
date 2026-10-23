@@ -1266,6 +1266,8 @@ s32 Player_OverrideLimbDrawGameplayCommon(PlayState* play, s32 limbIndex, Gfx** 
                                           void* thisx) {
     Player* this = (Player*)thisx;
 
+    BeamosBlaster_AdjustLimb(play, this, limbIndex, rot);
+
     if (CVarGetInteger(CVAR_ENHANCEMENT("EquipmentAlwaysVisible"), 0) &&
         CVarGetInteger(CVAR_ENHANCEMENT("ScaleAdultEquipmentAsChild"), 0) && LINK_IS_CHILD) {
         if (limbIndex == PLAYER_LIMB_L_HAND) {
@@ -1482,6 +1484,10 @@ s32 Player_OverrideLimbDrawGameplayFirstPerson(PlayState* play, s32 limbIndex, G
                 handOutDlIndex = 1;
             }
             *dList = sFirstPersonLeftHandDLs[handOutDlIndex];
+            if (BeamosBlaster_UseGunArms(this)) {
+                // Supporting hand of the two-handed grip.
+                *dList = LINK_IS_ADULT ? gLinkAdultLeftHandClosedNearDL : gLinkChildLeftFistNearDL;
+            }
         } else if (limbIndex == PLAYER_LIMB_R_SHOULDER) {
             *dList = sFirstPersonRightShoulderDLs[gSaveContext.linkAge];
         } else if (limbIndex == PLAYER_LIMB_R_FOREARM) {
@@ -1498,6 +1504,10 @@ s32 Player_OverrideLimbDrawGameplayFirstPerson(PlayState* play, s32 limbIndex, G
             }
             *dList = Player_HoldsHookshot(this) ? gLinkAdultRightHandHoldingHookshotFarDL
                                                 : sFirstPersonRightHandHoldingWeaponDLs[firstPersonWeaponIndex];
+            if (BeamosBlaster_UseGunArms(this)) {
+                // No bow or slingshot: a plain fist around the gun grip.
+                *dList = LINK_IS_ADULT ? gLinkAdultRightHandClosedNearDL : gLinkChildRightHandClosedNearDL;
+            }
         } else {
             *dList = NULL;
         }
@@ -1812,7 +1822,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
 
         if ((this->actor.scale.y >= 0.0f) && BeamosBlaster_IsGunAction(this->heldItemAction) &&
             (this->itemAction == this->heldItemAction)) {
-            BeamosBlaster_DrawInHand(play, this);
+            BeamosBlaster_DrawInHand(play, this, 0);
         }
 
         if (this->itemAction == PLAYER_IA_DEKU_STICK) {
@@ -1893,6 +1903,11 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
         }
     } else if (limbIndex == PLAYER_LIMB_R_HAND) {
         Actor* heldActor = this->heldActor;
+
+        if ((this->actor.scale.y >= 0.0f) && BeamosBlaster_IsGunAction(this->heldItemAction) &&
+            (this->itemAction == this->heldItemAction)) {
+            BeamosBlaster_DrawInHand(play, this, 1);
+        }
 
         if (this->rightHandType == PLAYER_MODELTYPE_RH_FF) {
             Matrix_Get(&this->shieldMf);

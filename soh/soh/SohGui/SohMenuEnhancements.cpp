@@ -1149,6 +1149,106 @@ void SohMenu::AddMenuEnhancements() {
         .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ModelFineRotZ"))
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
         .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Fine rotation of the gun."));
+    AddWidget(path, "Show Pose Tuning", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0); })
+        .Options(CheckboxOptions().Tooltip("Shows sliders for the two-handed grip, recoil, aiming-hand and first-person placement."));
+    AddWidget(path, "Aim With Left Hand", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.AimWithLeftHand"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(CheckboxOptions().Tooltip("Holds the gun in the left hand while aiming instead of the right."));
+    AddWidget(path, "Pose Mirror Mode", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseMirror"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(7).DefaultValue(6).Format("%d").Tooltip("Which rotation axes of the gun arm are negated for the supporting arm (bits: 1=X, 2=Y, 4=Z)."));
+    AddWidget(path, "Recoil Strength", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.RecoilStrength"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(100).DefaultValue(40).Format("%d").Tooltip("How far the gun arm kicks back when firing."));
+    AddWidget(path, "Recoil Axis", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.RecoilAxis"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(2).DefaultValue(0).Format("%d").Tooltip("Rotation axis of the recoil kick (0=X, 1=Y, 2=Z)."));
+    AddWidget(path, "Gun Shoulder X", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseGunShoulderX"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the gun arm's shoulder."));
+    AddWidget(path, "Gun Shoulder Y", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseGunShoulderY"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the gun arm's shoulder."));
+    AddWidget(path, "Gun Shoulder Z", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseGunShoulderZ"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the gun arm's shoulder."));
+    AddWidget(path, "Gun Forearm X", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseGunForearmX"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the gun arm's forearm."));
+    AddWidget(path, "Gun Forearm Y", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseGunForearmY"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the gun arm's forearm."));
+    AddWidget(path, "Gun Forearm Z", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseGunForearmZ"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the gun arm's forearm."));
+    AddWidget(path, "Sup Shoulder X", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseSupShoulderX"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the supporting arm's shoulder."));
+    AddWidget(path, "Sup Shoulder Y", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseSupShoulderY"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the supporting arm's shoulder."));
+    AddWidget(path, "Sup Shoulder Z", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseSupShoulderZ"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the supporting arm's shoulder."));
+    AddWidget(path, "Sup Forearm X", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseSupForearmX"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the supporting arm's forearm."));
+    AddWidget(path, "Sup Forearm Y", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseSupForearmY"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the supporting arm's forearm."));
+    AddWidget(path, "Sup Forearm Z", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.PoseSupForearmZ"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-180).Max(180).DefaultValue(0).Format("%d deg").Tooltip("Extra rotation for the supporting arm's forearm."));
+    AddWidget(path, "Aim Hand Orientation", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.AimOrientation"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(0).Max(23).DefaultValue(8).Format("%d").Tooltip("Gun orientation preset while in the aiming hand."));
+    AddWidget(path, "Aim Hand Offset X", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.AimOffsetX"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Gun offset while in the aiming hand."));
+    AddWidget(path, "Aim Hand Offset Y", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.AimOffsetY"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Gun offset while in the aiming hand."));
+    AddWidget(path, "Aim Hand Offset Z", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.AimOffsetZ"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Gun offset while in the aiming hand."));
+    AddWidget(path, "First-Person Gun Size", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.FirstPersonSize"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(5).Max(100).DefaultValue(35).Format("%d%%").Tooltip("Gun size in first-person aiming (percent of normal)."));
+    AddWidget(path, "First-Person Offset X", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.FirstPersonOffsetX"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Extra gun offset in first-person aiming."));
+    AddWidget(path, "First-Person Offset Y", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.FirstPersonOffsetY"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Extra gun offset in first-person aiming."));
+    AddWidget(path, "First-Person Offset Z", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("BeamosBlaster.FirstPersonOffsetZ"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.Enabled"), 0) || !CVarGetInteger(CVAR_ENHANCEMENT("BeamosBlaster.ShowPoseTuning"), 0); })
+        .Options(IntSliderOptions().Min(-40).Max(40).DefaultValue(0).Format("%d").Tooltip("Extra gun offset in first-person aiming."));
 
     path.column = SECTION_COLUMN_3;
     AddWidget(path, "Hookshot", WIDGET_SEPARATOR_TEXT);
