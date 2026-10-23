@@ -1965,6 +1965,12 @@ void AudioLoad_DecreaseSampleDmaTtls(void);
 uintptr_t AudioLoad_DmaSampleData(uintptr_t devAddr, size_t size, s32 arg2, u8* dmaIndexRef, s32 medium);
 void AudioLoad_InitSampleDmaBuffers(s32 arg0);
 s32 AudioLoad_IsFontLoadComplete(s32 fontId);
+// SoH: "Play as Ganondorf", his ocarina plays the church organ from the soundfont of his organ theme
+void* AudioLoad_SyncLoadFont(u32 fontId);
+#define AUDIO_FONT_GANON_ORGAN 30   // "Ganon's Castle Organ", used by NA_BGM_GANON_TOWER
+#define AUDIO_GANON_ORGAN_INST 0    // church organ
+#define AUDIO_SFX_CHANNEL_OCARINA 13
+extern volatile s32 gAudioOcarinaPipeOrgan;
 s32 AudioLoad_IsSeqLoadComplete(s32 seqId);
 void AudioLoad_SetFontLoadStatus(s32 fontId, s32 status);
 void AudioLoad_SetSeqLoadStatus(s32 seqId, s32 status);

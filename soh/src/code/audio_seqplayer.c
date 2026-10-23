@@ -937,7 +937,16 @@ void AudioSeq_SetChannelPriorities(SequenceChannel* channel, u8 arg1) {
 }
 
 u8 AudioSeq_GetInstrument(SequenceChannel* channel, u8 instId, Instrument** instOut, AdsrSettings* adsr) {
-    Instrument* inst = Audio_GetInstrumentInner(channel->fontId, instId);
+    Instrument* inst = NULL;
+
+    // SoH: "Play as Ganondorf", his ocarina plays the church organ of his organ theme
+    if (gAudioOcarinaPipeOrgan && (channel == gAudioContext.seqPlayers[SEQ_PLAYER_SFX].channels[AUDIO_SFX_CHANNEL_OCARINA]) &&
+        AudioLoad_IsFontLoadComplete(AUDIO_FONT_GANON_ORGAN)) {
+        inst = Audio_GetInstrumentInner(AUDIO_FONT_GANON_ORGAN, AUDIO_GANON_ORGAN_INST);
+    }
+    if (inst == NULL) {
+        inst = Audio_GetInstrumentInner(channel->fontId, instId);
+    }
 
     if (inst == NULL) {
         *instOut = NULL;

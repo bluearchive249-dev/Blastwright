@@ -308,6 +308,11 @@ void func_800E5584(AudioCmd* cmd) {
         case 0xF6:
             AudioLoad_DiscardSeqFonts(cmd->arg1);
             return;
+        case 0xF8: // SoH: load a soundfont (for "Play as Ganondorf", the organ font for his ocarina)
+            if (!AudioLoad_IsFontLoadComplete(cmd->arg0)) {
+                AudioLoad_SyncLoadFont(cmd->arg0);
+            }
+            return;
         case 0x90:
             gAudioContext.unk_5BDC[cmd->arg0] = cmd->asUShort;
             return;

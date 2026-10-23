@@ -890,6 +890,7 @@ s32 sOcarinaF4BtnMap = BTN_CDOWN;
 s32 sOcarinaD4BtnMap = BTN_A;
 static u8 sIsOcarinaInputEnabled = false;
 static s8 sOcarinaInstrumentId = OCARINA_INSTRUMENT_OFF;
+volatile s32 gAudioOcarinaPipeOrgan = false; // SoH: "Play as Ganondorf"
 static u8 sCurOcarinaPitch = OCARINA_PITCH_NONE;
 static u8 sPrevOcarinaPitch = OCARINA_PITCH_C4;
 static u8 sCurOcarinaButtonIndex = OCARINA_BTN_A;
@@ -1986,9 +1987,17 @@ void AudioOcarina_EnableInput(u8 inputEnabled) {
  * For all ocarina instrument ids, turn the ocarina on with the instrument id
  */
 void AudioOcarina_SetInstrument(u8 ocarinaInstrumentId) {
-    // SoH: "Play as Ganondorf", his ocarina is an organ
+    // SoH: "Play as Ganondorf", his ocarina is his pipe organ. The ocarina channel asks for the grind organ, and the
+    // instrument lookup swaps in the church organ from the soundfont of his organ theme (loaded on the audio thread
+    // first). If that soundfont can't be loaded, the grind organ plays instead.
     if ((ocarinaInstrumentId == OCARINA_INSTRUMENT_DEFAULT) && PlayAsGanondorf_UseOrganOcarina()) {
         ocarinaInstrumentId = OCARINA_INSTRUMENT_GRIND_ORGAN;
+        if (!gAudioOcarinaPipeOrgan) {
+            Audio_QueueCmdS32(0xF8000000 | (AUDIO_FONT_GANON_ORGAN << 16), 0);
+        }
+        gAudioOcarinaPipeOrgan = true;
+    } else if (ocarinaInstrumentId != OCARINA_INSTRUMENT_OFF) {
+        gAudioOcarinaPipeOrgan = false;
     }
 
     if (sOcarinaInstrumentId == ocarinaInstrumentId) {
