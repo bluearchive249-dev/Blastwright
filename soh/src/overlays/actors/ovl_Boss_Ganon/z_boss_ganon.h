@@ -180,11 +180,20 @@ typedef struct BossGanon {
     s16 playerPrevInvincibilityTimer;
     Vec3f playerAimPos; // where attacks are thrown at
     f32 playerFloorY;   // floor below Link, replaces the arena floor (y = 0)
+    Vec3f playerOrganPos; // where the organ stands (its room origin)
+    s16 playerOrganYaw;   // which way the organ faces
+    f32 playerOrganSink;  // how far below the floor the organ is, 0 = fully up
+    u8 playerOrganMusic;  // Ganondorf's Theme is playing and the area music has to come back afterwards
+    u16 playerPrevBgm;    // the area music to bring back
+    s16 playerShieldPitch; // tilt of the cape shield, from the stick while blocking
 } BossGanon;
 
 // SoH: "Play as Ganondorf"
 s32 BossGanon_Player_IsBusy(Actor* thisx);
 s32 BossGanon_Player_IsHidden(Actor* thisx);
 s32 BossGanon_IsPlayerAttack(Actor* actor);
+s32 BossGanon_Player_CanAct(Actor* thisx);
+s32 BossGanon_Player_IsCapeUp(Actor* thisx);
+void BossGanon_Player_UpdateCapeShield(Actor* thisx, PlayState* play);
 
 #endif

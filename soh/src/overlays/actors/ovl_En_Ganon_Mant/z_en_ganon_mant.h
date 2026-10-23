@@ -13,6 +13,9 @@ struct EnGanonMant;
 #define LINK_GANON_CAPE_PARAMS 0x4C4B
 // SoH: Link's cape vertices are stored at this many units per world unit for extra precision
 #define LINK_GANON_CAPE_VTX_SCALE 16.0f
+// SoH: params value used for the cape of the player-controlled Ganondorf ("Play as Ganondorf"). It has its own
+// vertex buffers, so it can be on screen together with the real Ganondorf's cape.
+#define PLAYER_GANONDORF_CAPE_PARAMS 0x4744
 
 typedef struct {
     /* 0x000 */ Vec3f root;                              // root position along the collar
@@ -48,6 +51,7 @@ typedef struct EnGanonMant {
     f32 jointLength;   // strand segment length override, 0 = vanilla
     f32 velocityClamp; // per-axis velocity clamp override, 0 = vanilla (5.0)
     Vec3f anchor;      // origin the vertex buffer is stored relative to (Link mode only)
+    u8 ownVertices;    // SoH: uses its own vertex buffers instead of the shared gMant1Vtx/gMant2Vtx
 } EnGanonMant;
 
 #endif

@@ -1725,7 +1725,11 @@ void CollisionCheck_SetBounce(Collider* at, Collider* ac) {
  */
 s32 CollisionCheck_SetATvsAC(PlayState* play, Collider* at, ColliderInfo* atInfo, Vec3f* atPos, Collider* ac,
                              ColliderInfo* acInfo, Vec3f* acPos, Vec3f* hitPos) {
-    if (ac->acFlags & AC_HARD && at->actor != NULL && ac->actor != NULL) {
+    // SoH: "Play as Ganondorf". His attacks go through every defense: they never bounce off hard parts like
+    // shields, armor or a Peahat's blades (enemies throw away the whole hit when something bounced).
+    u8 piercing = BossGanon_IsPlayerAttack(at->actor);
+
+    if (ac->acFlags & AC_HARD && at->actor != NULL && ac->actor != NULL && !piercing) {
         CollisionCheck_SetBounce(at, ac);
     }
     if (!(acInfo->bumperFlags & BUMP_NO_AT_INFO)) {
@@ -1749,8 +1753,10 @@ s32 CollisionCheck_SetATvsAC(PlayState* play, Collider* at, ColliderInfo* atInfo
     acInfo->bumper.hitPos.x = hitPos->x;
     acInfo->bumper.hitPos.y = hitPos->y;
     acInfo->bumper.hitPos.z = hitPos->z;
-    if (!(atInfo->toucherFlags & TOUCH_AT_HITMARK) && ac->colType != COLTYPE_METAL && ac->colType != COLTYPE_WOOD &&
-        ac->colType != COLTYPE_HARD) {
+    if ((!(atInfo->toucherFlags & TOUCH_AT_HITMARK) && ac->colType != COLTYPE_METAL && ac->colType != COLTYPE_WOOD &&
+         ac->colType != COLTYPE_HARD) ||
+        piercing) {
+        // Ganondorf always gets the plain hit flash, never the metal/wood "clink"
         acInfo->bumperFlags |= BUMP_DRAW_HITMARK;
     } else {
         CollisionCheck_HitEffects(play, at, atInfo, ac, acInfo, hitPos);
@@ -3042,14 +3048,17 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
     if (collider->actor == NULL || !(collider->acFlags & AC_HIT)) {
         return;
     }
-    if (!(info->bumperFlags & BUMP_HIT) || info->bumperFlags & BUMP_NO_DAMAGE) {
+    // SoH: "Play as Ganondorf", his attacks also damage parts that normally can't be damaged
+    u8 piercing = BossGanon_IsPlayerAttack(collider->ac);
+
+    if (!(info->bumperFlags & BUMP_HIT) || ((info->bumperFlags & BUMP_NO_DAMAGE) && !piercing)) {
         return;
     }
 
     assert(info->acHitInfo != NULL);
     tbl = collider->actor->colChkInfo.damageTable;
     if (tbl == NULL) {
-        damage = (f32)info->acHitInfo->toucher.damage - info->bumper.defense;
+        damage = (f32)info->acHitInfo->toucher.damage - (piercing ? 0 : info->bumper.defense);
         if (damage < 0) {
             damage = 0;
         }
@@ -3072,7 +3081,12 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
         damage = tbl->table[i] & 0xF;
         collider->actor->colChkInfo.damageEffect = tbl->table[i] >> 4 & 0xF;
     }
-    if (!(collider->acFlags & AC_HARD)) {
+    // Even targets that are immune to every type he carries take at least 1
+    if (piercing && (damage < 1.0f)) {
+        damage = 1.0f;
+    }
+
+    if (!(collider->acFlags & AC_HARD) || piercing) {
         collider->actor->colChkInfo.damage += damage;
     }
 

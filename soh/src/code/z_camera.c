@@ -10,6 +10,11 @@
 #include "soh/Enhancements/controls/Mouse.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
+
+// SoH: "Play as Ganondorf". Every camera mode scales its distance and height from the player's height, so the
+// camera asks for Ganondorf's height instead while he's shown (Link's height otherwise).
+#define Player_GetHeight(player) PlayAsGanondorf_GetCameraHeight(player)
 
 s16 Camera_ChangeSettingFlags(Camera* camera, s16 setting, s16 flags);
 s32 Camera_RequestModeImpl(Camera* camera, s16 requestedMode, u8 forceModeChange);

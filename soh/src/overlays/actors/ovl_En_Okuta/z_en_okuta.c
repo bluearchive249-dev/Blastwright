@@ -1,4 +1,5 @@
 #include "z_en_okuta.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "objects/object_okuta/object_okuta.h"
 #include "objects/gameplay_field_keep/gameplay_field_keep.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
@@ -489,8 +490,9 @@ void EnOkuta_ProjectileFly(EnOkuta* this, PlayState* play) {
     if ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) || (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) ||
         (this->collider.base.atFlags & AT_HIT) || this->collider.base.acFlags & AC_HIT ||
         this->collider.base.ocFlags1 & OC1_HIT || this->actor.floorHeight == BGCHECK_Y_MIN) {
+        // SoH: "Play as Ganondorf", his raised cape reflects them too
         if ((player->currentShield == PLAYER_SHIELD_DEKU ||
-             (player->currentShield == PLAYER_SHIELD_HYLIAN && LINK_IS_ADULT)) &&
+             (player->currentShield == PLAYER_SHIELD_HYLIAN && LINK_IS_ADULT) || PlayAsGanondorf_IsCapeShielding()) &&
             this->collider.base.atFlags & AT_HIT && this->collider.base.atFlags & AT_TYPE_ENEMY &&
             this->collider.base.atFlags & AT_BOUNCED) {
             this->collider.base.atFlags &= ~(AT_HIT | AT_BOUNCED | AT_TYPE_ENEMY);

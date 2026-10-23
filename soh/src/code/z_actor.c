@@ -19,6 +19,7 @@
 #include "soh/OTRGlobals.h"
 #include "soh/ShipUtils.h"
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -2246,6 +2247,14 @@ void Actor_SetPlayerKnockbackSmallNoDamage(PlayState* play, Actor* actor, f32 ar
 }
 
 void Player_PlaySfx(Actor* actor, u16 sfxId) {
+    // SoH: "Play as Ganondorf", Link's voice clips become Ganondorf's
+    if ((actor->id == ACTOR_PLAYER) && (sfxId >= NA_SE_VO_LI_SWORD_N) && (sfxId <= NA_SE_VO_LI_ELECTRIC_SHOCK_LV_KID)) {
+        sfxId = PlayAsGanondorf_GetVoiceSfx((Player*)actor, sfxId);
+        if (sfxId == PLAY_AS_GANONDORF_MUTE) {
+            return;
+        }
+    }
+
     if (actor->id != ACTOR_PLAYER || sfxId < NA_SE_VO_LI_SWORD_N || sfxId > NA_SE_VO_LI_ELECTRIC_SHOCK_LV_KID) {
         Audio_PlaySfxGeneral(sfxId, &actor->projectedPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                              &gSfxDefaultReverb);

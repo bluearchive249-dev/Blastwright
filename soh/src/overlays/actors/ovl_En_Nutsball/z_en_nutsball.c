@@ -5,6 +5,7 @@
  */
 
 #include "z_en_nutsball.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "overlays/effects/ovl_Effect_Ss_Hahen/z_eff_ss_hahen.h"
 #include "objects/object_gi_nuts/object_gi_nuts.h"
 #include "objects/object_dekunuts/object_dekunuts.h"
@@ -123,8 +124,9 @@ void func_80ABBBA8(EnNutsball* this, PlayState* play) {
         (this->collider.base.ocFlags1 & OC1_HIT)) {
         // Checking if the player is using a shield that reflects projectiles
         // And if so, reflects the projectile on impact
+        // SoH: "Play as Ganondorf", his raised cape reflects them too
         if ((player->currentShield == PLAYER_SHIELD_DEKU) ||
-            ((player->currentShield == PLAYER_SHIELD_HYLIAN) && LINK_IS_ADULT)) {
+            ((player->currentShield == PLAYER_SHIELD_HYLIAN) && LINK_IS_ADULT) || PlayAsGanondorf_IsCapeShielding()) {
             if ((this->collider.base.atFlags & AT_HIT) && (this->collider.base.atFlags & AT_TYPE_ENEMY) &&
                 (this->collider.base.atFlags & AT_BOUNCED)) {
                 this->collider.base.atFlags &= ~AT_TYPE_ENEMY & ~AT_BOUNCED & ~AT_HIT;

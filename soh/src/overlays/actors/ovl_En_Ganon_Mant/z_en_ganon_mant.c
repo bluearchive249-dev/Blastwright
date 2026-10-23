@@ -5,6 +5,7 @@
  */
 
 #include "z_en_ganon_mant.h"
+#include <string.h>
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
@@ -103,6 +104,28 @@ static u8 sMaskTex[MANT_TEX_WIDTH * MANT_TEX_HEIGHT] = { { 0 } };
 
 #include "overlays/ovl_En_Ganon_Mant/ovl_En_Ganon_Mant.h"
 
+// SoH: double-buffered vertices for the cape that owns them (only the player-controlled Ganondorf's cape).
+// Filled from the shared buffers once so texture coordinates and colors match.
+#define GANON_MANT_NUM_VTX 144
+static Vtx sOwnVertices[2][GANON_MANT_NUM_VTX];
+static u8 sOwnVerticesReady = false;
+
+static Vtx* EnGanonMant_GetOwnVertices(EnGanonMant* this) {
+    if (!sOwnVerticesReady) {
+        Vtx* src1 = ResourceMgr_LoadVtxByName(SEGMENTED_TO_VIRTUAL(gMant1Vtx));
+        Vtx* src2 = ResourceMgr_LoadVtxByName(SEGMENTED_TO_VIRTUAL(gMant2Vtx));
+
+        if ((src1 == NULL) || (src2 == NULL)) {
+            return NULL;
+        }
+        memcpy(sOwnVertices[0], src1, sizeof(sOwnVertices[0]));
+        memcpy(sOwnVertices[1], src2, sizeof(sOwnVertices[1]));
+        sOwnVerticesReady = true;
+    }
+
+    return sOwnVertices[(this->frameTimer % 2 != 0) ? 0 : 1];
+}
+
 void EnGanonMant_Init(Actor* thisx, PlayState* play) {
     EnGanonMant* this = (EnGanonMant*)thisx;
 
@@ -111,6 +134,10 @@ void EnGanonMant_Init(Actor* thisx, PlayState* play) {
     if (this->actor.params == LINK_GANON_CAPE_PARAMS) {
         this->isLinkCape = true;
         this->needsReset = true;
+    }
+
+    if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
+        this->ownVertices = true;
     }
 
     for (int i = 0; i < ARRAY_COUNT(sMaskTex); i++) {
@@ -330,6 +357,15 @@ void EnGanonMant_UpdateVertices(EnGanonMant* this) {
 
     vertices = ResourceMgr_LoadVtxByName(vertices);
 
+    // SoH: the player-controlled Ganondorf's cape writes to its own copy, so two capes can be drawn at once
+    if (this->ownVertices) {
+        Vtx* own = EnGanonMant_GetOwnVertices(this);
+
+        if (own != NULL) {
+            vertices = own;
+        }
+    }
+
     up.x = 0.0f;
     up.y = 30.0f;
     up.z = 0.0f;
@@ -338,7 +374,9 @@ void EnGanonMant_UpdateVertices(EnGanonMant* this) {
     for (i = 0; i < GANON_MANT_NUM_STRANDS; i++, strand++) {
         for (j = 0, k = 0; j < GANON_MANT_NUM_JOINTS; j++, k += GANON_MANT_NUM_JOINTS) {
             vtx = &vertices[sVerticesMap[i + k]];
-            if (this->isLinkCape) {
+            // SoH: the player-controlled Ganondorf's cape is stored relative to an anchor too, so the 60 fps
+            // interpolation moves it smoothly together with him instead of in 20 fps steps
+            if (this->isLinkCape || this->ownVertices) {
                 // SoH: store relative to the anchor at higher precision; the small cape would
                 // visibly snap to whole units otherwise
                 vtx->n.ob[0] = CLAMP((strand->joints[j].x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
@@ -393,7 +431,7 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     // Invalidate cape texture mask as it may have been torn
     gSPInvalidateTexCache(POLY_OPA_DISP++, sMaskTex);
 
-    if (this->isLinkCape) {
+    if (this->isLinkCape || this->ownVertices) {
         Matrix_Translate(this->anchor.x, this->anchor.y, this->anchor.z, MTXMODE_NEW);
         Matrix_Scale(1.0f / LINK_GANON_CAPE_VTX_SCALE, 1.0f / LINK_GANON_CAPE_VTX_SCALE,
                      1.0f / LINK_GANON_CAPE_VTX_SCALE, MTXMODE_APPLY);
@@ -408,7 +446,9 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
 
     // set vertices, vertices are double buffered to prevent
     // modification of vertices as they are being drawn
-    if (this->frameTimer % 2 != 0) {
+    if (this->ownVertices && (EnGanonMant_GetOwnVertices(this) != NULL)) {
+        gSPSegment(POLY_OPA_DISP++, 0x0C, EnGanonMant_GetOwnVertices(this));
+    } else if (this->frameTimer % 2 != 0) {
         gSPSegmentLoadRes(POLY_OPA_DISP++, 0x0C, gMant1Vtx);
     } else {
         gSPSegmentLoadRes(POLY_OPA_DISP++, 0x0C, gMant2Vtx);
@@ -492,6 +532,10 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
         Matrix_RotateY(yaw, MTXMODE_NEW);
         Matrix_RotateX(pitch, MTXMODE_APPLY);
         this->baseYaw = yaw - M_PI / 2.0f;
+
+        if (this->ownVertices) {
+            this->anchor = midpoint;
+        }
 
         if (this->isLinkCape) {
             this->anchor = midpoint;

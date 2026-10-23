@@ -8,12 +8,28 @@
 extern "C" {
 #endif
 
+// Returned by PlayAsGanondorf_GetVoiceSfx for a voice clip that should not play at all
+#define PLAY_AS_GANONDORF_MUTE 0
+
 // Called from Player_Update with the input Link is about to act on. Removes Link's own moves
-// (sword, shield, rolls, items) while Ganondorf is out.
+// (sword, shield, rolls, Z-targeting, items) while Ganondorf is out.
 void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Input* input);
+
+// True while Ganondorf's cape is up. It counts as any shield, including the Mirror Shield, so every projectile
+// and puzzle that needs a shield accepts it.
+s32 PlayAsGanondorf_IsCapeShielding(void);
+
+// Ganondorf doesn't need air underwater (no drowning timer).
+s32 PlayAsGanondorf_BreathesUnderwater(PlayState* play, Player* player);
 
 // Called from Player_Draw. Link stays invisible while Ganondorf is shown.
 s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player);
+
+// Used by the camera instead of Player_GetHeight, so it frames Ganondorf instead of Link.
+f32 PlayAsGanondorf_GetCameraHeight(Player* player);
+
+// Called from Player_PlaySfx for Link's voice clips: Ganondorf's voice instead, or PLAY_AS_GANONDORF_MUTE.
+u16 PlayAsGanondorf_GetVoiceSfx(Player* player, u16 sfxId);
 
 #ifdef __cplusplus
 }

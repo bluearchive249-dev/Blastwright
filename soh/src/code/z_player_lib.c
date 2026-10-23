@@ -12,6 +12,7 @@
 #include "soh/Enhancements/randomizer/draw.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/Graphics/LinkGanonCape.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 
 #include <stdlib.h>
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -818,13 +819,15 @@ Player* Player_UnsetMask(PlayState* play) {
 s32 Player_HasMirrorShieldEquipped(PlayState* play) {
     Player* this = GET_PLAYER(play);
 
-    return (this->currentShield == PLAYER_SHIELD_MIRROR);
+    // SoH: "Play as Ganondorf", his raised cape works as a Mirror Shield too
+    return (this->currentShield == PLAYER_SHIELD_MIRROR) || PlayAsGanondorf_IsCapeShielding();
 }
 
 s32 Player_HasMirrorShieldSetToDraw(PlayState* play) {
     Player* this = GET_PLAYER(play);
 
-    return (this->rightHandType == PLAYER_MODELTYPE_RH_SHIELD) && (this->currentShield == PLAYER_SHIELD_MIRROR);
+    return ((this->rightHandType == PLAYER_MODELTYPE_RH_SHIELD) && (this->currentShield == PLAYER_SHIELD_MIRROR)) ||
+           PlayAsGanondorf_IsCapeShielding(); // SoH: "Play as Ganondorf"
 }
 
 s32 Player_ActionToMagicSpell(Player* this, s32 itemAction) {
@@ -943,6 +946,10 @@ s32 Player_GetEnvironmentalHazard(PlayState* play) {
 
     if (play->roomCtx.curRoom.behaviorType2 == ROOM_BEHAVIOR_TYPE2_3) { // Room is hot
         envHazard = PLAYER_ENV_HAZARD_HOTROOM - 1;
+    } else if (((this->stateFlags1 & PLAYER_STATE1_IN_WATER) || (this->underwaterTimer > 80)) &&
+               PlayAsGanondorf_BreathesUnderwater(play, this)) {
+        // SoH: "Play as Ganondorf", he doesn't need air, so no drowning timer
+        envHazard = PLAYER_ENV_HAZARD_SWIMMING - 1;
     } else if ((this->underwaterTimer > 80) &&
                ((this->currentBoots == PLAYER_BOOTS_IRON) || (this->underwaterTimer >= 300))) { // Deep underwater
         envHazard = ((this->currentBoots == PLAYER_BOOTS_IRON) && (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND))

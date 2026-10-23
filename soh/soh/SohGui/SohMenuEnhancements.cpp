@@ -2104,12 +2104,16 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().Tooltip(
             "Replaces Link with Ganondorf from the Ganon's Tower fight, with his boss moveset instead of Link's.\n\n"
             " - B: Light ball. Keep holding B to charge Big Magic.\n"
-            " - R: Block with the cape.\n"
+            " - R: Block with the cape. It works as any shield (nuts, rocks, Twinrova, mirror light), stick turns "
+            "and tilts it.\n"
             " - R + B: Pound the floor.\n"
             " - C-Left / C-Down / C-Right: Light ball / Pound / Big Magic.\n"
-            " - A still opens doors, talks, climbs and grabs.\n\n"
-            "His attacks count as every damage type, so they also break rocks and walls and hit switches.\n"
-            "Link plays the real Ganondorf and Ganon fights."));
+            " - L / Z: Levitate up / down. Let go to hover, move with the stick.\n"
+            " - D-Pad Up: Laugh. D-Pad Down: Play the organ.\n"
+            " - A still opens doors, talks, climbs and grabs.\n"
+            " - Attacks aim at the enemy or eye/crystal switch, sun switch or unlit torch he's facing.\n\n"
+            "His attacks count as every damage type and go through every defense, so they also break rocks and "
+            "walls, hit switches and hurt armored enemies."));
     AddWidget(path, "Keep C-Button Items", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KeepItems"))
         .PreFunc([](WidgetInfo& info) {
@@ -2132,6 +2136,28 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Story cutscenes animate Link, so show him instead of Ganondorf while one plays."));
+    AddWidget(path, "Ganondorf Sinks in Water", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.IronBootsInWater"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "In water Ganondorf walks the bottom like with Iron Boots, keeps his whole moveset and doesn't need "
+            "air. Levitate (L) to come back up."));
+    AddWidget(path, "Ganondorf's Voice", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Voice"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Link's voice clips (idling, getting hurt, ...) use Ganondorf's voice instead."));
+    AddWidget(path, "Ganondorf Camera Distance: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CameraDistance"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(FloatSliderOptions().Min(0.6f).Max(2.0f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
+            "How far back and how high the camera sits. 1.0 frames all of Ganondorf."));
     AddWidget(path, "Ganondorf Hover Height: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.HoverHeight"))
         .PreFunc([](WidgetInfo& info) {
