@@ -9,6 +9,7 @@
 #include "assets/objects/object_ganon_anime1/object_ganon_anime1.h"
 #include "assets/objects/object_ganon_anime2/object_ganon_anime2.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
+#include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
@@ -5429,6 +5430,9 @@ s32 BossGanon_Player_CanAct(Actor* thisx) {
 }
 
 s32 BossGanon_IsPlayerAttack(Actor* actor) {
+    if ((actor != NULL) && (actor->id == ACTOR_BOSS_GANON2)) {
+        return actor->params == GANON2_PARAMS_PLAYER; // Ganon's swords, stomp and charge
+    }
     if ((actor == NULL) || (actor->id != ACTOR_BOSS_GANON)) {
         return false;
     }
@@ -5595,7 +5599,8 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
     }
 }
 
-static s32 BossGanon_Player_ShouldHide(BossGanon* this, PlayState* play) {
+// Also used by Ganon (Boss_Ganon2): moments when Link has to be shown instead of whichever form is out
+s32 BossGanon_Player_ShouldHideAnyForm(PlayState* play) {
     Player* player = GET_PLAYER(play);
 
     // First person
@@ -5618,10 +5623,20 @@ static s32 BossGanon_Player_ShouldHide(BossGanon* this, PlayState* play) {
     return false;
 }
 
+static s32 BossGanon_Player_ShouldHide(BossGanon* this, PlayState* play) {
+    // Ganon is out instead of him
+    return BossGanon_Player_ShouldHideAnyForm(play) || PlayAsGanondorf_IsGanonOut(play);
+}
+
 static s32 BossGanon_Player_CanStartAttack(BossGanon* this, PlayState* play) {
+    return !this->playerHidden && BossGanon_Player_LinkCanAttack(play);
+}
+
+// Also used by Ganon: Link is in a state where an attack can start
+s32 BossGanon_Player_LinkCanAttack(PlayState* play) {
     Player* player = GET_PLAYER(play);
 
-    if (this->playerHidden || Player_InCsMode(play) || (play->csCtx.state != CS_STATE_IDLE)) {
+    if (Player_InCsMode(play) || (play->csCtx.state != CS_STATE_IDLE)) {
         return false;
     }
     if ((Message_GetState(&play->msgCtx) != TEXT_STATE_NONE) || (player->textboxBtnCooldownTimer != 0)) {

@@ -106,6 +106,33 @@ typedef struct BossGanon2 {
     /* 0x0444 */ ColliderJntSph unk_444;
     /* 0x0464 */ ColliderJntSphElement unk_464[16];
     /* 0x0864 */ ColliderJntSphElement unk_864[2];
-} BossGanon2; // size = 0x08E4
+    // SoH: "Play as Ganondorf", Ganon form (params GANON2_PARAMS_PLAYER)
+    ColliderCylinder playerCollider; // stomp shockwave and charge
+    u8 playerHidden;      // Link is shown instead (cutscenes, first person, crawlspaces)
+    u8 playerAnim;        // which movement animation is playing
+    u8 playerComboQueued; // B pressed during a swing: swing again with the other sword
+    s16 playerTimer;
+    s16 playerPrevInvincibilityTimer;
+    s16 playerChargeYaw;
+    f32 playerChargeSpeed;
+    f32 playerShockRadius;
+    f32 playerHeadHeight; // top of his head above his feet, from his last draw
+} BossGanon2;
+
+#define GANON2_PARAMS_PLAYER 0x10
+
+// SoH: "Play as Ganondorf", Ganon form
+s32 BossGanon2_Player_IsBusy(Actor* thisx);
+s32 BossGanon2_Player_IsHidden(Actor* thisx);
+s32 BossGanon2_Player_IsGuarding(Actor* thisx);
+s32 BossGanon2_Player_CanAct(Actor* thisx);
+s32 BossGanon2_Player_IsGanonForm(Actor* thisx);
+s32 BossGanon2_Player_IsReverting(Actor* thisx);
+void BossGanon2_Player_StartRevert(Actor* thisx, PlayState* play);
+void BossGanon2_Player_Remove(Actor* thisx, PlayState* play);
+s32 BossGanon2_Player_GetCharge(Actor* thisx, s16* yaw, f32* speed);
+void BossGanon2_Player_StopCharge(Actor* thisx, PlayState* play);
+void BossGanon2_Player_UpdateGuardShield(Actor* thisx, PlayState* play);
+f32 BossGanon2_Player_GetHeadHeight(Actor* thisx);
 
 #endif

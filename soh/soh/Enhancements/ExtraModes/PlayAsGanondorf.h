@@ -31,6 +31,9 @@ f32 PlayAsGanondorf_GetCameraHeight(Player* player);
 // First-person look (C-Up): fills in Ganondorf's eye position and returns true, so the camera looks from there
 s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye);
 
+// Ganon (the D-Pad Right transformation) is out instead of Ganondorf
+s32 PlayAsGanondorf_IsGanonOut(PlayState* play);
+
 // How much faster than Link Ganondorf runs (1.0 when he isn't out)
 f32 PlayAsGanondorf_GetRunSpeedFactor(PlayState* play, Player* player);
 

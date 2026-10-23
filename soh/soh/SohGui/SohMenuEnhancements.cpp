@@ -2182,6 +2182,25 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(30.0f).Max(150.0f).DefaultValue(70.0f).Format("%.0f").Tooltip(
             "How high Ganondorf floats above the ground. He floats at 150 in his boss fight."));
+    AddWidget(path, "Ganon Form (D-Pad Right)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonForm"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "D-Pad Right transforms Ganondorf into Ganon, and back. Ganon's battle theme plays while he's out.\n\n"
+            " - B: sword swing (B again: the other sword). R + B or C-Down: stomp shockwave.\n"
+            " - Z or C-Right: charge. C-Left: sword swing. Hold R: guard. D-Pad Up: roar.\n\n"
+            "Allowed outdoors and in dungeons and temples. Houses, shops, grottos and other interiors turn him "
+            "back into Ganondorf."));
+    AddWidget(path, "Ganon Camera Distance: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonCameraDistance"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonForm"), 1) == 0;
+        })
+        .Options(FloatSliderOptions().Min(0.4f).Max(1.5f).DefaultValue(0.8f).Format("%.2fx").Tooltip(
+            "How far back and how high the camera sits while Ganon is out."));
     AddWidget(path, "Ganondorf Title Screen", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleScreen"))
         .Options(CheckboxOptions().Tooltip(

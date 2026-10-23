@@ -195,5 +195,8 @@ s32 BossGanon_IsPlayerAttack(Actor* actor);
 s32 BossGanon_Player_CanAct(Actor* thisx);
 s32 BossGanon_Player_IsCapeUp(Actor* thisx);
 void BossGanon_Player_UpdateCapeShield(Actor* thisx, PlayState* play);
+// Shared with Ganon (Boss_Ganon2)
+s32 BossGanon_Player_ShouldHideAnyForm(PlayState* play);
+s32 BossGanon_Player_LinkCanAttack(PlayState* play);
 
 #endif

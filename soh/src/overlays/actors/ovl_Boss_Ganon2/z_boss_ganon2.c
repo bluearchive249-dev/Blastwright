@@ -11,6 +11,8 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 
 #include <string.h>
 
@@ -41,6 +43,7 @@ void BossGanon2_UpdateEffects(BossGanon2* this, PlayState* play);
 void BossGanon2_DrawEffects(PlayState* play);
 void BossGanon2_GenShadowTexture(void* shadowTexture, BossGanon2* this, PlayState* play);
 void BossGanon2_DrawShadowTexture(void* shadowTexture, BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Init(BossGanon2* this, PlayState* play);
 
 const ActorInit Boss_Ganon2_InitVars = {
     ACTOR_BOSS_GANON2,
@@ -178,6 +181,12 @@ void BossGanon2_Init(Actor* thisx, PlayState* play) {
     s32 pad;
     s16 i;
 
+    // SoH: "Play as Ganondorf", Ganon form
+    if (thisx->params == GANON2_PARAMS_PLAYER) {
+        BossGanon2_Player_Init(this, play);
+        return;
+    }
+
     play->specialEffects = sEffects;
 
     for (i = 0; i < ARRAY_COUNT(sEffects); i++) {
@@ -209,6 +218,10 @@ void BossGanon2_Destroy(Actor* thisx, PlayState* play) {
     SkelAnime_Free(&this->skelAnime, play);
     Collider_DestroyJntSph(play, &this->unk_424);
     Collider_DestroyJntSph(play, &this->unk_444);
+
+    if (thisx->params == GANON2_PARAMS_PLAYER) {
+        Collider_DestroyCylinder(play, &this->playerCollider);
+    }
 }
 
 void func_808FD4D4(BossGanon2* this, PlayState* play, s16 arg2, s16 arg3) {
@@ -3176,4 +3189,896 @@ void BossGanon2_Reset(void) {
     memset(D_809105D8, 0, sizeof(D_809105D8));
     memset(D_80910608, 0, sizeof(D_80910608));
     memset(sEffects, 0, sizeof(sEffects));
+}
+
+// ================================================================================================
+// SoH: "Play as Ganondorf", Ganon form (params GANON2_PARAMS_PLAYER)
+//
+// D-Pad Right while playing as Ganondorf transforms him into Ganon, D-Pad Right again turns him back. Like the
+// player-controlled Ganondorf, Ganon follows Link, who stays invisible underneath and keeps doing the walking,
+// collision and loading zones. The glue with Link is in soh/Enhancements/ExtraModes/PlayAsGanondorf.cpp.
+//
+//  - B: sword swing, B again during it for the other sword. R + B: stomp shockwave. Z: charge.
+//    C-Left / C-Down / C-Right: swing / stomp / charge. Hold R: guard (blocks like Ganondorf's cape). D-Pad Up: roar.
+//  - The transformation is the one from the final battle without the cutscene: Ganondorf convulses and glows, then
+//    Ganon bursts out and uncurls. Ganon's battle theme plays while he's out (PlayAsGanondorf.cpp handles it).
+//  - His hits count as every damage type and go through every defense, like Ganondorf's.
+//
+// The vanilla Ganon's effects, Zelda, the arena and the lighting are left out: this one only touches its own state,
+// apart from the sword trail buffers (the real Ganon fight can't have both).
+// ================================================================================================
+
+#define GANON2_DMG_PLAYER ((u32)~DMG_SHIELD)
+
+#define GANON2_ANIM_NONE 0
+#define GANON2_ANIM_IDLE 1
+#define GANON2_ANIM_WALK 2
+#define GANON2_ANIM_GUARD_IDLE 3
+#define GANON2_ANIM_GUARD_WALK 4
+
+#define GANON2_TRANSFORM_FRAMES 60
+#define GANON2_CHARGE_FRAMES 45
+#define GANON2_CHARGE_SPEED 24.0f
+#define GANON2_SHOCKWAVE_MAX_RADIUS 420.0f
+
+static void BossGanon2_Player_Transform(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Emerge(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Move(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Swing(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Stomp(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Charge(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Roar(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Hurt(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Downed(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Revert(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Update(Actor* thisx, PlayState* play);
+static void BossGanon2_Player_Draw(Actor* thisx, PlayState* play);
+
+static ColliderJntSphElementInit sPlayerSwordElementsInit[] = {
+    {
+        {
+            ELEMTYPE_UNK2,
+            { GANON2_DMG_PLAYER, 0x00, 0x10 },
+            { 0x00000000, 0x00, 0x00 },
+            TOUCH_ON | TOUCH_SFX_NORMAL,
+            BUMP_NONE,
+            OCELEM_NONE,
+        },
+        { 15, { { 0, 0, 0 }, 70 }, 100 },
+    },
+    {
+        {
+            ELEMTYPE_UNK2,
+            { GANON2_DMG_PLAYER, 0x00, 0x10 },
+            { 0x00000000, 0x00, 0x00 },
+            TOUCH_ON | TOUCH_SFX_NORMAL,
+            BUMP_NONE,
+            OCELEM_NONE,
+        },
+        { 16, { { 0, 0, 0 }, 70 }, 100 },
+    },
+};
+
+static ColliderJntSphInit sPlayerSwordInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER,
+        AC_NONE,
+        OC1_NONE,
+        OC2_NONE,
+        COLSHAPE_JNTSPH,
+    },
+    ARRAY_COUNT(sPlayerSwordElementsInit),
+    sPlayerSwordElementsInit,
+};
+
+static ColliderCylinderInit sPlayerBodyCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER,
+        AC_NONE,
+        OC1_NONE,
+        OC2_NONE,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK2,
+        { GANON2_DMG_PLAYER, 0x00, 0x08 },
+        { 0x00000000, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NORMAL,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { 90, 220, 0, { 0, 0, 0 } },
+};
+
+// ---- Setup -------------------------------------------------------------------------------------
+
+static void BossGanon2_Player_BecomeGanon(BossGanon2* this, PlayState* play) {
+    SkelAnime_Free(&this->skelAnime, play);
+    SkelAnime_InitFlex(play, &this->skelAnime, &gGanonSkel, NULL, NULL, NULL, 0);
+    // Ganon has more limbs than Ganondorf, so start with one of Ganon's animations right away (see csState 16)
+    Animation_PlayOnce(&this->skelAnime, &gGanonUncurlAndFlailAnim);
+    this->unk_337 = 1;
+    this->actor.shape.yOffset = 0.0f;
+    this->playerAnim = GANON2_ANIM_NONE;
+}
+
+static void BossGanon2_Player_SetupMove(BossGanon2* this, PlayState* play) {
+    this->actionFunc = BossGanon2_Player_Move;
+    this->playerAnim = GANON2_ANIM_NONE; // picked on the next frame
+    this->playerComboQueued = false;
+    this->playerChargeSpeed = 0.0f;
+}
+
+static void BossGanon2_Player_Init(BossGanon2* this, PlayState* play) {
+    Actor* thisx = &this->actor;
+    Player* player = GET_PLAYER(play);
+    u8 skipTransformation = thisx->home.rot.z != 0;
+
+    thisx->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    thisx->flags |= ACTOR_FLAG_UPDATE_DURING_OCARINA;
+    thisx->update = BossGanon2_Player_Update;
+    thisx->draw = BossGanon2_Player_Draw;
+    thisx->colChkInfo.mass = MASS_IMMOVABLE;
+    thisx->gravity = 0.0f;
+    thisx->world.rot.z = thisx->shape.rot.z = 0;
+    // Follow Link through every room
+    thisx->room = -1;
+    thisx->parent = &player->actor;
+    Actor_ChangeCategory(play, &play->actorCtx, thisx, ACTORCAT_MISC);
+    Actor_SetScale(thisx, 0.01f);
+
+    // The body spheres aren't used, but the limb code writes their positions
+    Collider_InitJntSph(play, &this->unk_424);
+    Collider_SetJntSph(play, &this->unk_424, thisx, &sJntSphInit1, this->unk_464);
+    Collider_InitJntSph(play, &this->unk_444);
+    Collider_SetJntSph(play, &this->unk_444, thisx, &sPlayerSwordInit, this->unk_864);
+    Collider_InitCylinder(play, &this->playerCollider);
+    Collider_SetCylinder(play, &this->playerCollider, thisx, &sPlayerBodyCylinderInit);
+
+    this->unk_228 = 1.0f;
+    this->playerHeadHeight = 330.0f;
+    this->playerPrevInvincibilityTimer = player->invincibilityTimer;
+
+    thisx->world.pos = player->actor.world.pos;
+    thisx->shape.rot.y = thisx->world.rot.y = player->actor.shape.rot.y;
+
+    if (skipTransformation) {
+        // Already Ganon when entering a new area
+        SkelAnime_InitFlex(play, &this->skelAnime, &gGanondorfSkel, NULL, NULL, NULL, 0);
+        BossGanon2_Player_BecomeGanon(this, play);
+        this->unk_224 = 1.0f;
+        BossGanon2_Player_SetupMove(this, play);
+    } else {
+        SkelAnime_InitFlex(play, &this->skelAnime, &gGanondorfSkel, NULL, NULL, NULL, 0);
+        Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfTransformStartAnim, 0.0f);
+        this->unk_194 = Animation_GetLastFrame(&gGanondorfTransformStartAnim);
+        this->unk_337 = 0;
+        this->unk_224 = 0.0f;
+        thisx->world.pos.y += CVarGetFloat(CVAR_ENHANCEMENT("PlayAsGanondorf.HoverHeight"), 70.0f);
+        this->actionFunc = BossGanon2_Player_Transform;
+        this->playerTimer = 0;
+        Audio_PlayActorSound2(thisx, NA_SE_EN_GANON_CASBREAK);
+        Actor_RequestQuakeAndRumble(thisx, play, 3, 15);
+    }
+    thisx->prevPos = thisx->world.pos;
+}
+
+// ---- Transformation ----------------------------------------------------------------------------
+
+// Ganondorf convulses and glows (his transformation from the final battle), then Ganon bursts out
+static void BossGanon2_Player_Transform(BossGanon2* this, PlayState* play) {
+    Vec3f pos;
+
+    SkelAnime_Update(&this->skelAnime);
+
+    if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+        Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfTransformEndAnim, 0.0f);
+        this->unk_194 = 1000.0f;
+    }
+
+    // Light bursting out of his body
+    if (this->playerTimer >= 10) {
+        Math_ApproachF(&this->unk_30C, (this->playerTimer < 40) ? 15.0f : 7.0f, 1.0f, 1.0f);
+    }
+    if (this->playerTimer == 30) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_BIGMASIC);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_BIG);
+    }
+    if ((this->playerTimer % 12) == 0) {
+        Actor_RequestQuakeAndRumble(&this->actor, play, 2, 8);
+    }
+
+    if (this->playerTimer >= GANON2_TRANSFORM_FRAMES) {
+        BossGanon2_Player_BecomeGanon(this, play);
+        Animation_MorphToPlayOnce(&this->skelAnime, &gGanonUncurlAndFlailAnim, 0.0f);
+        this->unk_194 = Animation_GetLastFrame(&gGanonUncurlAndFlailAnim);
+        this->unk_30C = 15.0f;
+        this->actionFunc = BossGanon2_Player_Emerge;
+        this->playerTimer = 0;
+
+        pos = GET_PLAYER(play)->actor.world.pos;
+        Sfx_PlaySfxAtPos(&this->actor.projectedPos, NA_SE_EV_GRAVE_EXPLOSION);
+        Actor_RequestQuakeAndRumble(&this->actor, play, 6, 25);
+        Actor_SpawnFloorDustRing(play, &this->actor, &pos, 80.0f, 15, 8.0f, 800, 30, true);
+    }
+}
+
+// Ganon uncurls and roars, then he can be controlled
+static void BossGanon2_Player_Emerge(BossGanon2* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->unk_30C, 1.0f, 0.3f);
+    // His swords grow in his hands
+    if (this->playerTimer > 15) {
+        Math_ApproachF(&this->unk_224, 1.0f, 1.0f, 0.05f);
+    }
+    if (this->playerTimer == 20) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+    }
+
+    if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+        this->unk_224 = 1.0f;
+        BossGanon2_Player_SetupMove(this, play);
+    }
+}
+
+// Ganon roars and disappears in a flash and a cloud of smoke; Ganondorf is back
+static void BossGanon2_Player_Revert(BossGanon2* this, PlayState* play) {
+    Vec3f pos;
+    Vec3f velocity;
+    Vec3f accel = { 0.0f, 0.5f, 0.0f };
+    s16 i;
+
+    SkelAnime_Update(&this->skelAnime);
+
+    if (this->playerTimer == 10) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+    }
+    if (this->playerTimer >= 15) {
+        Math_ApproachF(&this->unk_30C, 15.0f, 1.0f, 1.0f);
+    }
+
+    if (this->playerTimer == 35) {
+        Sfx_PlaySfxAtPos(&this->actor.projectedPos, NA_SE_EN_GANON_CASBREAK);
+        Actor_RequestQuakeAndRumble(&this->actor, play, 4, 15);
+
+        for (i = 0; i < ARRAY_COUNT(this->unk_234); i++) {
+            pos = this->unk_234[i];
+            velocity.x = Rand_CenteredFloat(6.0f);
+            velocity.y = Rand_ZeroFloat(3.0f) + 1.0f;
+            velocity.z = Rand_CenteredFloat(6.0f);
+            EffectSsDeadDb_Spawn(play, &pos, &velocity, &accel, 300, 30, 255, 255, 255, 255, 60, 0, 90, 1, 9, false);
+        }
+    }
+
+    if (this->playerTimer >= 40) {
+        Actor_Kill(&this->actor);
+    }
+}
+
+// ---- Moving around -----------------------------------------------------------------------------
+
+static void BossGanon2_Player_SetMoveAnim(BossGanon2* this, u8 anim) {
+    if (this->playerAnim == anim) {
+        return;
+    }
+    this->playerAnim = anim;
+
+    switch (anim) {
+        case GANON2_ANIM_WALK:
+            Animation_MorphToLoop(&this->skelAnime, &gGanonWalkAnim, -10.0f);
+            break;
+        case GANON2_ANIM_GUARD_WALK:
+            Animation_MorphToLoop(&this->skelAnime, &gGanonGuardWalkAnim, -10.0f);
+            break;
+        default:
+            Animation_MorphToLoop(&this->skelAnime, &gGanonGuardIdleAnim, -10.0f);
+            break;
+    }
+}
+
+static void BossGanon2_Player_SetupSwing(BossGanon2* this, PlayState* play) {
+    if (this->unk_311 == 0) {
+        Animation_MorphToPlayOnce(&this->skelAnime, &gGanonLeftSwordSwingAnim, -5.0f);
+        this->unk_194 = Animation_GetLastFrame(&gGanonLeftSwordSwingAnim);
+    } else {
+        Animation_MorphToPlayOnce(&this->skelAnime, &gGanonRightSwordSwingAnim, -5.0f);
+        this->unk_194 = Animation_GetLastFrame(&gGanonRightSwordSwingAnim);
+    }
+    this->unk_198 = (this->unk_194 - 15.0f) - 5.0f;
+    this->playerComboQueued = false;
+    this->actionFunc = BossGanon2_Player_Swing;
+}
+
+static void BossGanon2_Player_SetupStomp(BossGanon2* this, PlayState* play) {
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanonWalkAnim, -5.0f);
+    this->skelAnime.playSpeed = 0.8f;
+    this->playerTimer = 0;
+    this->playerShockRadius = 0.0f;
+    this->actionFunc = BossGanon2_Player_Stomp;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_UNARI);
+}
+
+static void BossGanon2_Player_SetupCharge(BossGanon2* this, PlayState* play) {
+    Animation_MorphToLoop(&this->skelAnime, &gGanonWalkAnim, -5.0f);
+    this->skelAnime.playSpeed = 3.0f;
+    this->playerTimer = 0;
+    this->playerChargeYaw = this->actor.shape.rot.y;
+    this->playerChargeSpeed = 0.0f;
+    this->actionFunc = BossGanon2_Player_Charge;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+}
+
+static void BossGanon2_Player_SetupRoar(BossGanon2* this, PlayState* play) {
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanonRoarAnim, -5.0f);
+    this->unk_194 = Animation_GetLastFrame(&gGanonRoarAnim);
+    this->playerTimer = 0;
+    this->actionFunc = BossGanon2_Player_Roar;
+}
+
+static void BossGanon2_Player_Move(BossGanon2* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Input* input = &play->state.input[0];
+    f32 speed = fabsf(player->linearVelocity);
+    u8 guarding = CHECK_BTN_ALL(input->cur.button, BTN_R) && !this->playerHidden;
+    u8 walking = (speed > 1.0f) && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
+
+    if (guarding) {
+        BossGanon2_Player_SetMoveAnim(this, walking ? GANON2_ANIM_GUARD_WALK : GANON2_ANIM_GUARD_IDLE);
+    } else {
+        BossGanon2_Player_SetMoveAnim(this, walking ? GANON2_ANIM_WALK : GANON2_ANIM_IDLE);
+    }
+
+    if (this->playerAnim == GANON2_ANIM_WALK) {
+        this->skelAnime.playSpeed = CLAMP(speed / 4.0f, 0.6f, 2.5f);
+    } else if (this->playerAnim == GANON2_ANIM_GUARD_WALK) {
+        this->skelAnime.playSpeed = CLAMP(speed / 3.0f, 0.6f, 2.0f);
+    } else {
+        this->skelAnime.playSpeed = 1.0f;
+    }
+
+    SkelAnime_Update(&this->skelAnime);
+
+    // His steps shake the ground
+    if (this->playerAnim == GANON2_ANIM_WALK) {
+        if (Animation_OnFrame(&this->skelAnime, 13.0f)) {
+            func_808FD4D4(this, play, 1, 3);
+        } else if (Animation_OnFrame(&this->skelAnime, 28.0f)) {
+            func_808FD4D4(this, play, 2, 3);
+        }
+    }
+
+    if (this->playerHidden || !BossGanon_Player_LinkCanAttack(play)) {
+        return;
+    }
+
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
+            BossGanon2_Player_SetupStomp(this, play);
+        } else {
+            BossGanon2_Player_SetupSwing(this, play);
+        }
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_CLEFT)) {
+        BossGanon2_Player_SetupSwing(this, play);
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_CDOWN)) {
+        BossGanon2_Player_SetupStomp(this, play);
+    } else if (CHECK_BTN_ANY(input->press.button, BTN_Z | BTN_CRIGHT)) {
+        BossGanon2_Player_SetupCharge(this, play);
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
+        BossGanon2_Player_SetupRoar(this, play);
+    }
+}
+
+// ---- Attacks -----------------------------------------------------------------------------------
+
+// From the vanilla swing (func_80900650). B again during it swings the other sword.
+static void BossGanon2_Player_Swing(BossGanon2* this, PlayState* play) {
+    Input* input = &play->state.input[0];
+
+    SkelAnime_Update(&this->skelAnime);
+
+    if (Animation_OnFrame(&this->skelAnime, this->unk_198)) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_SWORD);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+    }
+
+    if (this->unk_311 == 0) {
+        if (((this->unk_198 - 4.0f) < this->skelAnime.curFrame) &&
+            (this->skelAnime.curFrame < (this->unk_198 + 6.0f))) {
+            this->unk_312 = 1;
+        }
+    } else if ((this->unk_198 < this->skelAnime.curFrame) && (this->skelAnime.curFrame < (this->unk_198 + 6.0f))) {
+        this->unk_312 = 2;
+    }
+
+    if (CHECK_BTN_ANY(input->press.button, BTN_B | BTN_CLEFT) && (this->skelAnime.curFrame > this->unk_198 - 10.0f)) {
+        this->playerComboQueued = true;
+    }
+
+    if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+        this->unk_311 = 1 - this->unk_311;
+
+        if (this->playerComboQueued && BossGanon_Player_LinkCanAttack(play)) {
+            BossGanon2_Player_SetupSwing(this, play);
+        } else {
+            BossGanon2_Player_SetupMove(this, play);
+        }
+    }
+}
+
+// One huge step: the ground shakes and a shockwave rolls out around him
+static void BossGanon2_Player_Stomp(BossGanon2* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    Vec3f pos;
+
+    SkelAnime_Update(&this->skelAnime);
+
+    if (this->playerShockRadius == 0.0f) {
+        if (Animation_OnFrame(&this->skelAnime, 13.0f)) {
+            this->skelAnime.playSpeed = 0.0f;
+            this->playerShockRadius = 60.0f;
+            this->playerTimer = 0;
+
+            func_808FD4D4(this, play, 1, 8);
+            Actor_RequestQuakeAndRumble(&this->actor, play, 8, 25);
+            Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
+            Sfx_PlaySfxAtPos(&this->actor.projectedPos, NA_SE_EV_GRAVE_EXPLOSION);
+
+            pos = player->actor.world.pos;
+            pos.y = player->actor.floorHeight + 5.0f;
+            EffectSsBlast_SpawnWhiteShockwave(play, &pos, &zero, &zero);
+            EffectSsBlast_SpawnWhiteCustomScale(play, &pos, &zero, &zero, 300, 400, 12);
+            Actor_SpawnFloorDustRing(play, &this->actor, &pos, 120.0f, 20, 10.0f, 1000, 40, true);
+        }
+        return;
+    }
+
+    // The shockwave grows for a moment
+    if (this->playerShockRadius < GANON2_SHOCKWAVE_MAX_RADIUS) {
+        this->playerShockRadius += 35.0f;
+    }
+
+    if (this->playerTimer == 12) {
+        this->skelAnime.playSpeed = 1.0f;
+    }
+    if (this->playerTimer >= 25) {
+        this->playerShockRadius = 0.0f;
+        BossGanon2_Player_SetupMove(this, play);
+    }
+}
+
+// Rushes forward until something stops him. Link is moved along by PlayAsGanondorf.cpp.
+static void BossGanon2_Player_Charge(BossGanon2* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+
+    Math_ApproachF(&this->playerChargeSpeed,
+                   GANON2_CHARGE_SPEED * PlayAsGanondorf_GetRunSpeedFactor(play, GET_PLAYER(play)) / 1.5f, 1.0f, 4.0f);
+
+    if (Animation_OnFrame(&this->skelAnime, 13.0f)) {
+        func_808FD4D4(this, play, 1, 3);
+    } else if (Animation_OnFrame(&this->skelAnime, 28.0f)) {
+        func_808FD4D4(this, play, 2, 3);
+    }
+
+    if (this->playerTimer >= GANON2_CHARGE_FRAMES) {
+        BossGanon2_Player_SetupMove(this, play);
+    }
+}
+
+static void BossGanon2_Player_Roar(BossGanon2* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+
+    if (this->playerTimer == 30) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
+        Actor_RequestQuakeAndRumble(&this->actor, play, 4, 40);
+    }
+
+    if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+        BossGanon2_Player_SetupMove(this, play);
+    }
+}
+
+// ---- Getting hurt ------------------------------------------------------------------------------
+
+static void BossGanon2_Player_SetupHurt(BossGanon2* this, PlayState* play) {
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanonDamageAnim, -3.0f);
+    this->unk_194 = Animation_GetLastFrame(&gGanonDamageAnim);
+    this->unk_342 = 5; // red flash
+    this->playerShockRadius = 0.0f;
+    this->actionFunc = BossGanon2_Player_Hurt;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DAMAGE);
+}
+
+static void BossGanon2_Player_Hurt(BossGanon2* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+
+    if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+        BossGanon2_Player_SetupMove(this, play);
+    }
+}
+
+static s32 BossGanon2_Player_IsLinkDead(PlayState* play) {
+    return (gSaveContext.health <= 0) || (GET_PLAYER(play)->stateFlags1 & PLAYER_STATE1_DEAD);
+}
+
+static void BossGanon2_Player_SetupDowned(BossGanon2* this, PlayState* play) {
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanonDownedStartAnim, -5.0f);
+    this->unk_194 = Animation_GetLastFrame(&gGanonDownedStartAnim);
+    this->unk_1AC = 0;
+    this->playerShockRadius = 0.0f;
+    this->actionFunc = BossGanon2_Player_Downed;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DEAD1);
+}
+
+// Falls down when Link dies, gets back up if a fairy revives him
+static void BossGanon2_Player_Downed(BossGanon2* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+
+    switch (this->unk_1AC) {
+        case 0:
+            if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+                Animation_MorphToLoop(&this->skelAnime, &gGanonDownedLoopAnim, 0.0f);
+                this->unk_1AC = 1;
+            }
+            break;
+        case 1:
+            if (!BossGanon2_Player_IsLinkDead(play)) {
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanonGetUpAnim, 0.0f);
+                this->unk_194 = Animation_GetLastFrame(&gGanonGetUpAnim);
+                this->unk_1AC = 2;
+            }
+            break;
+        case 2:
+            if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+                BossGanon2_Player_SetupMove(this, play);
+            }
+            break;
+    }
+}
+
+// ---- Update / draw -----------------------------------------------------------------------------
+
+static void BossGanon2_Player_Follow(BossGanon2* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Vec3f target = player->actor.world.pos;
+    f32 dx;
+    f32 dy;
+    f32 dz;
+    u8 turns = (this->actionFunc == BossGanon2_Player_Move);
+
+    if (this->unk_337 == 0) {
+        target.y += CVarGetFloat(CVAR_ENHANCEMENT("PlayAsGanondorf.HoverHeight"), 70.0f);
+    }
+
+    dx = target.x - this->actor.world.pos.x;
+    dy = target.y - this->actor.world.pos.y;
+    dz = target.z - this->actor.world.pos.z;
+
+    if ((SQ(dx) + SQ(dy) + SQ(dz)) > SQ(300.0f)) {
+        this->actor.world.pos = target;
+        this->actor.prevPos = target;
+    } else {
+        this->actor.world.pos.x += dx * 0.5f;
+        this->actor.world.pos.y += dy * 0.5f;
+        this->actor.world.pos.z += dz * 0.5f;
+    }
+
+    if (turns) {
+        Math_ApproachS(&this->actor.shape.rot.y, player->actor.shape.rot.y, 3, 0x1000);
+    } else if (this->actionFunc == BossGanon2_Player_Charge) {
+        this->actor.shape.rot.y = this->playerChargeYaw;
+    }
+    this->actor.world.rot.y = this->actor.shape.rot.y;
+    this->actor.floorHeight = player->actor.floorHeight;
+}
+
+static void BossGanon2_Player_Update(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+    Player* player = GET_PLAYER(play);
+    f32 phi_f2;
+    s16 i;
+
+    this->unk_312 = 0;
+    this->unk_19C++;
+    this->playerTimer++;
+    Actor_SetScale(thisx, 0.01f);
+    this->playerHidden = BossGanon_Player_ShouldHideAnyForm(play);
+
+    // Link got hurt or died
+    if ((this->unk_337 != 0) && (this->actionFunc != BossGanon2_Player_Emerge) &&
+        (this->actionFunc != BossGanon2_Player_Revert)) {
+        if (BossGanon2_Player_IsLinkDead(play)) {
+            if (this->actionFunc != BossGanon2_Player_Downed) {
+                BossGanon2_Player_SetupDowned(this, play);
+            }
+        } else if ((player->invincibilityTimer > 0) && (this->playerPrevInvincibilityTimer <= 0) &&
+                   (this->actionFunc != BossGanon2_Player_Downed)) {
+            BossGanon2_Player_SetupHurt(this, play);
+        }
+    }
+
+    this->actionFunc(this, play);
+    this->playerPrevInvincibilityTimer = player->invincibilityTimer;
+
+    for (i = 0; i < ARRAY_COUNT(this->unk_1A2); i++) {
+        if (this->unk_1A2[i] != 0) {
+            this->unk_1A2[i]--;
+        }
+    }
+    if (this->unk_342 != 0) {
+        this->unk_342--;
+    }
+
+    if (thisx->update == NULL) {
+        return; // turned back into Ganondorf
+    }
+
+    BossGanon2_Player_Follow(this, play);
+
+    // Blinking and the glow on his tail, from BossGanon2_Update
+    if (((this->unk_19C & 0x1F) == 0) && (Rand_ZeroOne() < 0.3f)) {
+        this->unk_318 = 4;
+    }
+    this->unk_310 = D_80907074[this->unk_318];
+    if (this->unk_318 != 0) {
+        this->unk_318--;
+    }
+    this->unk_1B0 = (Math_SinS(this->unk_19C * 0x2AAA) * 64.0f) + 191.0f;
+
+    // His tail swaying
+    this->unk_360.y = 14000.0f;
+    Math_ApproachF(&this->unk_360.x, 2000.0f, 0.1f, 100.0f);
+    this->unk_370.y = 12000.0f;
+    Math_ApproachF(&this->unk_370.x, 1500.0f, 0.1f, 100.0f);
+    if ((this->actionFunc == BossGanon2_Player_Move) && (this->playerAnim != GANON2_ANIM_WALK)) {
+        Math_ApproachF(&this->unk_360.z, 1000.0f, 0.1f, 100.0f);
+        Math_ApproachF(&this->unk_370.z, 1000.0f, 0.1f, 100.0f);
+        Math_ApproachS(&this->unk_346, -0xFA0, 0xA, 0x64);
+    } else {
+        Math_ApproachF(&this->unk_360.z, 5000.0f, 0.1f, 200.0f);
+        Math_ApproachF(&this->unk_370.z, 5000.0f, 0.1f, 200.0f);
+        Math_ApproachS(&this->unk_346, 0, 0xA, 0x64);
+    }
+    this->unk_35C += this->unk_360.x;
+    this->unk_36C += this->unk_370.x;
+
+    for (i = 0; i < ARRAY_COUNT(this->unk_348); i++) {
+        if (i == 0) {
+            phi_f2 = 0.2f;
+        } else if (i == 1) {
+            phi_f2 = 0.5f;
+        } else {
+            phi_f2 = 1.0f;
+        }
+        this->unk_348[i] = Math_SinS(((s16)this->unk_35C + (i * (s16)this->unk_360.y))) * phi_f2 * this->unk_360.z;
+        this->unk_352[i] = Math_SinS(((s16)this->unk_36C + (i * (s16)this->unk_370.y))) * phi_f2 * this->unk_370.z;
+    }
+
+    // How tall he is, for the camera
+    if (!this->playerHidden && (this->unk_337 != 0)) {
+        f32 height = this->unk_1B8.y - thisx->world.pos.y;
+
+        if ((height > 100.0f) && (height < 800.0f)) {
+            Math_ApproachF(&this->playerHeadHeight, height, 0.2f, 20.0f);
+        }
+        thisx->focus.pos = this->unk_1B8;
+    }
+
+    if (this->playerHidden) {
+        return;
+    }
+
+    // Swords
+    if (this->unk_312 != 0) {
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->unk_444.base);
+    }
+
+    // Stomp shockwave around him, or his body while charging
+    if (this->playerShockRadius > 0.0f) {
+        this->playerCollider.dim.radius = (s16)this->playerShockRadius;
+        this->playerCollider.dim.height = 80;
+        this->playerCollider.dim.pos.x = (s16)player->actor.world.pos.x;
+        this->playerCollider.dim.pos.y = (s16)(player->actor.floorHeight - 10.0f);
+        this->playerCollider.dim.pos.z = (s16)player->actor.world.pos.z;
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->playerCollider.base);
+    } else if ((this->actionFunc == BossGanon2_Player_Charge) && (this->playerChargeSpeed > 5.0f)) {
+        this->playerCollider.dim.radius = 90;
+        this->playerCollider.dim.height = 220;
+        this->playerCollider.dim.pos.x = (s16)(thisx->world.pos.x + (Math_SinS(this->playerChargeYaw) * 70.0f));
+        this->playerCollider.dim.pos.y = (s16)thisx->world.pos.y;
+        this->playerCollider.dim.pos.z = (s16)(thisx->world.pos.z + (Math_CosS(this->playerChargeYaw) * 70.0f));
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->playerCollider.base);
+    }
+}
+
+// BossGanon2_Draw without the arena, Zelda and the vanilla effects
+static void BossGanon2_Player_Draw(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+    void* shadowTexture;
+    s16 i;
+
+    if (this->playerHidden) {
+        return;
+    }
+
+    shadowTexture = Graph_Alloc(play->state.gfxCtx, 4096);
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+
+    if (this->unk_337 == 0) {
+        gSPSegment(POLY_XLU_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gGanondorfEmptyEyeTex));
+        gSPSegment(POLY_XLU_DISP++, 0x09, SEGMENTED_TO_VIRTUAL(gGanondorfEmptyEyeTex));
+        SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, NULL, BossGanon2_PostLimbDraw2, this);
+    } else {
+        gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(sEyeTextures[this->unk_310]));
+        // The swords are out of the way unless they're swinging
+        func_808FD080(0, &this->unk_444, &D_8090717C);
+        func_808FD080(1, &this->unk_444, &D_8090717C);
+        this->unk_218 = D_8090717C;
+        if (this->unk_342 & 1) {
+            POLY_OPA_DISP = Gfx_SetFog(POLY_OPA_DISP, 0xFF, 0, 0, 0xFF, 0x384, 0x44B);
+        }
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, BossGanon2_OverrideLimbDraw, BossGanon2_PostLimbDraw,
+                                  this);
+        POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
+        BossGanon2_GenShadowTexture(shadowTexture, this, play);
+        BossGanon2_DrawShadowTexture(shadowTexture, this, play);
+    }
+
+    // Light bursting out of him while he transforms
+    func_80904D88(this, play);
+
+    // Sword trail
+    if ((this->unk_312 != 0) || (D_80907080 != 0)) {
+        func_80903F38(this, play);
+        if (this->unk_312 == 0) {
+            D_80907080 -= 40;
+            if (D_80907080 <= 0) {
+                D_80907080 = 0;
+            }
+        }
+        D_80910638++;
+    } else {
+        for (i = 0; i < 3; i++) {
+            D_809105D8[i] = this->unk_200;
+            D_80910608[i] = this->unk_20C;
+        }
+        D_80910638 = 0;
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ---- Used by PlayAsGanondorf.cpp ---------------------------------------------------------------
+
+static s32 BossGanon2_IsPlayerGanon(Actor* thisx) {
+    return (thisx != NULL) && (thisx->id == ACTOR_BOSS_GANON2) && (thisx->params == GANON2_PARAMS_PLAYER) &&
+           (thisx->update != NULL);
+}
+
+// Doing something other than walking around (Link stays put)
+s32 BossGanon2_Player_IsBusy(Actor* thisx) {
+    return BossGanon2_IsPlayerGanon(thisx) && (((BossGanon2*)thisx)->actionFunc != BossGanon2_Player_Move);
+}
+
+s32 BossGanon2_Player_IsHidden(Actor* thisx) {
+    return !BossGanon2_IsPlayerGanon(thisx) || ((BossGanon2*)thisx)->playerHidden;
+}
+
+s32 BossGanon2_Player_IsGuarding(Actor* thisx) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    return BossGanon2_IsPlayerGanon(thisx) && !this->playerHidden && (this->actionFunc == BossGanon2_Player_Move) &&
+           ((this->playerAnim == GANON2_ANIM_GUARD_IDLE) || (this->playerAnim == GANON2_ANIM_GUARD_WALK));
+}
+
+// Free to turn back into Ganondorf
+s32 BossGanon2_Player_CanAct(Actor* thisx) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    return BossGanon2_IsPlayerGanon(thisx) && !this->playerHidden && (this->actionFunc == BossGanon2_Player_Move) &&
+           (gPlayState != NULL) && BossGanon_Player_LinkCanAttack(gPlayState);
+}
+
+// Ganon himself is out (not Ganondorf transforming)
+s32 BossGanon2_Player_IsGanonForm(Actor* thisx) {
+    return BossGanon2_IsPlayerGanon(thisx) && (((BossGanon2*)thisx)->unk_337 != 0);
+}
+
+s32 BossGanon2_Player_IsReverting(Actor* thisx) {
+    return BossGanon2_IsPlayerGanon(thisx) && (((BossGanon2*)thisx)->actionFunc == BossGanon2_Player_Revert);
+}
+
+void BossGanon2_Player_StartRevert(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    if (!BossGanon2_IsPlayerGanon(thisx) || (this->actionFunc == BossGanon2_Player_Revert)) {
+        return;
+    }
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanonRoarAnim, -5.0f);
+    this->playerTimer = 0;
+    this->playerShockRadius = 0.0f;
+    this->actionFunc = BossGanon2_Player_Revert;
+}
+
+// Gone right away (the mode was turned off, or an indoor area)
+void BossGanon2_Player_Remove(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    if (BossGanon2_IsPlayerGanon(thisx)) {
+        Actor_Kill(thisx);
+    }
+}
+
+s32 BossGanon2_Player_GetCharge(Actor* thisx, s16* yaw, f32* speed) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    if (!BossGanon2_IsPlayerGanon(thisx) || (this->actionFunc != BossGanon2_Player_Charge)) {
+        return false;
+    }
+    *yaw = this->playerChargeYaw;
+    *speed = this->playerChargeSpeed;
+    return true;
+}
+
+// Ran into a wall
+void BossGanon2_Player_StopCharge(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    if (!BossGanon2_IsPlayerGanon(thisx) || (this->actionFunc != BossGanon2_Player_Charge) ||
+        (this->playerChargeSpeed < 10.0f)) {
+        return;
+    }
+    Actor_RequestQuakeAndRumble(thisx, play, 6, 20);
+    Audio_PlayActorSound2(thisx, NA_SE_EV_STONE_BOUND);
+    Audio_PlayActorSound2(thisx, NA_SE_EN_MGANON_DAMAGE);
+    BossGanon2_Player_SetupMove(this, play);
+}
+
+f32 BossGanon2_Player_GetHeadHeight(Actor* thisx) {
+    return BossGanon2_IsPlayerGanon(thisx) ? ((BossGanon2*)thisx)->playerHeadHeight : 0.0f;
+}
+
+// While guarding, a large hard shield in front of him, like Ganondorf's cape (see
+// BossGanon_Player_UpdateCapeShield). Called right after Link's update.
+void BossGanon2_Player_UpdateGuardShield(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+    Player* player = GET_PLAYER(play);
+    s16 yaw = player->actor.shape.rot.y;
+    f32 sinYaw = Math_SinS(yaw);
+    f32 cosYaw = Math_CosS(yaw);
+    f32 frontX = player->actor.world.pos.x + (sinYaw * 60.0f);
+    f32 frontZ = player->actor.world.pos.z + (cosYaw * 60.0f);
+    f32 sideX = cosYaw * 110.0f;
+    f32 sideZ = -sinYaw * 110.0f;
+    f32 bottom = player->actor.world.pos.y - 10.0f;
+    f32 top = player->actor.world.pos.y + this->playerHeadHeight;
+    Vec3f topLeft;
+    Vec3f topRight;
+    Vec3f bottomLeft;
+    Vec3f bottomRight;
+
+    topLeft.x = bottomLeft.x = frontX - sideX;
+    topLeft.z = bottomLeft.z = frontZ - sideZ;
+    topRight.x = bottomRight.x = frontX + sideX;
+    topRight.z = bottomRight.z = frontZ + sideZ;
+    topLeft.y = topRight.y = top;
+    bottomLeft.y = bottomRight.y = bottom;
+
+    player->shieldQuad.base.colType = COLTYPE_METAL;
+    Collider_SetQuadVertices(&player->shieldQuad, &topLeft, &topRight, &bottomLeft, &bottomRight);
+    CollisionCheck_SetAC(play, &play->colChkCtx, &player->shieldQuad.base);
+    CollisionCheck_SetAT(play, &play->colChkCtx, &player->shieldQuad.base);
+
+    Matrix_Push();
+    Matrix_Translate(frontX, player->actor.world.pos.y + (this->playerHeadHeight * 0.5f), frontZ, MTXMODE_NEW);
+    Matrix_RotateY(BINANG_TO_RAD((s16)(yaw + 0x8000)), MTXMODE_APPLY);
+    Matrix_Get(&player->shieldMf);
+    Matrix_Pop();
 }

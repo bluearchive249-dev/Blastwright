@@ -19,7 +19,9 @@
 //    brings him back up,
 //  - gives Link's voice clips Ganondorf's voice,
 //  - tells the camera how tall Ganondorf is,
-//  - optional title screen in his chamber, with him playing the organ (see BossGanon_TitleScreen).
+//  - optional title screen in his chamber, with him playing the organ (see BossGanon_TitleScreen),
+//  - D-Pad Right: transforms into Ganon (ACTOR_BOSS_GANON2 with GANON2_PARAMS_PLAYER) and back. Ganon is only
+//    allowed outdoors and in dungeons; anywhere else he turns back into Ganondorf.
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -33,6 +35,7 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
+#include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 extern PlayState* gPlayState;
 }
 
@@ -51,6 +54,12 @@ extern PlayState* gPlayState;
 static bool sLinkShadowHidden = false;
 static bool sCapeShielding = false; // the cape is up and works as Link's shield
 static bool sForcedIronBoots = false; // Link wears Iron Boots because Ganondorf is in water
+
+static bool sWantGanon = false; // Ganon form, kept across areas where he's allowed
+static bool sGanonMusic = false; // Ganon's battle theme is playing instead of the area music
+static bool sGanonMusicNewArea = false;
+static u16 sPrevBgm = 0;
+static s16 sPrevBgmScene = -1;
 
 static bool sLevitating = false;
 static bool sSoftLanding = false; // let go of the levitation: no fall damage until Link lands
@@ -79,6 +88,44 @@ static BossGanon* FindPlayerGanondorf(PlayState* play) {
     return NULL;
 }
 
+static BossGanon2* FindPlayerGanon(PlayState* play) {
+    for (Actor* actor = play->actorCtx.actorLists[ACTORCAT_MISC].head; actor != NULL; actor = actor->next) {
+        if ((actor->id == ACTOR_BOSS_GANON2) && (actor->params == GANON2_PARAMS_PLAYER) && (actor->update != NULL)) {
+            return (BossGanon2*)actor;
+        }
+    }
+    return NULL;
+}
+
+static bool IsGanonFormEnabled() {
+    return CVarGetInteger(CVAR_PLAY_AS_GDF("GanonForm"), 1) != 0;
+}
+
+// Ganon is too big for houses, shops, grottos and other interiors. Dungeons and temples (and their bosses) are fine,
+// and so is anywhere outdoors. Not in the real Ganon fight, there can only be one Ganon.
+static bool IsGanonAllowedHere(PlayState* play) {
+    s16 scene = play->sceneNum;
+
+    if (scene == SCENE_GANON_BOSS) {
+        return false;
+    }
+    if (scene <= SCENE_GANONS_TOWER_COLLAPSE_EXTERIOR) {
+        return scene != SCENE_TREASURE_BOX_SHOP;
+    }
+    if ((scene >= SCENE_MARKET_ENTRANCE_DAY) && (scene <= SCENE_TEMPLE_OF_TIME_EXTERIOR_RUINS)) {
+        return true;
+    }
+    if ((scene == SCENE_CASTLE_COURTYARD_GUARDS_DAY) || (scene == SCENE_CASTLE_COURTYARD_GUARDS_NIGHT) ||
+        (scene == SCENE_CASTLE_COURTYARD_ZELDA)) {
+        return true;
+    }
+    return (scene >= SCENE_HYRULE_FIELD) && (scene <= SCENE_OUTSIDE_GANONS_CASTLE);
+}
+
+extern "C" s32 PlayAsGanondorf_IsGanonOut(PlayState* play) {
+    return IsEnabled() && (play != NULL) && (FindPlayerGanon(play) != NULL);
+}
+
 static void KillPlayerGanondorf(PlayState* play, BossGanon* dorf) {
     // His cape and projectiles point back at him
     for (s32 i = 0; i < ACTORCAT_MAX; i++) {
@@ -90,6 +137,11 @@ static void KillPlayerGanondorf(PlayState* play, BossGanon* dorf) {
         }
     }
     Actor_Kill(&dorf->actor);
+
+    BossGanon2* ganon = FindPlayerGanon(play);
+    if (ganon != NULL) {
+        BossGanon2_Player_Remove(&ganon->actor, play);
+    }
 }
 
 static bool ShouldHideLink(PlayState* play, Player* player) {
@@ -98,7 +150,15 @@ static bool ShouldHideLink(PlayState* play, Player* player) {
     }
 
     BossGanon* dorf = FindPlayerGanondorf(play);
-    return (dorf != NULL) && !BossGanon_Player_IsHidden(&dorf->actor);
+    if (dorf == NULL) {
+        return false;
+    }
+
+    BossGanon2* ganon = FindPlayerGanon(play);
+    if (ganon != NULL) {
+        return !BossGanon2_Player_IsHidden(&ganon->actor);
+    }
+    return !BossGanon_Player_IsHidden(&dorf->actor);
 }
 
 // First-person look (C-Up): the view comes from Ganondorf's eyes, and neither he nor Link is drawn.
@@ -129,7 +189,14 @@ static void SetLinkShadowHidden(Player* player, bool hidden) {
 
 // Runs right after Link's update: his update resets the shield collider and decides whether he's shielding
 static void UpdateCapeShield(PlayState* play, Player* player, BossGanon* dorf) {
-    if ((dorf != NULL) && BossGanon_Player_IsCapeUp(&dorf->actor)) {
+    BossGanon2* ganon = (dorf != NULL) ? FindPlayerGanon(play) : NULL;
+
+    if ((ganon != NULL) && BossGanon2_Player_IsGuarding(&ganon->actor)) {
+        // Ganon's guard works the same way
+        player->stateFlags1 |= PLAYER_STATE1_SHIELDING;
+        BossGanon2_Player_UpdateGuardShield(&ganon->actor, play);
+        sCapeShielding = true;
+    } else if ((dorf != NULL) && (ganon == NULL) && BossGanon_Player_IsCapeUp(&dorf->actor)) {
         player->stateFlags1 |= PLAYER_STATE1_SHIELDING;
         BossGanon_Player_UpdateCapeShield(&dorf->actor, play);
         sCapeShielding = true;
@@ -252,6 +319,106 @@ static void UpdateLevitation(PlayState* play, Player* player, BossGanon* dorf) {
     player->fallDistance = 0;
 }
 
+// Ganon's battle theme while he's out, then the area music again
+static void PlayAreaMusic(PlayState* play) {
+    if (play->sequenceCtx.seqId != NA_BGM_NO_MUSIC) {
+        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | play->sequenceCtx.seqId);
+    } else if (play->sequenceCtx.natureAmbienceId != NATURE_ID_NONE) {
+        Audio_PlayNatureAmbienceSequence(play->sequenceCtx.natureAmbienceId);
+    } else {
+        Audio_QueueSeqCmd(NA_BGM_STOP);
+    }
+}
+
+static void UpdateGanonMusic(PlayState* play, bool on) {
+    if (on && (!sGanonMusic || sGanonMusicNewArea)) {
+        u16 current = func_800FA0B4(SEQ_PLAYER_BGM_MAIN);
+
+        // In a new area the old area's music (or Ganon's) may still be playing: bring back the new area's own later
+        sPrevBgm = (sGanonMusic || ((current & 0xFF) == NA_BGM_GANON_BOSS)) ? (u16)NA_BGM_GANON_BOSS : current;
+        sPrevBgmScene = play->sceneNum;
+        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_GANON_BOSS);
+        sGanonMusic = true;
+    } else if (!on && sGanonMusic) {
+        sGanonMusic = false;
+
+        if (((sPrevBgm & 0xFF) == NA_BGM_GANON_BOSS) || (sPrevBgmScene != play->sceneNum)) {
+            PlayAreaMusic(play);
+        } else if ((sPrevBgm & 0xFF) == NA_BGM_NATURE_AMBIENCE) {
+            Audio_PlayNatureAmbienceSequence(play->sequenceCtx.natureAmbienceId);
+        } else if ((sPrevBgm == NA_BGM_DISABLED) || ((sPrevBgm & 0xFF) == 0xFF)) {
+            Audio_QueueSeqCmd(NA_BGM_STOP);
+        } else {
+            Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | sPrevBgm);
+        }
+    }
+    sGanonMusicNewArea = false;
+}
+
+// D-Pad Right: Ganondorf transforms into Ganon (standing on the ground), and Ganon turns back. Ganon comes back
+// right away in the next area if it allows him.
+static void UpdateGanon(PlayState* play, Player* player, BossGanon* dorf) {
+    BossGanon2* ganon = FindPlayerGanon(play);
+    Input* input = &play->state.input[0];
+    bool toggle = CHECK_BTN_ALL(input->press.button, BTN_DRIGHT);
+
+    if (!IsGanonFormEnabled() || !IsGanonAllowedHere(play)) {
+        if (ganon != NULL) {
+            BossGanon2_Player_Remove(&ganon->actor, play);
+        }
+        sWantGanon = false;
+        UpdateGanonMusic(play, false);
+        return;
+    }
+
+    if (ganon == NULL) {
+        bool canTransform = BossGanon_Player_CanAct(&dorf->actor) && !BossGanon_Player_IsHidden(&dorf->actor) &&
+                            !sLevitating && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
+
+        // Turned back (or the transformation never finished). Not when Ganon comes back in a new area.
+        if (!sWantGanon) {
+            UpdateGanonMusic(play, false);
+        }
+
+        if (sWantGanon || (toggle && canTransform)) {
+            // home.rot.z = 1: already Ganon (a new area), no transformation
+            Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_GANON2, player->actor.world.pos.x,
+                        player->actor.world.pos.y, player->actor.world.pos.z, 0, player->actor.shape.rot.y,
+                        sWantGanon ? 1 : 0, GANON2_PARAMS_PLAYER);
+            sGanonMusicNewArea = sWantGanon;
+            sWantGanon = true;
+            StopLevitating();
+            sSoftLanding = false;
+        }
+        return;
+    }
+
+    UpdateGanonMusic(play, BossGanon2_Player_IsGanonForm(&ganon->actor));
+
+    if (BossGanon2_Player_IsReverting(&ganon->actor)) {
+        sWantGanon = false;
+    } else if (toggle && BossGanon2_Player_CanAct(&ganon->actor)) {
+        BossGanon2_Player_StartRevert(&ganon->actor, play);
+        sWantGanon = false;
+    }
+
+    // Charging: Ganon pulls Link along until a wall stops him
+    s16 chargeYaw;
+    f32 chargeSpeed;
+    if (BossGanon2_Player_GetCharge(&ganon->actor, &chargeYaw, &chargeSpeed) && (chargeSpeed > 0.0f)) {
+        player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = chargeYaw;
+        player->actor.world.pos.x += Math_SinS(chargeYaw) * chargeSpeed;
+        player->actor.world.pos.z += Math_CosS(chargeYaw) * chargeSpeed;
+        player->linearVelocity = 0.0f;
+        Actor_UpdateBgCheckInfo(play, &player->actor, 26.0f, 18.0f, Player_GetHeight(player), 1 | 4);
+
+        if ((player->actor.bgCheckFlags & BGCHECKFLAG_WALL) &&
+            (ABS((s16)(player->actor.wallYaw - chargeYaw + 0x8000)) < 0x3000)) {
+            BossGanon2_Player_StopCharge(&ganon->actor, play);
+        }
+    }
+}
+
 static void PlayAsGanondorf_OnPlayerUpdate() {
     PlayState* play = gPlayState;
     if (play == NULL) {
@@ -280,6 +447,8 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
             KillPlayerGanondorf(play, dorf);
         }
         SetLinkShadowHidden(player, false);
+        UpdateGanonMusic(play, false);
+        sWantGanon = false;
         UpdateCapeShield(play, player, NULL);
         UpdateWaterBoots(play, player, false);
         sLevitating = sSoftLanding = false;
@@ -295,7 +464,10 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
     }
 
     if (dorf != NULL) {
-        UpdateLevitation(play, player, dorf);
+        UpdateGanon(play, player, dorf);
+        if (FindPlayerGanon(play) == NULL) {
+            UpdateLevitation(play, player, dorf);
+        }
     }
     UpdateCapeShield(play, player, dorf);
     UpdateWaterBoots(play, player, ShouldHideLink(play, player));
@@ -312,12 +484,18 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
     if (dorf == NULL) {
         return;
     }
-    bool busy = BossGanon_Player_IsBusy(&dorf->actor);
+    BossGanon2* ganon = FindPlayerGanon(play);
+    bool busy = (ganon != NULL) ? BossGanon2_Player_IsBusy(&ganon->actor) : BossGanon_Player_IsBusy(&dorf->actor);
 
-    // B = sword, R = shield, Z = targeting, L = levitate. D-pad Up/Down are the laugh and the organ.
+    // B = sword, R = shield, Z = targeting, L = levitate. D-pad Up/Down are the laugh and the organ, D-pad Right
+    // the transformation.
     u16 blocked = BTN_B | BTN_R | BTN_Z | BTN_L | BTN_DUP | BTN_DDOWN;
 
-    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0)) {
+    if (IsGanonFormEnabled()) {
+        blocked |= BTN_DRIGHT;
+    }
+    // Ganon's claws can't hold items
+    if ((ganon != NULL) || !CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0)) {
         blocked |= BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT;
     }
 
@@ -367,6 +545,12 @@ extern "C" s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye) {
     eye->x = player->actor.world.pos.x;
     eye->y = player->actor.world.pos.y + CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_EYES_ABOVE_ROOT;
     eye->z = player->actor.world.pos.z;
+
+    // Ganon's eyes are a bit below the top of his head
+    BossGanon2* ganon = FindPlayerGanon(gPlayState);
+    if (ganon != NULL) {
+        eye->y = player->actor.world.pos.y + BossGanon2_Player_GetHeadHeight(&ganon->actor) - 20.0f;
+    }
     return true;
 }
 
@@ -382,6 +566,13 @@ extern "C" f32 PlayAsGanondorf_GetCameraHeight(Player* player) {
                                 : CVarGetFloat(CVAR_PLAY_AS_GDF("CameraDistance"), 1.0f);
         f32 ganondorfHeight = (CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_HEAD_ABOVE_ROOT) * distance;
 
+        // Ganon has his own distance
+        BossGanon2* ganon = FindPlayerGanon(gPlayState);
+        if (ganon != NULL) {
+            ganondorfHeight = (BossGanon2_Player_GetHeadHeight(&ganon->actor) + 20.0f) *
+                              CVarGetFloat(CVAR_PLAY_AS_GDF("GanonCameraDistance"), 0.8f);
+        }
+
         if (ganondorfHeight > height) {
             height = ganondorfHeight;
         }
@@ -394,6 +585,20 @@ extern "C" f32 PlayAsGanondorf_GetCameraHeight(Player* player) {
 extern "C" u16 PlayAsGanondorf_GetVoiceSfx(Player* player, u16 sfxId) {
     if (!ShouldHideLink(gPlayState, player) || !CVarGetInteger(CVAR_PLAY_AS_GDF("Voice"), 1)) {
         return sfxId;
+    }
+
+    // Ganon only growls when he's hurt
+    if (FindPlayerGanon(gPlayState) != NULL) {
+        switch (NA_SE_VO_LI_SWORD_N + ((sfxId - NA_SE_VO_LI_SWORD_N) & 0x1F)) {
+            case NA_SE_VO_LI_FALL_L:
+            case NA_SE_VO_LI_TAKEN_AWAY:
+            case NA_SE_VO_LI_GROAN:
+                return NA_SE_EN_MGANON_DAMAGE;
+            case NA_SE_VO_LI_DOWN:
+                return NA_SE_EN_MGANON_DEAD1;
+            default:
+                return PLAY_AS_GANONDORF_MUTE;
+        }
     }
 
     // Child clips are the adult ones + 0x20
