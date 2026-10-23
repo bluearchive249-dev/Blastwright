@@ -9024,10 +9024,13 @@ static void BossGanon_Player_OrganToWorld(BossGanon* this, f32 x, f32 y, f32 z, 
 }
 
 static void BossGanon_Player_UpdateOrganCam(BossGanon* this, PlayState* play) {
+    u8 closeUp = CVarGetInteger(CVAR_PLAY_AS_GDF("OrganCamera"), 1);
     Vec3f eye;
     Vec3f at;
 
-    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("OrganCamera"), 1) || this->playerHidden) {
+    // As his ocarina the game's own ocarina close-up would sit inside his legs (it's made for Link's height), so the
+    // organ always gets its own camera then: the close-up, or with that off a wide shot from behind his right
+    if ((!closeUp && !this->playerOrganOcarina) || this->playerHidden) {
         BossGanon_Player_ReleaseOrganCam(this, play);
         return;
     }
@@ -9040,10 +9043,19 @@ static void BossGanon_Player_UpdateOrganCam(BossGanon* this, PlayState* play) {
         Play_ChangeCameraStatus(play, this->playerOrganCam, CAM_STAT_ACTIVE);
     }
 
-    BossGanon_Player_OrganToWorld(this, GDF_ORGAN_CAM_SIDE, GDF_ORGAN_CAM_HEIGHT, GDF_ORGAN_CAM_Z, &eye);
-    // His face and chest (head body part, a little lower)
-    at = this->unk_2EC[2];
-    at.y -= 15.0f;
+    // Where the organ ends up, so the camera is already in place while it rises
+    if (closeUp) {
+        BossGanon_Player_OrganToWorld(this, GDF_ORGAN_CAM_SIDE, GDF_ORGAN_CAM_HEIGHT, GDF_ORGAN_CAM_Z, &eye);
+        eye.y += this->playerOrganSink;
+        // His face and chest (head body part, a little lower)
+        at = this->unk_2EC[2];
+        at.y -= 15.0f;
+    } else {
+        BossGanon_Player_OrganToWorld(this, 170.0f, 210.0f, -110.0f, &eye);
+        BossGanon_Player_OrganToWorld(this, 0.0f, 150.0f, -380.0f, &at);
+        eye.y += this->playerOrganSink;
+        at.y += this->playerOrganSink;
+    }
     Play_CameraSetAtEye(play, this->playerOrganCam, &at, &eye);
     Play_CameraSetFov(play, this->playerOrganCam, 70.0f);
 }
@@ -9065,6 +9077,7 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
 
     switch (this->unk_1C2) {
         case 0: // the organ rises
+            BossGanon_Player_UpdateOrganCam(this, play);
             // Rises silently, then slams into place
             Math_ApproachZeroF(&this->playerOrganSink, 1.0f, 25.0f);
 
