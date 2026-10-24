@@ -78,11 +78,11 @@ static bool IsStandingOnGround() {
 static bool sSprinting = false; // holding A on the ground: Ganondorf sprints
 
 static bool IsEnabled() {
-    return CVarGetInteger(CVAR_PLAY_AS_GDF_ENABLED, 0) != 0;
+    return CVarGetInteger(CVAR_PLAY_AS_GDF_ENABLED, 1) != 0;
 }
 
 extern "C" s32 PlayAsGanondorf_UseTitleScreen(void) {
-    return CVarGetInteger(CVAR_PLAY_AS_GDF("TitleScreen"), 0) != 0;
+    return CVarGetInteger(CVAR_PLAY_AS_GDF("TitleScreen"), 1) != 0;
 }
 
 extern "C" s32 PlayAsGanondorf_IsTitleScreen(PlayState* play) {

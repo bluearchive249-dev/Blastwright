@@ -8,6 +8,7 @@
 #include "objects/object_mag/object_mag.h"
 #include <soh/GameVersions.h>
 #include "soh/ResourceManagerHelpers.h"
+#include "soh/Enhancements/ExtraModes/GanondorfLogo.h"
 #include <string.h>
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -394,6 +395,30 @@ void EnMag_DrawImageRGBA32(Gfx** gfxp, s16 centerX, s16 centerY, const char* sou
     *gfxp = gfx;
 }
 
+// SoH: "Play as Ganondorf" title logo, an RGBA32 image drawn scaled into a rectangle (the image can be more detailed
+// than the 320x240 screen; it's sampled down)
+void EnMag_DrawGanondorfLogo(Gfx** gfxp, s16 centerX, s16 centerY, const u8* source, u32 texWidth, u32 texHeight,
+                             u32 rectWidth, u32 rectHeight) {
+    Gfx* gfx = *gfxp;
+    s32 rectLeft = centerX - (s32)(rectWidth / 2);
+    s32 rectTop = centerY - (s32)(rectHeight / 2);
+    u32 dsdx = (texWidth << 10) / rectWidth;
+    u32 dtdy = (texHeight << 10) / rectHeight;
+
+    Gfx_SetupDL_56Ptr(&gfx);
+
+    gDPSetTileCustom(gfx++, G_IM_FMT_RGBA, G_IM_SIZ_32b, texWidth, texHeight, 0, G_TX_NOMIRROR | G_TX_CLAMP,
+                     G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+    gDPSetTextureImage(gfx++, G_IM_FMT_RGBA, G_IM_SIZ_32b, texWidth, source);
+    gDPLoadSync(gfx++);
+    gDPLoadTile(gfx++, G_TX_LOADTILE, 0, 0, (texWidth - 1) << 2, (texHeight - 1) << 2);
+
+    gSPTextureRectangle(gfx++, rectLeft << 2, rectTop << 2, (rectLeft + (s32)rectWidth) << 2,
+                        (rectTop + (s32)rectHeight) << 2, G_TX_RENDERTILE, 0, 0, dsdx, dtdy);
+
+    *gfxp = gfx;
+}
+
 void EnMag_DrawCharTexture(Gfx** gfxP, u8* texture, s32 rectLeft, s32 rectTop) {
     Gfx* gfx = *gfxP;
 
@@ -529,6 +554,10 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
     bool isJpnGC_notCE =
         isGC && (ResourceMgr_GetGameVersion(0) == OOT_NTSC_JP_GC || ResourceMgr_GetGameVersion(0) == OOT_NTSC_JP_MQ);
 
+    unsigned int gdfLogoWidth = 0;
+    unsigned int gdfLogoHeight = 0;
+    const u8* gdfLogo = GanondorfLogo_Get(&gdfLogoWidth, &gdfLogoHeight);
+
     gSPSegment(gfx++, 0x06, play->objectCtx.status[this->actor.objBankIndex].segment);
 
     Gfx_SetupDL_39Ptr(&gfx);
@@ -546,7 +575,7 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
     gDPSetEnvColor(gfx++, (s16)this->effectEnvColor[0], (s16)this->effectEnvColor[1], (s16)this->effectEnvColor[2],
                    255);
 
-    if ((s16)this->effectPrimLodFrac != 0) {
+    if (((s16)this->effectPrimLodFrac != 0) && (gdfLogo == NULL)) {
         for (k = 0, i = 0, rectTop = 0; i < 3; i++, rectTop += 64) {
             for (j = 0, rectLeft = 64 + LOGO_X_SHIFT; j < 3; j++, k++, rectLeft += 64) {
                 EnMag_DrawEffectTextures(&gfx, effectMaskTextures[k], gTitleFlameEffectTex, 64, 64, 32, 32, rectLeft,
@@ -558,7 +587,19 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
     gDPSetPrimColor(gfx++, 0, 0, 255, 255, 255, (s16)this->mainAlpha);
 
     if ((s16)this->mainAlpha != 0) {
-        EnMag_DrawImageRGBA32(&gfx, 160 + LOGO_X_SHIFT, 100, (u8*)LOGO_TEX, 160, 160);
+        if (gdfLogo != NULL) {
+            // SoH: "Play as Ganondorf", his own logo in place of the shield logo, its titles and the flames
+            u32 logoWidth = 288;
+            u32 logoHeight = (logoWidth * gdfLogoHeight) / gdfLogoWidth;
+
+            if (logoHeight > 160) {
+                logoHeight = 160;
+                logoWidth = (logoHeight * gdfLogoWidth) / gdfLogoHeight;
+            }
+            EnMag_DrawGanondorfLogo(&gfx, 160, 100, gdfLogo, gdfLogoWidth, gdfLogoHeight, logoWidth, logoHeight);
+        } else {
+            EnMag_DrawImageRGBA32(&gfx, 160 + LOGO_X_SHIFT, 100, (u8*)LOGO_TEX, 160, 160);
+        }
     }
 
     Gfx_SetupDL_39Ptr(&gfx);
@@ -582,7 +623,7 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
         gDPSetEnvColor(gfx++, 0, 0, 100, 255);
     }
 
-    if ((s16)this->mainAlpha != 0) {
+    if (((s16)this->mainAlpha != 0) && (gdfLogo == NULL)) {
         EnMag_DrawTextureI8(&gfx, gTitleTheLegendOfTextTex, 72, 8, 154 + LOGO_X_SHIFT, 73, 72, 8, 1024, 1024);
         EnMag_DrawTextureI8(&gfx, gTitleOcarinaOfTimeTMTextTex, 96, 8, 152 + LOGO_X_SHIFT, 127, 96, 8, 1024, 1024);
 

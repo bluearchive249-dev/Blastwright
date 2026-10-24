@@ -47,7 +47,7 @@ static uint32_t KeyOf(s16 scene, Actor* actor) {
 }
 
 extern "C" int GanondorfKills_IsEnabled(void) {
-    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) &&
+    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) &&
            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.KillNpcs"), 0);
 }
 

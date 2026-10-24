@@ -2109,7 +2109,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganondorf", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Play as Ganondorf", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"))
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Replaces Link with Ganondorf from the Ganon's Tower fight, with his boss moveset instead of Link's.\n\n"
             " - B: Light ball. Keep holding B to charge Big Magic.\n"
             " - R: Block with the cape. It works as any shield (nuts, rocks, Twinrova, mirror light), stick turns "
@@ -2125,7 +2125,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Keep C-Button Items", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KeepItems"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().Tooltip(
             "Lets Ganondorf use Link's C-button items (Ocarina, Hookshot, Bombs, ...) so the game can still be "
@@ -2133,21 +2133,21 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Big Magic", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.BigMagic"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Holding B (or pressing C-Right) charges Big Magic: five balls that home in on enemies."));
     AddWidget(path, "Show Link in Cutscenes", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.ShowLinkInCutscenes"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Story cutscenes animate Link, so show him instead of Ganondorf while one plays."));
     AddWidget(path, "Ganondorf Sinks in Water", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.IronBootsInWater"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "In water Ganondorf walks the bottom like with Iron Boots, keeps his whole moveset and doesn't need "
@@ -2155,14 +2155,14 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganondorf's Voice", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Voice"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Link's voice clips (idling, getting hurt, ...) use Ganondorf's voice instead."));
     AddWidget(path, "Ganondorf Walks on the Ground", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.WalkOnGround"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "On the ground Ganondorf stands, walks and runs. He only floats in his boss pose while levitating (L).\n"
@@ -2170,7 +2170,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganondorf Run Speed: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.RunSpeed"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(1.0f).Max(2.5f).DefaultValue(1.5f).Format("%.2fx").Tooltip(
             "How fast Ganondorf moves compared to Link, on the ground, in jumps and while levitating. "
@@ -2178,7 +2178,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Sprint (Hold A)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Sprint"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Hold A while running to sprint: faster, with longer strides and a forward lean. A still talks, opens "
@@ -2186,7 +2186,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Sprint Speed: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SprintSpeed"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Sprint"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(1.0f).Max(2.5f).DefaultValue(1.5f).Format("%.2fx").Tooltip(
@@ -2194,7 +2194,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganondorf Camera Distance: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CameraDistance"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(0.6f).Max(2.0f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
             "How far back and how high the camera sits indoors (houses, dungeons, ...). 1.0 frames all of "
@@ -2202,7 +2202,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganondorf Camera Distance (Open Areas): %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CameraDistanceOutdoors"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(0.45f).Max(2.0f).DefaultValue(0.75f).Format("%.2fx").Tooltip(
             "How far back and how high the camera sits in open areas under the sky (Hyrule Field, Lake Hylia, "
@@ -2210,14 +2210,14 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganondorf Hover Height: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.HoverHeight"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(30.0f).Max(150.0f).DefaultValue(70.0f).Format("%.0f").Tooltip(
             "How high Ganondorf floats above the ground. He floats at 150 in his boss fight."));
     AddWidget(path, "Phantom Ganon Skin", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Play as Phantom Ganon: his model, his spear and his voice, with Ganondorf's cape in black and gray, "
@@ -2226,7 +2226,7 @@ void SohMenu::AddMenuEnhancements() {
             "the dark aura."));
     AddWidget(path, "GanondorfKillWarning", WIDGET_CUSTOM)
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .CustomFunction([](WidgetInfo& info) {
             // Bright red so it can't be missed (the menu's own red is too dark to read)
@@ -2239,7 +2239,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Kill NPCs", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KillNpcs"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "His attacks (blade, spear, balls of light, pound, dark aura, and as Phantom Ganon or Ganon) kill NPCs, in "
@@ -2250,7 +2250,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Organ Instead of Ocarina", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganOcarina"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "When Link plays the ocarina, Ganondorf raises his organ and plays the song on it instead, with an organ "
@@ -2258,7 +2258,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganondorf's Horse Instead of Epona", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanondorfHorse"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Epona is drawn as his black horse from the castle gate cutscene, and he rides it seated, fists on the "
@@ -2266,14 +2266,14 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Horse Seat Height: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.HorseSeatHeight"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(-40.0f).Max(40.0f).DefaultValue(0.0f).Format("%.0f").Tooltip(
             "Raises or lowers him on the saddle, if he sits too high or sinks into the horse."));
     AddWidget(path, "Ocarina Song Player", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Plays songs from MIDI files (.mid) on the ocarina (his pipe organ with Organ Instead of Ocarina). Put "
@@ -2285,7 +2285,7 @@ void SohMenu::AddMenuEnhancements() {
             "drums left out), moved by octaves into the ocarina's range."));
     AddWidget(path, "GanondorfSongList", WIDGET_CUSTOM)
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
         })
         .CustomFunction([](WidgetInfo& info) { GanondorfSongs_DrawMenu(); })
@@ -2293,14 +2293,14 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Loop Songs", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Loop"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip("Start the song over when it ends."));
     AddWidget(path, "Song Tempo: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Tempo"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(0.5f).Max(2.0f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
@@ -2308,7 +2308,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Purple Flame in Crawlspaces", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CrawlFlame"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Crawlspaces are too small for him: he goes through them as a flickering purple flame instead of "
@@ -2316,14 +2316,14 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Organ Close-Up Camera", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganCamera"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "While he plays the organ, the camera lies on the keys a little to his right and looks up at him."));
     AddWidget(path, "D-Pad Left Mode Toggle", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "D-Pad Left toggles the mode picked below (Insta-Kill Dark Aura or Sword Stance).\n\n"
@@ -2336,7 +2336,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "D-Pad Left Mode", WIDGET_CVAR_COMBOBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0;
         })
         .Options(ComboboxOptions().ComboMap(ganondorfDPadLeftModes).DefaultIndex(0).Tooltip(
@@ -2348,7 +2348,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Sword Size: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordSize"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0 ||
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"), 0) != 1;
         })
@@ -2357,7 +2357,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganon Form (D-Pad Right)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonForm"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "D-Pad Right transforms Ganondorf into Ganon, and back. Ganon's battle theme plays while he's out.\n\n"
@@ -2368,17 +2368,22 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Ganon Camera Distance: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonCameraDistance"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonForm"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(0.4f).Max(1.5f).DefaultValue(0.8f).Format("%.2fx").Tooltip(
             "How far back and how high the camera sits while Ganon is out."));
     AddWidget(path, "Ganondorf Title Screen", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleScreen"))
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "The title screen takes place in Ganondorf's chamber at the top of his tower: he plays his theme on the "
             "organ forever, seen from behind. Works with or without Play as Ganondorf.\n\n"
             "Takes effect the next time the title screen loads (restart, or quit to the title screen)."));
+    AddWidget(path, "Ganondorf Title Logo", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleLogo"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "The title screen shows \"The Legend of Ganondorf: King of Evil\" instead of the Ocarina of Time logo. "
+            "Works with or without Play as Ganondorf. Needs gdf_logo.bin next to the game."));
     path.column = SECTION_COLUMN_1;
     AddWidget(path, "Hurt Container Mode", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("HurtContainer"))

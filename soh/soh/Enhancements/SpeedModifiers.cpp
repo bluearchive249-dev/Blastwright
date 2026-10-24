@@ -65,7 +65,7 @@ static void RegisterSpeedModifiers() {
         Ship_GetBunnyHoodMode() == BUNNY_HOOD_FAST || (CVarGetFloat(CVAR_SPEED_MODIFIER_VALUE_NAME, 1.0f) != 1.0f &&
                                                        CVarGetInteger(CVAR_SPEED_MODIFIER_JUMP_TOGGLE, 0) == 1);
 
-    bool ganondorfActive = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) != 0;
+    bool ganondorfActive = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) != 0;
 
     static f32 lastRunSpeed = 0.0f;
 
