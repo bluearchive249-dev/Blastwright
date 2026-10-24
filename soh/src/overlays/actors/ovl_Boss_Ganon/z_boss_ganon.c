@@ -7428,6 +7428,9 @@ static const s8 sGdfPgParent[25] = { -1, 0, 1, 2, 3, 4, 5, 2, 7, 8, 9, 10, 11, 2
 // Row-major turns from his hand space into Ganondorf's (right hand: spear tip to the blade's -z; left: mirrored)
 static const f32 sGdfPgHandR[3][3] = { { 0, 1, 0 }, { 0, 0, -1 }, { -1, 0, 0 } };
 static const f32 sGdfPgHandL[3][3] = { { 0, 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 } };
+// His feet point along their local +x (sole toward +y), Ganondorf's along +z (sole toward -y): turn them so his toes
+// face where Ganondorf's do. Without it both feet pointed to his left.
+static const f32 sGdfPgFoot[3][3] = { { 0, 0, 1 }, { 0, -1, 0 }, { 1, 0, 0 } };
 // The spear in his hand, as his own animations always hold it
 static const Vec3s sGdfPgSpearRot = { 16286, -16384, 16286 };
 
@@ -7574,6 +7577,8 @@ static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF*
             BossGanon_Pg_Mul(gdfWorld[sGdfPgSource[i]], sGdfPgHandL, world[i], false);
         } else if (i == 10) {
             BossGanon_Pg_Mul(gdfWorld[sGdfPgSource[i]], sGdfPgHandR, world[i], false);
+        } else if ((i == 20) || (i == 24)) {
+            BossGanon_Pg_Mul(gdfWorld[sGdfPgSource[i]], sGdfPgFoot, world[i], false);
         } else if (i == 11) {
             Vec3s spear = sGdfPgSpearRot;
 
