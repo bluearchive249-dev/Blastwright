@@ -9,6 +9,7 @@
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
+#include <libultraship/bridge/resourcebridge.h>
 #include "soh/Enhancements/Graphics/LinkGanonCape.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
