@@ -9,6 +9,7 @@
 #include <soh/GameVersions.h>
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/ExtraModes/GanondorfLogo.h"
+#include "z_en_mag_gdf_credit.h"
 #include <string.h>
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -717,12 +718,32 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
                     (s16)this->copyrightAlpha);
 
     if ((s16)this->copyrightAlpha != 0) {
+        // SoH: "Play as Ganondorf" title, the mod's credit beside the copyright, a wide gap apart, both centred
+        s32 showCredit = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleLogo"), 1);
+        s32 copyrightLeft = COPYRIGHT_TEX_LEFT;
+
+        if (showCredit) {
+            s32 total = COPYRIGHT_TEX_WIDTH + 40 + GDF_CREDIT_WIDTH;
+
+            copyrightLeft = 160 - total / 2;
+        }
+
         gDPLoadTextureBlock(gfx++, COPYRIGHT_TEX, G_IM_FMT_IA, G_IM_SIZ_8b, COPYRIGHT_TEX_WIDTH, 16, 0,
                             G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
                             G_TX_NOLOD, G_TX_NOLOD);
 
-        gSPTextureRectangle(gfx++, COPYRIGHT_TEX_LEFT << 2, 198 << 2, (COPYRIGHT_TEX_LEFT + COPYRIGHT_TEX_WIDTH) << 2,
+        gSPTextureRectangle(gfx++, copyrightLeft << 2, 198 << 2, (copyrightLeft + COPYRIGHT_TEX_WIDTH) << 2,
                             (198 + 16) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
+
+        if (showCredit) {
+            s32 creditLeft = copyrightLeft + COPYRIGHT_TEX_WIDTH + 40;
+
+            gDPLoadTextureBlock(gfx++, sGdfCreditTex, G_IM_FMT_IA, G_IM_SIZ_8b, GDF_CREDIT_WIDTH, GDF_CREDIT_HEIGHT, 0,
+                                G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            gSPTextureRectangle(gfx++, creditLeft << 2, 198 << 2, (creditLeft + GDF_CREDIT_WIDTH) << 2,
+                                (198 + GDF_CREDIT_HEIGHT) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
+        }
     }
 
     if (gSaveContext.fileNum == 0xFEDC) {

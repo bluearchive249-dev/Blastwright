@@ -2383,7 +2383,8 @@ void SohMenu::AddMenuEnhancements() {
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleLogo"))
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "The title screen shows \"The Legend of Ganondorf: King of Evil\" instead of the Ocarina of Time logo. "
-            "Works with or without Play as Ganondorf. Needs gdf_logo.bin next to the game."));
+            "Also shows the mod's credit, \"Grimsfrost, 2026\", beside the copyright. Works with or without Play as "
+            "Ganondorf. The logo needs gdf_logo.bin next to the game."));
     path.column = SECTION_COLUMN_1;
     AddWidget(path, "Hurt Container Mode", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("HurtContainer"))
