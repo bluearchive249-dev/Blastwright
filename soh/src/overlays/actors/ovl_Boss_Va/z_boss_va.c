@@ -5,6 +5,7 @@
  */
 
 #include "z_boss_va.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 
 #include <string.h>
 
@@ -1172,7 +1173,8 @@ void BossVa_BodyPhase2(BossVa* this, PlayState* play) {
     if (this->colliderBody.base.acFlags & AC_HIT) {
         this->colliderBody.base.acFlags &= ~AC_HIT;
 
-        if (this->colliderBody.base.ac->id == ACTOR_EN_BOOM) {
+        if ((this->colliderBody.base.ac->id == ACTOR_EN_BOOM) ||
+            (BossGanon_IsPlayerAttack(this->colliderBody.base.ac) && (this->colliderBody.info.bumper.dmgFlags == 0x10))) {
             sPhase2Timer &= 0xFE00;
             Actor_SetColorFilter(&this->actor, 0, 255, 0, 160);
             this->colliderBody.info.bumper.dmgFlags = 0xFC00712;
@@ -2842,12 +2844,46 @@ void BossVa_Door(BossVa* this, PlayState* play) {
     }
 }
 
+// Play as Ganondorf: he has no boomerang, so his dark aura stands in for it (and for his sword where he can't reach)
+static void BossVa_GanondorfAuraHit(BossVa* this, PlayState* play) {
+    if ((play->gameplayFrames % 12) != 0) {
+        return;
+    }
+
+    if (this->actor.params == BOSSVA_BODY) {
+        if (((this->actionFunc == BossVa_BodyPhase2) || (this->actionFunc == BossVa_BodyPhase4) ||
+             ((this->actionFunc == BossVa_BodyPhase3) && (this->timer == 0))) &&
+            BossGanon_Player_AuraReaches(play, &this->actor, &this->actor.focus.pos)) {
+            u8 stun = (this->colliderBody.info.bumper.dmgFlags == 0x10);
+
+            this->actor.colChkInfo.damageEffect = stun ? 1 : 0;
+            this->actor.colChkInfo.damage = stun ? 0 : 2;
+            BossGanon_Player_AuraFakeHit(&this->colliderBody.base, &this->colliderBody.info,
+                                         stun ? DMG_BOOMERANG : DMG_SLASH_MASTER);
+        }
+    } else if (this->actor.params <= BOSSVA_SUPPORT_3) {
+        if ((this->actionFunc == BossVa_SupportAttached) && (this->actor.colorFilterTimer == 0) &&
+            BossGanon_Player_AuraReaches(play, &this->actor, &this->actor.world.pos)) {
+            BossGanon_Player_AuraFakeHit(&this->colliderSph.base, &this->colliderSph.elements[0].info,
+                                         DMG_SLASH_MASTER);
+        }
+    } else if ((this->actor.params >= BOSSVA_BARI_UPPER_1) && (this->actor.params <= BOSSVA_BARI_LOWER_5)) {
+        if (((this->actionFunc == BossVa_BariPhase2Attack) || (this->actionFunc == BossVa_BariPhase3Attack) ||
+             (this->actionFunc == BossVa_BariPhase3Stunned)) &&
+            BossGanon_Player_AuraReaches(play, &this->actor, &this->actor.world.pos)) {
+            BossGanon_Player_AuraFakeHit(&this->colliderSph.base, &this->colliderSph.elements[0].info,
+                                         DMG_SLASH_MASTER);
+        }
+    }
+}
+
 void BossVa_Update(Actor* thisx, PlayState* play2) {
     PlayState* play = play2;
     BossVa* this = (BossVa*)thisx;
     EnBoom* boomerang;
     s32 i;
 
+    BossVa_GanondorfAuraHit(this, play);
     this->actionFunc(this, play);
 
     switch (this->actor.params) {

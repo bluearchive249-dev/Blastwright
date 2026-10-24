@@ -238,6 +238,8 @@ typedef struct BossGanon {
 // SoH: "Play as Ganondorf"
 s32 BossGanon_Player_IsBusy(Actor* thisx);
 s32 BossGanon_Player_GetItemHoldPos(Actor* thisx, Vec3f* pos);
+s32 BossGanon_Player_AuraReaches(PlayState* play, Actor* boss, Vec3f* pos);
+void BossGanon_Player_AuraFakeHit(Collider* col, ColliderInfo* elem, u32 dmgFlags);
 s32 BossGanon_Player_SwallowLightBall(PlayState* play, Vec3f* pos, f32 radius);
 s32 BossGanon_Player_IsHidden(Actor* thisx);
 s32 BossGanon_IsPlayerAttack(Actor* actor);

@@ -8723,6 +8723,51 @@ static f32 BossGanon_Player_AuraRadius(BossGanon* this) {
     return 600.0f * this->playerAuraScale;
 }
 
+// ---- The dark aura against bosses ----
+// Some bosses can only be hurt or opened up with a weapon he doesn't have (hookshot for Morpha, arrows for Phantom
+// Ganon in the paintings, boomerang for Barinade, the mirror shield for Twinrova). So no boss can leave him stuck,
+// the dark aura stands in for whatever the boss needs. The boss's own code asks here, then fakes the hit with
+// BossGanon_Player_AuraFakeHit so its damage logic runs as usual. Bosses get a wider reach than enemies: many fly or
+// keep their distance.
+static ColliderInfo sGdfAuraHitInfo;
+
+s32 BossGanon_Player_AuraReaches(PlayState* play, Actor* boss, Vec3f* pos) {
+    BossGanon* gdf = sPlayerGanondorf;
+    Vec3f center;
+
+    if ((gdf == NULL) || (gdf->actor.update == NULL) || (gdf->actionFunc != BossGanon_Player_DarkAura) ||
+        (gdf->playerAuraScale < 0.1f) || (boss == NULL) || (pos == NULL)) {
+        return false;
+    }
+
+    center = gdf->actor.world.pos;
+    center.y += 80.0f;
+    if (Math_Vec3f_DistXYZ(&center, pos) > (BossGanon_Player_AuraRadius(gdf) * 2.0f) + 220.0f) {
+        return false;
+    }
+
+    if ((play->gameplayFrames % 6) == 0) {
+        EffectSsFhgFlash_SpawnShock(play, boss, pos, 400, FHGFLASH_SHOCK_NO_ACTOR);
+    }
+    return true;
+}
+
+// Marks the collider as hit by the aura, carrying dmgFlags (elem: the element that was hit, may be NULL)
+void BossGanon_Player_AuraFakeHit(Collider* col, ColliderInfo* elem, u32 dmgFlags) {
+    if (sPlayerGanondorf == NULL) {
+        return;
+    }
+    sGdfAuraHitInfo.toucher.dmgFlags = dmgFlags;
+    sGdfAuraHitInfo.toucher.effect = 0;
+    sGdfAuraHitInfo.toucher.damage = 2;
+    col->acFlags |= AC_HIT;
+    col->ac = &sPlayerGanondorf->actor;
+    if (elem != NULL) {
+        elem->acHitInfo = &sGdfAuraHitInfo;
+        elem->bumperFlags |= BUMP_HIT;
+    }
+}
+
 void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play) {
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
     Animation_MorphToLoop(&this->skelAnime, &gGanondorfRaiseHandLoopAnim, -5.0f);

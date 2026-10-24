@@ -5,6 +5,7 @@
  */
 
 #include "z_boss_ganondrof.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include "objects/object_gnd/object_gnd.h"
 #include "overlays/actors/ovl_En_fHG/z_en_fhg.h"
 #include "overlays/actors/ovl_En_Fhg_Fire/z_en_fhg_fire.h"
@@ -1198,6 +1199,20 @@ void BossGanondrof_CollisionCheck(BossGanondrof* this, PlayState* play) {
         this->returnCount = 0;
         this->colliderBody.base.acFlags &= ~AC_HIT;
     } else {
+        // Play as Ganondorf: his dark aura stands in for the arrow that knocks him out of the painting ride, and
+        // hurts him in the air whether or not he's been stunned with his own ball
+        if (((s8)this->actor.colChkInfo.health > 0) && ((play->gameplayFrames % 10) == 0) && (horse != NULL) &&
+            BossGanon_Player_AuraReaches(play, &this->actor, &this->targetPos)) {
+            if (this->flyMode == GND_FLY_PAINTING) {
+                if ((this->actionFunc == BossGanondrof_Paintings) && !horse->bossGndInPainting &&
+                    (horse->hitTimer == 0)) {
+                    BossGanon_Player_AuraFakeHit(&this->colliderBody.base, &this->colliderBody.info, DMG_ARROW_NORMAL);
+                }
+            } else if ((this->actionFunc != BossGanondrof_Charge) && (this->actionFunc != BossGanondrof_Death)) {
+                BossGanon_Player_AuraFakeHit(&this->colliderBody.base, &this->colliderBody.info, DMG_SLASH_MASTER);
+            }
+        }
+
         acHit = this->colliderBody.base.acFlags & AC_HIT;
         if ((acHit && ((s8)this->actor.colChkInfo.health > 0)) || (this->returnCount != 0)) {
             if (acHit) {

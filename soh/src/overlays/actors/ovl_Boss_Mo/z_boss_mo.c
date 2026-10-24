@@ -5,6 +5,7 @@
  */
 
 #include "z_boss_mo.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include "textures/boss_title_cards/object_mo.h"
 #include "objects/object_mo/object_mo.h"
 #include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h"
@@ -1785,6 +1786,14 @@ void BossMo_CoreCollisionCheck(BossMo* this, PlayState* play) {
             this->timers[0] = 150;
         }
     }
+    // Play as Ganondorf: he has no hookshot, so his dark aura pulls the core out of its tentacle and hurts it
+    if ((this->work[MO_TENT_ACTION_STATE] != MO_CORE_UNDERWATER) && (this->work[MO_TENT_INVINC_TIMER] == 0) &&
+        ((play->gameplayFrames % 8) == 0) && ((s8)this->actor.colChkInfo.health > 0) &&
+        BossGanon_Player_AuraReaches(play, &this->actor, &this->actor.world.pos)) {
+        BossGanon_Player_AuraFakeHit(&this->coreCollider.base, &this->coreCollider.info,
+                                     (this->work[MO_TENT_ACTION_STATE] >= MO_CORE_ATTACK) ? DMG_HOOKSHOT
+                                                                                         : DMG_SLASH_MASTER);
+    }
     if (this->coreCollider.base.acFlags & AC_HIT) {
         ColliderInfo* hurtbox = this->coreCollider.info.acHitInfo;
         // "hit!!"
@@ -1834,7 +1843,10 @@ void BossMo_CoreCollisionCheck(BossMo* this, PlayState* play) {
                     }
                 }
                 this->work[MO_TENT_INVINC_TIMER] = 10;
-            } else if (!(hurtbox->toucher.dmgFlags & 0x00100000) && (hurtbox->toucher.dmgFlags & 0x80)) {
+            } else if ((!(hurtbox->toucher.dmgFlags & 0x00100000) && (hurtbox->toucher.dmgFlags & 0x80)) ||
+                       // Ganondorf's light balls knock the core out of the tentacle like the hookshot
+                       (BossGanon_IsPlayerAttack(this->coreCollider.base.ac) &&
+                        (this->work[MO_TENT_ACTION_STATE] >= MO_CORE_ATTACK))) {
                 if (this->work[MO_TENT_ACTION_STATE] >= MO_CORE_ATTACK) {
                     Sfx_PlaySfxAtPos(&sMorphaTent1->tentTipPos, NA_SE_EN_MOFER_CUT);
                     sMorphaTent1->cutIndex = this->work[MO_CORE_POS_IN_TENT];

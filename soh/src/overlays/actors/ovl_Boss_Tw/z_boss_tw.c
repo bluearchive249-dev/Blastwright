@@ -1,4 +1,5 @@
 #include "z_boss_tw.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "textures/boss_title_cards/object_tw.h"
 #include "objects/object_tw/object_tw.h"
@@ -2860,6 +2861,22 @@ void BossTw_Update(Actor* thisx, PlayState* play) {
         this->work[FOG_TIMER]--;
     }
 
+    // Play as Ganondorf: he has no mirror shield to turn one sister's beam on the other, so his dark aura hits
+    // them as the reflected beam would
+    if (((this->actor.params == TW_KOTAKE) || (this->actor.params == TW_KOUME)) && ((play->gameplayFrames % 12) == 0) &&
+        (this->work[INVINC_TIMER] == 0) &&
+        ((this->actionFunc == BossTw_FlyTo) || (this->actionFunc == BossTw_Wait) ||
+         (this->actionFunc == BossTw_ShootBeam) || (this->actionFunc == BossTw_FinishBeamShoot) ||
+         (this->actionFunc == BossTw_Laugh) || (this->actionFunc == BossTw_Spin) ||
+         (this->actionFunc == BossTw_TurnToPlayer)) &&
+        BossGanon_Player_AuraReaches(play, &this->actor, &this->actor.world.pos)) {
+        BossTw_SetupHitByBeam(this, play);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_DAMAGE_VOICE);
+        play->envCtx.unk_D8 = 1.0f;
+        this->actor.colChkInfo.health++;
+        this->work[INVINC_TIMER] = 30;
+    }
+
     if (this->actionFunc == BossTw_FlyTo || this->actionFunc == BossTw_Spin ||
         this->actionFunc == BossTw_TurnToPlayer) {
         if ((s16)(player->actor.shape.rot.y - this->actor.yawTowardsPlayer + 0x8000) < 0x1000 &&
@@ -3062,6 +3079,22 @@ void BossTw_TwinrovaUpdate(Actor* thisx, PlayState* play2) {
     this->collider.dim.height = 150;
     this->collider.dim.yShift = -60;
     Collider_UpdateCylinder(&this->actor, &this->collider);
+
+    // Play as Ganondorf: his dark aura stuns Twinrova like her own blast sent back with the mirror shield, then
+    // hurts her while she's down
+    if ((this->work[INVINC_TIMER] == 0) && ((play->gameplayFrames % 12) == 0) &&
+        ((s8)this->actor.colChkInfo.health > 0) &&
+        BossGanon_Player_AuraReaches(play, &this->actor, &this->actor.world.pos)) {
+        if (this->actionFunc == BossTw_TwinrovaStun) {
+            BossGanon_Player_AuraFakeHit(&this->collider.base, &this->collider.info, DMG_SLASH_MASTER);
+        } else if ((this->actionFunc == BossTw_TwinrovaFly) || (this->actionFunc == BossTw_TwinrovaSpin) ||
+                   (this->actionFunc == BossTw_TwinrovaLaugh) || (this->actionFunc == BossTw_TwinrovaShootBlast) ||
+                   (this->actionFunc == BossTw_TwinrovaChargeBlast) ||
+                   (this->actionFunc == BossTw_TwinrovaArriveAtTarget) ||
+                   (this->actionFunc == BossTw_TwinrovaDoneBlastShoot)) {
+            this->twinrovaStun = 1;
+        }
+    }
 
     if (this->work[INVINC_TIMER] == 0) {
         if (this->actionFunc != BossTw_TwinrovaStun) {
