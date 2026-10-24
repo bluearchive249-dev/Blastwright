@@ -2103,6 +2103,9 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Shadow Tag Mode", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("ShadowTag"))
         .Options(CheckboxOptions().Tooltip("A Wallmaster follows Link everywhere, don't get caught!"));
+    // Everything for the Play as Ganondorf mod, in its own column
+    path.column = SECTION_COLUMN_2;
+    AddWidget(path, "Ganondorf", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Play as Ganondorf", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"))
         .Options(CheckboxOptions().Tooltip(
@@ -2291,6 +2294,7 @@ void SohMenu::AddMenuEnhancements() {
             "The title screen takes place in Ganondorf's chamber at the top of his tower: he plays his theme on the "
             "organ forever, seen from behind. Works with or without Play as Ganondorf.\n\n"
             "Takes effect the next time the title screen loads (restart, or quit to the title screen)."));
+    path.column = SECTION_COLUMN_1;
     AddWidget(path, "Hurt Container Mode", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("HurtContainer"))
         .Options(CheckboxOptions().Tooltip("Changes Heart Piece and Heart Container functionality.\n\n"
