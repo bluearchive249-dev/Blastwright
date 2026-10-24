@@ -9136,6 +9136,24 @@ s32 BossGanon_Player_GetItemHoldPos(Actor* thisx, Vec3f* pos) {
     return true;
 }
 
+// King Dodongo swallows his light balls like bombs (he can't throw bombs): a player light ball or big magic ball
+// near the mouth of something that eats explosives is used up and counts as one
+s32 BossGanon_Player_SwallowLightBall(PlayState* play, Vec3f* pos, f32 radius) {
+    Actor* actor = play->actorCtx.actorLists[ACTORCAT_BOSS].head;
+
+    while (actor != NULL) {
+        if ((actor->id == ACTOR_BOSS_GANON) && (actor->update != NULL) &&
+            ((actor->params == GDF_PARAMS_PLAYER_LIGHT_BALL) ||
+             ((actor->params >= GDF_PARAMS_PLAYER_BIG_MAGIC) && (actor->params < GDF_PARAMS_PLAYER_BIG_MAGIC + 5))) &&
+            (Math_Vec3f_DistXYZ(&actor->world.pos, pos) < radius)) {
+            Actor_Kill(actor);
+            return true;
+        }
+        actor = actor->next;
+    }
+    return false;
+}
+
 void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play) {
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
     this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfRaiseHandStartAnim);
