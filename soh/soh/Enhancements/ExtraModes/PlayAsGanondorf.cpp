@@ -190,7 +190,7 @@ static bool IsLookingFirstPerson(PlayState* play, Player* player) {
     if (!IsEnabled() || (play == NULL) || (player == NULL) || (player != GET_PLAYER(play)) || (player->unk_6AD != 1)) {
         return false;
     }
-    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 1) && (play->csCtx.state != CS_STATE_IDLE)) {
+    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 0) && (play->csCtx.state != CS_STATE_IDLE)) {
         return false;
     }
     return FindPlayerGanondorf(play) != NULL;
@@ -202,7 +202,7 @@ static bool IsCrawlFlame(PlayState* play, Player* player) {
         !(player->stateFlags2 & PLAYER_STATE2_CRAWLING) || !CVarGetInteger(CVAR_PLAY_AS_GDF("CrawlFlame"), 1)) {
         return false;
     }
-    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 1) && (play->csCtx.state != CS_STATE_IDLE)) {
+    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 0) && (play->csCtx.state != CS_STATE_IDLE)) {
         return false;
     }
     return FindPlayerGanondorf(play) != NULL;

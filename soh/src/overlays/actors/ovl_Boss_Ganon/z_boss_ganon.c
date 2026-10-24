@@ -6240,7 +6240,7 @@ s32 BossGanon_Player_ShouldHideAnyForm(PlayState* play) {
         return true;
     }
     // Story cutscenes animate Link, show him instead
-    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 1) && (play->csCtx.state != CS_STATE_IDLE)) {
+    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 0) && (play->csCtx.state != CS_STATE_IDLE)) {
         return true;
     }
 
