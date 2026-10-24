@@ -21,6 +21,7 @@ extern "C" {
 #include "macros.h"
 extern PlayState* gPlayState;
 }
+#include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
 
 #define CVAR_INT_SHIP_INIT(cvar, val) \
     CVarSetInteger(cvar, val);        \
@@ -2236,6 +2237,41 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(-40.0f).Max(40.0f).DefaultValue(0.0f).Format("%.0f").Tooltip(
             "Raises or lowers him on the saddle, if he sits too high or sinks into the horse."));
+    AddWidget(path, "Ocarina Song Player", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Plays songs from MIDI files (.mid) on the ocarina (his pipe organ with Organ Instead of Ocarina). Put "
+            "them in a folder called ganondorf_songs next to the game.\n\n"
+            "While the ocarina is out:\n"
+            " - D-Pad Up: play / stop the selected song\n"
+            " - D-Pad Left / Right: previous / next song\n\n"
+            "The ocarina plays one note at a time, so a song becomes its melody (the highest note at any moment, "
+            "drums left out), moved by octaves into the ocarina's range."));
+    AddWidget(path, "GanondorfSongList", WIDGET_CUSTOM)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
+        })
+        .CustomFunction([](WidgetInfo& info) { GanondorfSongs_DrawMenu(); })
+        .HideInSearch(true);
+    AddWidget(path, "Loop Songs", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Loop"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip("Start the song over when it ends."));
+    AddWidget(path, "Song Tempo: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Tempo"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
+        })
+        .Options(FloatSliderOptions().Min(0.5f).Max(2.0f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
+            "Speed of the songs (applies the next time a song starts)."));
     AddWidget(path, "Purple Flame in Crawlspaces", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CrawlFlame"))
         .PreFunc([](WidgetInfo& info) {

@@ -11,6 +11,7 @@
 #include "assets/objects/object_gndd/object_gndd.h"
 #include "soh/Enhancements/ExtraModes/GanondorfSword.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
+#include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
@@ -6032,6 +6033,10 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
     u8 bigMagicEnabled = CVarGetInteger(CVAR_PLAY_AS_GDF("BigMagic"), 1);
 
     if (!BossGanon_Player_CanStartAttack(this, play)) {
+        return;
+    }
+    // The ocarina is out: the D-pad controls the song player
+    if (GanondorfSongs_IsOcarinaOut()) {
         return;
     }
 

@@ -1971,6 +1971,8 @@ void* AudioLoad_SyncLoadFont(u32 fontId);
 #define AUDIO_GANON_ORGAN_INST 0    // church organ
 #define AUDIO_SFX_CHANNEL_OCARINA 13
 extern volatile s32 gAudioOcarinaPipeOrgan;
+void AudioOcarina_PlayCustomSong(OcarinaNote* notes);
+s32 AudioOcarina_IsPlayingBack(void);
 s32 AudioLoad_IsSeqLoadComplete(s32 seqId);
 void AudioLoad_SetFontLoadStatus(s32 fontId, s32 status);
 void AudioLoad_SetSeqLoadStatus(s32 seqId, s32 status);

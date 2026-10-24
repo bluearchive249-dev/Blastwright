@@ -27,6 +27,7 @@
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
+#include "GanondorfSongs.h"
 #include "soh/cvar_prefixes.h"
 
 extern "C" {
@@ -432,7 +433,7 @@ static void UpdateGanon(PlayState* play, Player* player, BossGanon* dorf) {
     if (ganon == NULL) {
         bool canTransform = BossGanon_Player_CanAct(&dorf->actor) && !BossGanon_Player_IsHidden(&dorf->actor) &&
                             !sLevitating && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
-                            !(player->stateFlags1 & PLAYER_STATE1_ON_HORSE);
+                            !(player->stateFlags1 & PLAYER_STATE1_ON_HORSE) && !GanondorfSongs_IsOcarinaOut();
 
         // Turned back (or the transformation never finished). Not when Ganon comes back in a new area.
         if (!sWantGanon) {

@@ -2064,6 +2064,33 @@ void AudioOcarina_SetPlaybackSong(s8 songIndexPlusOne, s8 playbackState) {
     }
 }
 
+// SoH: "Play as Ganondorf" song player, plays a song from a MIDI file (converted to ocarina notes) through the
+// ocarina's playback, so it sounds on whatever instrument the ocarina is (his pipe organ). The notes start with an
+// unplayed entry and end with a zero length one, like the game's own songs.
+void AudioOcarina_PlayCustomSong(OcarinaNote* notes) {
+    if (notes == NULL) {
+        AudioOcarina_SetPlaybackSong(0, 0);
+        return;
+    }
+    sPlaybackSong = notes;
+    sPlaybackState = 1;
+    sPlaybackNoteTimer = 0;
+    sPlaybackPitch = OCARINA_PITCH_NONE;
+    sPlaybackNotePos = 0;
+    sPlaybackStaffPos = 0;
+    while ((sPlaybackSong[sPlaybackNotePos].pitch == OCARINA_PITCH_NONE) &&
+           (sPlaybackSong[sPlaybackNotePos].length != 0)) {
+        sPlaybackNotePos++;
+    }
+    if (sPlaybackNotePos == 0) {
+        sPlaybackNotePos = 1; // never look at the entry before the first
+    }
+}
+
+s32 AudioOcarina_IsPlayingBack(void) {
+    return sPlaybackState != 0;
+}
+
 /**
  * Play a song with the ocarina to the user that is
  * based on OcarinaNote data and not user input
