@@ -575,6 +575,30 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
     gDPSetEnvColor(gfx++, (s16)this->effectEnvColor[0], (s16)this->effectEnvColor[1], (s16)this->effectEnvColor[2],
                    255);
 
+    // SoH: "Play as Ganondorf" logo, the same title flames burning around the whole logo, in crimson and gold
+    if (((s16)this->effectPrimLodFrac != 0) && (gdfLogo != NULL)) {
+        s32 maskLeft;
+        s32 maskTop;
+        s32 maskWidth;
+        s32 maskHeight;
+        const u8* mask = GanondorfLogo_GetFlameMask(&maskLeft, &maskTop, &maskWidth, &maskHeight);
+        f32 heat = this->effectPrimLodFrac / 128.0f;
+
+        if (mask != NULL) {
+            gDPSetPrimColor(gfx++, 0, (s16)this->effectPrimLodFrac, 255, (s16)(150 + 70 * heat), (s16)(60 + 90 * heat),
+                            (s16)this->effectAlpha);
+            gDPSetEnvColor(gfx++, (s16)(120 + 80 * heat), 0, (s16)(140 - 60 * heat), 255);
+            gDPLoadMultiTile(gfx++, mask, 0x0000, G_TX_RENDERTILE, G_IM_FMT_I, G_IM_SIZ_8b, maskWidth, maskHeight, 0,
+                             0, maskWidth - 1, maskHeight - 1, 0, G_TX_NOMIRROR | G_TX_CLAMP,
+                             G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+            gDPLoadMultiBlock(gfx++, gTitleFlameEffectTex, 0x0100, 1, G_IM_FMT_I, G_IM_SIZ_8b, 32, 32, 0,
+                              G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 5, 1, 1);
+            gDPSetTileSize(gfx++, 1, 0, this->effectScroll & 0x7F, 31 << 2, (31 << 2) + (this->effectScroll & 0x7F));
+            gSPTextureRectangle(gfx++, maskLeft << 2, maskTop << 2, (maskLeft + maskWidth) << 2,
+                                (maskTop + maskHeight) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
+        }
+    }
+
     if (((s16)this->effectPrimLodFrac != 0) && (gdfLogo == NULL)) {
         for (k = 0, i = 0, rectTop = 0; i < 3; i++, rectTop += 64) {
             for (j = 0, rectLeft = 64 + LOGO_X_SHIFT; j < 3; j++, k++, rectLeft += 64) {
@@ -589,14 +613,14 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
     if ((s16)this->mainAlpha != 0) {
         if (gdfLogo != NULL) {
             // SoH: "Play as Ganondorf", his own logo in place of the shield logo, its titles and the flames
-            u32 logoWidth = 288;
-            u32 logoHeight = (logoWidth * gdfLogoHeight) / gdfLogoWidth;
+            s32 logoLeft;
+            s32 logoTop;
+            s32 logoWidth;
+            s32 logoHeight;
 
-            if (logoHeight > 160) {
-                logoHeight = 160;
-                logoWidth = (logoHeight * gdfLogoWidth) / gdfLogoHeight;
-            }
-            EnMag_DrawGanondorfLogo(&gfx, 160, 100, gdfLogo, gdfLogoWidth, gdfLogoHeight, logoWidth, logoHeight);
+            GanondorfLogo_GetRect(&logoLeft, &logoTop, &logoWidth, &logoHeight);
+            EnMag_DrawGanondorfLogo(&gfx, logoLeft + logoWidth / 2, logoTop + logoHeight / 2, gdfLogo, gdfLogoWidth,
+                                    gdfLogoHeight, logoWidth, logoHeight);
         } else {
             EnMag_DrawImageRGBA32(&gfx, 160 + LOGO_X_SHIFT, 100, (u8*)LOGO_TEX, 160, 160);
         }
