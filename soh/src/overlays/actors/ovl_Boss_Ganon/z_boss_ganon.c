@@ -9159,9 +9159,9 @@ void BossGanon_Player_SetupOrgan(BossGanon* this, PlayState* play) {
 }
 
 // Close-up camera while he plays: as if a phone were lying on the keys a little to his right, looking up at him
-#define GDF_ORGAN_CAM_SIDE 38.0f    // organ space: he faces the keys along -z, so +x is his right
-#define GDF_ORGAN_CAM_HEIGHT 120.0f // just above the keyboard (y 110)
-#define GDF_ORGAN_CAM_Z -392.0f     // on the keys (z -397 to -373); he sits at z -333
+#define GDF_ORGAN_CAM_SIDE 75.0f    // organ space: he faces the keys along -z, so +x is his right
+#define GDF_ORGAN_CAM_HEIGHT 150.0f // above the keyboard (y 110), level with his chest
+#define GDF_ORGAN_CAM_Z -405.0f     // just past the keys (z -397 to -373), in front of the pipes; he sits at z -333
 
 static void BossGanon_Player_ReleaseOrganCam(BossGanon* this, PlayState* play) {
     if (this->playerOrganCam != 0) {
@@ -9205,9 +9205,9 @@ static void BossGanon_Player_UpdateOrganCam(BossGanon* this, PlayState* play) {
     if (closeUp) {
         BossGanon_Player_OrganToWorld(this, GDF_ORGAN_CAM_SIDE, GDF_ORGAN_CAM_HEIGHT, GDF_ORGAN_CAM_Z, &eye);
         eye.y += this->playerOrganSink;
-        // His face and chest (head body part, a little lower)
-        at = this->unk_2EC[2];
-        at.y -= 15.0f;
+        // His face: unk_208 is where his eyes are drawn (body part 2, used before, is his pelvis)
+        at = this->unk_208;
+        at.y -= 10.0f;
     } else {
         BossGanon_Player_OrganToWorld(this, 170.0f, 210.0f, -110.0f, &eye);
         BossGanon_Player_OrganToWorld(this, 0.0f, 150.0f, -380.0f, &at);
