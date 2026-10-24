@@ -5598,6 +5598,7 @@ static f32 BossGanon_Player_WalkArmPhase(BossGanon* this) {
 // swung his legs out to one side (his lower body looked skewed) and crossed his feet. Turned back by this (in actor
 // space), his legs run straight on two tracks.
 #define GDF_WALK_PELVIS_YAW -3641
+#define GDF_WALK_FOOT_SPLAY 1820 // 10 degrees outward
 
 // out = (transposeA ? a^T : a) * b
 static void BossGanon_Player_Mul3(f32 a[3][3], f32 b[3][3], f32 out[3][3], s32 transposeA) {
@@ -5696,6 +5697,39 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
         BossGanon_Player_Mul3(turn, m, m, false);
         BossGanon_Player_Mul3(root, m, m, true);
         BossGanon_Player_MtxToRot(m, &walk[1 + 18]);
+    }
+
+    // Point his feet where he walks. His feet keep the boss animation's own rotation (young Ganondorf's are built
+    // differently), and that stance has them splayed far out to the sides, so on a forward stride his toes pointed
+    // the other way. Turn each foot about the vertical so its toes (the foot's local +x) face forward, splayed a
+    // little outward, keeping the foot's pitch from the step.
+    {
+        static const s8 sLegChains[2][5] = { { 0, 18, 19, 20, 21 }, { 0, 18, 22, 23, 24 } };
+        s32 leg;
+        s32 k;
+
+        for (leg = 0; leg < 2; leg++) {
+            f32 parent[3][3];
+            f32 m[3][3];
+            f32 turn[3][3];
+            Vec3s turnRot = { 0, 0, 0 };
+            s16 target = (leg == 0) ? GDF_WALK_FOOT_SPLAY : -GDF_WALK_FOOT_SPLAY;
+            s16 toeYaw;
+
+            BossGanon_Player_RotToMtx(&walk[1 + sLegChains[leg][0]], parent);
+            for (k = 1; k < 4; k++) {
+                BossGanon_Player_RotToMtx(&walk[1 + sLegChains[leg][k]], m);
+                BossGanon_Player_Mul3(parent, m, parent, false);
+            }
+            BossGanon_Player_RotToMtx(&walk[1 + sLegChains[leg][4]], m);
+            BossGanon_Player_Mul3(parent, m, m, false); // the foot in actor space
+            toeYaw = Math_Atan2S(m[2][0], m[0][0]);   // binang of atan2(x, z)
+            turnRot.y = (s16)(target - toeYaw);
+            BossGanon_Player_RotToMtx(&turnRot, turn);
+            BossGanon_Player_Mul3(turn, m, m, false);
+            BossGanon_Player_Mul3(parent, m, m, true); // back into the shin's space
+            BossGanon_Player_MtxToRot(m, &walk[1 + sLegChains[leg][4]]);
+        }
     }
 
     // His own standing height, with the walk's bob
