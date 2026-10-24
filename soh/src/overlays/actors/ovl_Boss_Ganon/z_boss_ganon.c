@@ -7354,7 +7354,9 @@ void BossGanon_Player_Float(BossGanon* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
     Math_ApproachZeroF(&this->handLightBallScale, 1.0f, 1.0f);
 
-    if (player->actor.speedXZ > 1.0f) {
+    // The swish of flying. Levitation moves Link itself and keeps his speedXZ at 0, so this goes by how far he
+    // actually moved this frame (up and down too)
+    if (Math_Vec3f_DistXYZ(&player->actor.world.pos, &player->actor.prevPos) > 1.0f) {
         Sfx_PlaySfxAtPos(&this->actor.projectedPos, NA_SE_EN_FANTOM_FLOAT - SFX_FLAG);
     }
 
