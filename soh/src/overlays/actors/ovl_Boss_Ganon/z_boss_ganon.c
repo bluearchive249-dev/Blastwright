@@ -5700,9 +5700,9 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
     }
 
     // Point his feet where he walks. His feet keep the boss animation's own rotation (young Ganondorf's are built
-    // differently), and that stance has them splayed far out to the sides, so on a forward stride his toes pointed
-    // the other way. Turn each foot about the vertical so its toes (the foot's local +x) face forward, splayed a
-    // little outward, keeping the foot's pitch from the step.
+    // differently), which left them turned out (about 30 and 20 degrees) on the walk. Turn each foot about the
+    // vertical so its toes (the foot's local +z, 11 degrees out in his standing pose) face forward, splayed a little
+    // outward, keeping the foot's pitch from the step. (v37 took local +x for the toes and turned them sideways.)
     {
         static const s8 sLegChains[2][5] = { { 0, 18, 19, 20, 21 }, { 0, 18, 22, 23, 24 } };
         s32 leg;
@@ -5723,7 +5723,7 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
             }
             BossGanon_Player_RotToMtx(&walk[1 + sLegChains[leg][4]], m);
             BossGanon_Player_Mul3(parent, m, m, false); // the foot in actor space
-            toeYaw = Math_Atan2S(m[2][0], m[0][0]);   // binang of atan2(x, z)
+            toeYaw = Math_Atan2S(m[2][2], m[0][2]);   // binang of atan2(x, z) of the toe axis
             turnRot.y = (s16)(target - toeYaw);
             BossGanon_Player_RotToMtx(&turnRot, turn);
             BossGanon_Player_Mul3(turn, m, m, false);
