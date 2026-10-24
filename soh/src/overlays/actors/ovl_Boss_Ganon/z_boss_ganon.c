@@ -5785,6 +5785,8 @@ void SkelAnime_GetFrameData(AnimationHeader* animation, s32 frame, s32 limbCount
 #define GDF_ANKLE_HEIGHT 9.9f // his ankles above the floor when standing
 #define GDF_LEFT_FOOT_BODYPART 14
 #define GDF_RIGHT_FOOT_BODYPART 11
+#define GDF_LEFT_KNEE_BODYPART 13
+#define GDF_RIGHT_KNEE_BODYPART 10
 
 // Boss limb -> young Ganondorf limb (-1: keep the boss animation's own rotation). The legs come from the walk; the
 // feet, face and torso keep his own (young Ganondorf's feet are rotated differently, and his torso is narrower).
@@ -6035,11 +6037,14 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     }
 }
 
-// Keeps his lowest ankle at the floor (from the last draw), so any animation stands on the ground
+// Keeps his lowest ankle or knee at the floor (from the last draw), so any animation stands on the ground. Knees
+// count too: kneeling (the heavy landing) puts a knee lower than either foot, and his knee pad is about as thick as
+// his sole.
 static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     f32 lowestAnkle = MIN(this->unk_2EC[GDF_LEFT_FOOT_BODYPART].y, this->unk_2EC[GDF_RIGHT_FOOT_BODYPART].y);
-    f32 ankleAboveRoot = lowestAnkle - this->actor.world.pos.y;
+    f32 lowestKnee = MIN(this->unk_2EC[GDF_LEFT_KNEE_BODYPART].y, this->unk_2EC[GDF_RIGHT_KNEE_BODYPART].y);
+    f32 ankleAboveRoot = MIN(lowestAnkle, lowestKnee) - this->actor.world.pos.y;
     f32 target = GDF_ANKLE_HEIGHT - ankleAboveRoot + (this->playerFloorY - player->actor.world.pos.y);
 
     if (this->playerHidden || (ankleAboveRoot < -300.0f) || (ankleAboveRoot > 100.0f)) {
@@ -6047,7 +6052,12 @@ static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play
     }
 
     target = CLAMP(target, -20.0f, BossGanon_Player_GetHoverHeight() + 60.0f);
-    Math_ApproachF(&this->playerGroundOffset, target, 0.5f, 6.0f);
+    // The landing drops him onto one knee in two frames: follow it at once, or he sinks into the floor first
+    if (this->actionFunc == BossGanon_Player_Land) {
+        Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
+    } else {
+        Math_ApproachF(&this->playerGroundOffset, target, 0.5f, 6.0f);
+    }
 }
 
 // Rotation that points from `from` to `to`, using the same convention as the vanilla light ball
