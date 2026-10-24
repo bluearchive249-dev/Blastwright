@@ -246,6 +246,10 @@ typedef struct BossGanon {
 // SoH: "Play as Ganondorf"
 s32 BossGanon_Player_IsBusy(Actor* thisx);
 s32 BossGanon_Player_IsPhantom(void);
+// Killing NPCs (option): attack volumes from Ganon's form, and the check itself
+void BossGanon_Player_NoteAttackCylinder(ColliderCylinder* cyl);
+void BossGanon_Player_NoteAttackSphere(Vec3f* center, f32 radius);
+void BossGanon_Player_KillNpcsNow(PlayState* play);
 s32 BossGanon_Player_GetItemHoldPos(Actor* thisx, Vec3f* pos);
 s32 BossGanon_Player_AuraReaches(PlayState* play, Actor* boss, Vec3f* pos);
 void BossGanon_Player_AuraFakeHit(Collider* col, ColliderInfo* elem, u32 dmgFlags);

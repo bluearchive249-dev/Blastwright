@@ -3913,9 +3913,20 @@ static void BossGanon2_Player_Update(Actor* thisx, PlayState* play) {
         return;
     }
 
+    // NPCs touched by his attacks last frame (Kill NPCs option)
+    BossGanon_Player_KillNpcsNow(play);
+
     // Swords
     if (this->unk_312 != 0) {
         CollisionCheck_SetAT(play, &play->colChkCtx, &this->unk_444.base);
+        for (i = 0; i < this->unk_444.count; i++) {
+            Vec3f center;
+
+            center.x = this->unk_444.elements[i].dim.worldSphere.center.x;
+            center.y = this->unk_444.elements[i].dim.worldSphere.center.y;
+            center.z = this->unk_444.elements[i].dim.worldSphere.center.z;
+            BossGanon_Player_NoteAttackSphere(&center, this->unk_444.elements[i].dim.worldSphere.radius);
+        }
     }
 
     // Stomp shockwave around him, or his body while charging
@@ -3926,6 +3937,7 @@ static void BossGanon2_Player_Update(Actor* thisx, PlayState* play) {
         this->playerCollider.dim.pos.y = (s16)(player->actor.floorHeight - 10.0f);
         this->playerCollider.dim.pos.z = (s16)player->actor.world.pos.z;
         CollisionCheck_SetAT(play, &play->colChkCtx, &this->playerCollider.base);
+        BossGanon_Player_NoteAttackCylinder(&this->playerCollider);
     } else if ((this->actionFunc == BossGanon2_Player_Charge) && (this->playerChargeSpeed > 5.0f)) {
         this->playerCollider.dim.radius = 90;
         this->playerCollider.dim.height = 220;
@@ -3933,6 +3945,7 @@ static void BossGanon2_Player_Update(Actor* thisx, PlayState* play) {
         this->playerCollider.dim.pos.y = (s16)thisx->world.pos.y;
         this->playerCollider.dim.pos.z = (s16)(thisx->world.pos.z + (Math_CosS(this->playerChargeYaw) * 70.0f));
         CollisionCheck_SetAT(play, &play->colChkCtx, &this->playerCollider.base);
+        BossGanon_Player_NoteAttackCylinder(&this->playerCollider);
     }
 }
 

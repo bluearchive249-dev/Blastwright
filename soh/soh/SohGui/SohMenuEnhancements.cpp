@@ -2242,7 +2242,8 @@ void SohMenu::AddMenuEnhancements() {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "His attacks (blade, spear, balls of light, pound, dark aura) kill NPCs, in a spray of blood. Every NPC "
+            "His attacks (blade, spear, balls of light, pound, dark aura, and as Phantom Ganon or Ganon) kill NPCs, in "
+            "a spray of blood. Every NPC "
             "killed is written into the save file the next time you save and never appears again, even with this "
             "option turned off. That includes characters the story needs, so it can make the game impossible to "
             "finish. There is no undo."));

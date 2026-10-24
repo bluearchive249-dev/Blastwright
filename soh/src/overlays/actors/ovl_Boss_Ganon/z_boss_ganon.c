@@ -5515,7 +5515,7 @@ static void BossGanon_Player_SlayNpcs(BossGanon* this, PlayState* play) {
     Actor* npc;
     s32 i;
 
-    if (GanondorfKills_IsEnabled() && (sGdfAtCount > 0) && !this->playerHidden) {
+    if (GanondorfKills_IsEnabled() && (sGdfAtCount > 0)) {
         npc = play->actorCtx.actorLists[ACTORCAT_NPC].head;
         while (npc != NULL) {
             Actor* next = npc->next;
@@ -5533,6 +5533,19 @@ static void BossGanon_Player_SlayNpcs(BossGanon* this, PlayState* play) {
         }
     }
     sGdfAtCount = 0;
+}
+
+// Ganon (the beast form) notes his attacks here too, and runs the check while Ganondorf is hidden
+void BossGanon_Player_NoteAttackCylinder(ColliderCylinder* cyl) {
+    BossGanon_Player_NoteCylinder(cyl);
+}
+
+void BossGanon_Player_NoteAttackSphere(Vec3f* center, f32 radius) {
+    BossGanon_Player_NoteSegment(center, center, radius);
+}
+
+void BossGanon_Player_KillNpcsNow(PlayState* play) {
+    BossGanon_Player_SlayNpcs(NULL, play);
 }
 
 s32 BossGanon_Player_IsPhantom(void);
