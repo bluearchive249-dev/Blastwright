@@ -6503,8 +6503,10 @@ static void BossGanon_Player_StandLegs(BossGanon* this) {
     for (i = 19; i <= 24; i++) {
         BossGanon_Player_SlerpRot(&joints[1 + i], &sStand[1 + i], weight, &joints[1 + i]);
     }
-    // His standing height, so crouching poses bend at the hips instead of pushing his legs into the floor
-    joints[0].y = (s16)(joints[0].y + (sStand[0].y - joints[0].y) * weight);
+    // His standing height, so crouching poses bend at the hips instead of pushing his legs into the floor. Fully,
+    // not blended: while the animations morph in and out of the floating ones (whose root sits 72 units lower), a
+    // blended height dipped him into the ground at the start and end of every throw.
+    joints[0].y = sStand[0].y;
 }
 
 static void BossGanon_Player_TwistLean(BossGanon* this, f32 twist, f32 lean) {
@@ -8172,7 +8174,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
                         (this->actionFunc == BossGanon_Player_ChargeBigMagic) ||
                         (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Hurt));
 
-        Math_ApproachF(&this->playerStandLegsWeight, standLegs ? 1.0f : 0.0f, 1.0f, 0.15f);
+        // In fast (the morph into the action already smooths it); out over ~13 frames, longer than the 10-frame
+        // morph back to his standing idle, so the floating root height never shows
+        Math_ApproachF(&this->playerStandLegsWeight, standLegs ? 1.0f : 0.0f, 1.0f, standLegs ? 0.5f : 0.08f);
         if (this->actionFunc == BossGanon_Player_DarkAura) {
             this->playerStandLegsWeight = 0.0f;
         } else if (this->playerGrounded) {
