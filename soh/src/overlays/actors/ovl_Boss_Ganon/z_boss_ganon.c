@@ -13,6 +13,7 @@
 #include "soh/Enhancements/ExtraModes/GanondorfSword.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
+#include "soh/Enhancements/ExtraModes/GanondorfKills.h"
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
@@ -5382,6 +5383,158 @@ void BossGanon_DrawEffects(PlayState* play) {
 
 #define CVAR_PLAY_AS_GDF(var) CVAR_ENHANCEMENT("PlayAsGanondorf." var)
 
+// ---- Killing NPCs (option, permanent) ----
+// Every attack volume he puts out in a frame is noted here (cylinders from his pound, aura, slam and projectiles,
+// segments from the blade). At the start of his next update, NPCs touching any of them die, bloodily, and are
+// remembered in the save file as dead (GanondorfKills.cpp).
+#define GDF_MAX_AT_VOLUMES 24
+typedef struct {
+    u8 isSegment;
+    Vec3f a;     // cylinder: bottom centre; segment: one end
+    Vec3f b;     // segment: other end
+    f32 radius;
+    f32 height;  // cylinder
+} GdfAtVolume;
+static GdfAtVolume sGdfAtVolumes[GDF_MAX_AT_VOLUMES];
+static s32 sGdfAtCount = 0;
+
+static void BossGanon_Player_NoteCylinder(ColliderCylinder* cyl) {
+    GdfAtVolume* v;
+
+    if (!GanondorfKills_IsEnabled() || (sGdfAtCount >= GDF_MAX_AT_VOLUMES)) {
+        return;
+    }
+    v = &sGdfAtVolumes[sGdfAtCount++];
+    v->isSegment = false;
+    v->a.x = cyl->dim.pos.x;
+    v->a.y = cyl->dim.pos.y + cyl->dim.yShift;
+    v->a.z = cyl->dim.pos.z;
+    v->radius = cyl->dim.radius;
+    v->height = cyl->dim.height;
+}
+
+static void BossGanon_Player_NoteSegment(Vec3f* a, Vec3f* b, f32 radius) {
+    GdfAtVolume* v;
+
+    if (!GanondorfKills_IsEnabled() || (sGdfAtCount >= GDF_MAX_AT_VOLUMES)) {
+        return;
+    }
+    v = &sGdfAtVolumes[sGdfAtCount++];
+    v->isSegment = true;
+    v->a = *a;
+    v->b = *b;
+    v->radius = radius;
+}
+
+static void BossGanon_Player_SetAT(BossGanon* this, PlayState* play) {
+    BossGanon_Player_NoteCylinder(&this->collider);
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+}
+
+static f32 BossGanon_Player_DistToSegment(Vec3f* p, Vec3f* a, Vec3f* b) {
+    Vec3f ab = { b->x - a->x, b->y - a->y, b->z - a->z };
+    f32 len2 = SQ(ab.x) + SQ(ab.y) + SQ(ab.z);
+    f32 t = 0.0f;
+    Vec3f c;
+
+    if (len2 > 0.001f) {
+        t = ((p->x - a->x) * ab.x + (p->y - a->y) * ab.y + (p->z - a->z) * ab.z) / len2;
+        t = CLAMP(t, 0.0f, 1.0f);
+    }
+    c.x = a->x + ab.x * t;
+    c.y = a->y + ab.y * t;
+    c.z = a->z + ab.z * t;
+    return Math_Vec3f_DistXYZ(p, &c);
+}
+
+// The NPC (as a column from its feet to its head) touches the volume
+static s32 BossGanon_Player_NpcInVolume(Actor* npc, GdfAtVolume* v) {
+    f32 top = MAX(npc->focus.pos.y, npc->world.pos.y + 30.0f);
+    f32 bottom = npc->world.pos.y;
+    s32 i;
+
+    if (!v->isSegment) {
+        f32 dx = npc->world.pos.x - v->a.x;
+        f32 dz = npc->world.pos.z - v->a.z;
+
+        return (SQ(dx) + SQ(dz) < SQ(v->radius + 15.0f)) && (top > v->a.y) && (bottom < v->a.y + v->height);
+    }
+    for (i = 0; i <= 4; i++) {
+        Vec3f p = npc->world.pos;
+
+        p.y = bottom + (top - bottom) * (i / 4.0f);
+        if (BossGanon_Player_DistToSegment(&p, &v->a, &v->b) < v->radius + 15.0f) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void BossGanon_Player_SlayNpc(PlayState* play, Actor* npc) {
+    static Color_RGBA8 sBloodPrim = { 170, 0, 0, 255 };
+    static Color_RGBA8 sBloodEnv = { 70, 0, 0, 255 };
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    Vec3f pos;
+    Vec3f vel;
+    Vec3f accel = { 0.0f, -0.8f, 0.0f };
+    s32 i;
+
+    pos.x = npc->world.pos.x;
+    pos.y = (npc->world.pos.y + MAX(npc->focus.pos.y, npc->world.pos.y + 30.0f)) * 0.5f;
+    pos.z = npc->world.pos.z;
+
+    // A spray of blood, a red burst, and a pool of it on the ground
+    for (i = 0; i < 40; i++) {
+        vel.x = Rand_CenteredFloat(9.0f);
+        vel.y = Rand_ZeroFloat(8.0f) + 2.0f;
+        vel.z = Rand_CenteredFloat(9.0f);
+        EffectSsDtBubble_SpawnCustomColor(play, &pos, &vel, &accel, &sBloodPrim, &sBloodEnv,
+                                          (s16)(Rand_ZeroFloat(40.0f) + 40.0f), (s16)(Rand_ZeroFloat(15.0f) + 20.0f),
+                                          false);
+    }
+    EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 160, 0, 170, 0, 0, 255, 90, 0, 0, 1, 9, false);
+    for (i = 0; i < 12; i++) {
+        Vec3f floorPos = npc->world.pos;
+        Vec3f slow = { Rand_CenteredFloat(2.0f), 0.0f, Rand_CenteredFloat(2.0f) };
+
+        floorPos.x += Rand_CenteredFloat(30.0f);
+        floorPos.y += 1.0f;
+        floorPos.z += Rand_CenteredFloat(30.0f);
+        EffectSsDtBubble_SpawnCustomColor(play, &floorPos, &slow, &zero, &sBloodPrim, &sBloodEnv,
+                                          (s16)(Rand_ZeroFloat(60.0f) + 90.0f), 60, false);
+    }
+    SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 40, NA_SE_IT_SWORD_STRIKE_HARD);
+    SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 40, NA_SE_EN_EXTINCT);
+
+    GanondorfKills_Record(npc);
+    Actor_Kill(npc);
+}
+
+static void BossGanon_Player_SlayNpcs(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Actor* npc;
+    s32 i;
+
+    if (GanondorfKills_IsEnabled() && (sGdfAtCount > 0) && !this->playerHidden) {
+        npc = play->actorCtx.actorLists[ACTORCAT_NPC].head;
+        while (npc != NULL) {
+            Actor* next = npc->next;
+
+            // Not the one he's carrying (Ruto), and nothing already gone
+            if ((npc->update != NULL) && (npc != player->heldActor) && (npc->init == NULL)) {
+                for (i = 0; i < sGdfAtCount; i++) {
+                    if (BossGanon_Player_NpcInVolume(npc, &sGdfAtVolumes[i])) {
+                        BossGanon_Player_SlayNpc(play, npc);
+                        break;
+                    }
+                }
+            }
+            npc = next;
+        }
+    }
+    sGdfAtCount = 0;
+}
+
 s32 BossGanon_Player_IsPhantom(void);
 
 // Phantom Ganon skin: his own voice and magic sounds in place of Ganondorf's
@@ -7089,7 +7242,7 @@ static void BossGanon_Player_SwordImpact(BossGanon* this, PlayState* play, f32 r
     this->collider.dim.pos.x = (s16)pos.x;
     this->collider.dim.pos.y = (s16)(pos.y - 20.0f);
     this->collider.dim.pos.z = (s16)pos.z;
-    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+    BossGanon_Player_SetAT(this, play);
 }
 
 void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
@@ -7162,7 +7315,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     // The slam's shockwave keeps hitting for a moment
     if ((this->playerSwordAttack == GDF_SWORD_ATK_SLAM) && (this->playerSwordTimer > atk->impactFrame) &&
         (this->playerSwordTimer < atk->impactFrame + 4)) {
-        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+        BossGanon_Player_SetAT(this, play);
     }
 
     // Next hit of the combo
@@ -7554,6 +7707,8 @@ static void BossGanon_Player_UpdateSwordHit(BossGanon* this, PlayState* play) {
     }
     Collider_SetQuadVertices(&this->playerSwordQuad, &this->playerBladeTipPrev, &this->playerBladeTip,
                              &this->playerBladeBasePrev, &this->playerBladeBase);
+    BossGanon_Player_NoteSegment(&this->playerBladeBase, &this->playerBladeTip, 12.0f);
+    BossGanon_Player_NoteSegment(&this->playerBladeBasePrev, &this->playerBladeTipPrev, 12.0f);
     CollisionCheck_SetAT(play, &play->colChkCtx, &this->playerSwordQuad.base);
 
     // He's far taller than most enemies, so the blade alone passes over small ones. While a slash is active, the
@@ -7574,7 +7729,7 @@ static void BossGanon_Player_UpdateSwordHit(BossGanon* this, PlayState* play) {
         this->collider.dim.pos.x = (s16)(this->actor.world.pos.x + sinY * reach * 0.5f);
         this->collider.dim.pos.y = (s16)(this->playerFloorY - 5.0f);
         this->collider.dim.pos.z = (s16)(this->actor.world.pos.z + cosY * reach * 0.5f);
-        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+        BossGanon_Player_SetAT(this, play);
     }
 }
 
@@ -8129,7 +8284,7 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
         this->collider.dim.pos.x = this->actor.world.pos.x;
         this->collider.dim.pos.y = floorY - 20.0f;
         this->collider.dim.pos.z = this->actor.world.pos.z;
-        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+        BossGanon_Player_SetAT(this, play);
     }
 }
 
@@ -8483,6 +8638,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Actor_Kill(thisx);
         return;
     }
+
+    BossGanon_Player_SlayNpcs(this, play);
 
     sCape->gravity = -3.0f;
     this->shockGlow = false;
@@ -8904,7 +9061,7 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
     // and the wall check can stop the ball before its hitbox reaches them
     if (!hitSomething) {
         Collider_UpdateCylinder(&this->actor, &this->collider);
-        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+        BossGanon_Player_SetAT(this, play);
     }
 
     if (!burst) {
@@ -9027,7 +9184,7 @@ static void BossGanon_PlayerBigMagic_Update_Impl(Actor* thisx, PlayState* play) 
             if (numEffects != 40) {
                 // Still hits what it touches on the frame it bursts against a wall (eye switches)
                 Collider_UpdateCylinder(&this->actor, &this->collider);
-                CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+                BossGanon_Player_SetAT(this, play);
             }
             if (numEffects != 0) {
                 this->unk_1C2 = 1;
@@ -9222,7 +9379,7 @@ static void BossGanon_Player_AuraKill(BossGanon* this, PlayState* play) {
     this->collider.dim.pos.x = (s16)center.x;
     this->collider.dim.pos.y = (s16)(this->actor.world.pos.y - 80.0f);
     this->collider.dim.pos.z = (s16)center.z;
-    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+    BossGanon_Player_SetAT(this, play);
 }
 
 void BossGanon_Player_DarkAura(BossGanon* this, PlayState* play) {

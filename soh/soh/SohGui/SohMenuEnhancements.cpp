@@ -2224,6 +2224,28 @@ void SohMenu::AddMenuEnhancements() {
             "ragged and worn through. Always holds the spear: B, B, B is two slashes and a stab, stick + R then B a "
             "lunging stab, R + B (or C-Left) a ball of light. No Big Magic or sword skills. D-Pad Left still toggles "
             "the dark aura."));
+    AddWidget(path, "GanondorfKillWarning", WIDGET_CUSTOM)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .CustomFunction([](WidgetInfo& info) {
+            // Bright red so it can't be missed (the menu's own red is too dark to read)
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.15f, 0.15f, 1.0f));
+            ImGui::TextWrapped(ICON_FA_EXCLAMATION_TRIANGLE
+                               " CAUTION: THIS WILL PERMANENTLY KILL NPCs IN YOUR SAVE FILE, USE WITH CARE.");
+            ImGui::PopStyleColor();
+        })
+        .HideInSearch(true);
+    AddWidget(path, "Kill NPCs", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KillNpcs"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "His attacks (blade, spear, balls of light, pound, dark aura) kill NPCs, in a spray of blood. Every NPC "
+            "killed is written into the save file the next time you save and never appears again, even with this "
+            "option turned off. That includes characters the story needs, so it can make the game impossible to "
+            "finish. There is no undo."));
     AddWidget(path, "Organ Instead of Ocarina", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganOcarina"))
         .PreFunc([](WidgetInfo& info) {
