@@ -3410,9 +3410,42 @@ static void BossGanon2_Player_Transform(BossGanon2* this, PlayState* play) {
     }
 }
 
+// His uncurl from the final battle starts him curled up below the floor (he bursts out of the rubble there), and the
+// walk afterwards stands his root far higher. Lift him so his lowest body sphere (from the last draw) stays on the
+// floor, then ease the lift away once he's walking.
+static void BossGanon2_Player_KeepAboveFloor(BossGanon2* this, PlayState* play, u8 easeAway) {
+    Player* player = GET_PLAYER(play);
+    f32 lowest = 100000.0f;
+    f32 raise;
+    f32 target;
+    s32 i;
+
+    for (i = 0; i < this->unk_424.count; i++) {
+        ColliderJntSphElement* element = &this->unk_424.elements[i];
+        Vec3s* c = &element->dim.worldSphere.center;
+
+        if ((c->x == 0) && (c->y == 0) && (c->z == 0)) {
+            continue; // not drawn yet
+        }
+        lowest = MIN(lowest, c->y - element->dim.worldSphere.radius);
+    }
+    if (lowest >= 100000.0f) {
+        return;
+    }
+
+    // World units to model units (the actor's 0.01 scale)
+    raise = (player->actor.floorHeight - lowest) / this->actor.scale.y;
+    target = this->actor.shape.yOffset + raise;
+    if (easeAway) {
+        target = MIN(target, this->actor.shape.yOffset - 300.0f); // at least 3 units a frame
+    }
+    Math_ApproachF(&this->actor.shape.yOffset, MAX(0.0f, target), 0.6f, 3000.0f);
+}
+
 // Ganon uncurls and roars, then he can be controlled
 static void BossGanon2_Player_Emerge(BossGanon2* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
+    BossGanon2_Player_KeepAboveFloor(this, play, false);
     Math_ApproachZeroF(&this->unk_30C, 1.0f, 0.3f);
     // His swords grow in his hands
     if (this->playerTimer > 15) {
@@ -3806,6 +3839,11 @@ static void BossGanon2_Player_Update(Actor* thisx, PlayState* play) {
 
     this->actionFunc(this, play);
     this->playerPrevInvincibilityTimer = player->invincibilityTimer;
+
+    // The lift from his emergence eases away while his walk's own height takes over
+    if ((this->unk_337 != 0) && (this->actionFunc != BossGanon2_Player_Emerge) && (thisx->shape.yOffset > 0.0f)) {
+        BossGanon2_Player_KeepAboveFloor(this, play, true);
+    }
 
     for (i = 0; i < ARRAY_COUNT(this->unk_1A2); i++) {
         if (this->unk_1A2[i] != 0) {

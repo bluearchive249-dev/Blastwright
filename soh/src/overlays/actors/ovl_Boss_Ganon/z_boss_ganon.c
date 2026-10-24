@@ -15,6 +15,7 @@
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h" // SoH: shocks on enemies in his dark aura
+#include "objects/gameplay_keep/gameplay_keep.h" // SoH: the torch flame for his crawlspace form
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
 #include "overlays/actors/ovl_Obj_Syokudai/z_obj_syokudai.h"
 #include "soh/ResourceManagerHelpers.h"
@@ -79,6 +80,7 @@ void BossGanon_Player_StopOrganMusic(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawOrgan(BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawDarkAura(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ReleaseOrganCam(BossGanon* this, PlayState* play);
+static void BossGanon_Player_DrawCrawlFlame(BossGanon* this, PlayState* play);
 static void BossGanon_Init_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Update_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
@@ -4066,6 +4068,7 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
 
     // SoH: "Play as Ganondorf", hidden in first person and while Link is shown instead
     if (GDF_IS_PLAYER(this) && this->playerHidden) {
+        BossGanon_Player_DrawCrawlFlame(this, play);
         BossGanon_DrawEffects(play);
         return;
     }
@@ -8153,6 +8156,21 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
+    // Into and out of a crawlspace: a puff of dark smoke as he turns into the flame and back
+    {
+        u8 flame = PlayAsGanondorf_IsCrawlFlame(play, player);
+
+        if (flame != this->playerCrawlFlame) {
+            Vec3f zero = { 0.0f, 0.0f, 0.0f };
+            Vec3f pos = player->actor.world.pos;
+
+            pos.y += 20.0f;
+            EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 150, 0, 200, 120, 255, 255, 60, 0, 120, 1, 9, false);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+            this->playerCrawlFlame = flame;
+        }
+    }
+
     // Link isn't drawn, so his body part positions (used by enemies for grabs, effects and aiming) would go stale.
     // Use Ganondorf's from his last draw instead.
     if (!this->playerHidden) {
@@ -8778,6 +8796,39 @@ static void BossGanon_Player_DrawDarkAura(BossGanon* this, PlayState* play) {
     gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfVortexDL));
 
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Crawlspaces: a flickering purple flame where Link is (gameplay_keep's torch flame, tinted)
+static void BossGanon_Player_DrawCrawlFlame(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    u32 frames = play->gameplayFrames;
+    f32 flicker;
+
+    if (!PlayAsGanondorf_IsCrawlFlame(play, player)) {
+        return;
+    }
+    flicker = 1.0f + (Math_SinS((s16)(frames * 0x1C00)) * 0.08f);
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Push();
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gSPSegment(POLY_XLU_DISP++, 0x08,
+               Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 0, 0, 32, 64, 1, 0, (frames * -20) & 511, 32, 128, 0, 0, 0,
+                                  -20));
+    gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 255, 170, 255, 255);
+    gDPSetEnvColor(POLY_XLU_DISP++, 100, 0, 255, 0);
+
+    Matrix_Translate(player->actor.world.pos.x, player->actor.world.pos.y + 2.0f, player->actor.world.pos.z,
+                     MTXMODE_NEW);
+    // Always faces the camera, like a torch flame
+    Matrix_RotateY(BINANG_TO_RAD((s16)(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x8000)), MTXMODE_APPLY);
+    Matrix_Scale(0.012f, 0.012f * flicker, 0.012f, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
     Matrix_Pop();
 
     CLOSE_DISPS(play->state.gfxCtx);

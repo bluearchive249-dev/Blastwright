@@ -2202,6 +2202,14 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "When Link plays the ocarina, Ganondorf raises his organ and plays the song on it instead, with an organ "
             "sound (the windmill's organ). Needs Keep C-Button Items to take the ocarina out."));
+    AddWidget(path, "Purple Flame in Crawlspaces", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CrawlFlame"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Crawlspaces are too small for him: he goes through them as a flickering purple flame instead of "
+            "turning back into Link. Off: Link is shown while crawling."));
     AddWidget(path, "Organ Close-Up Camera", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganCamera"))
         .PreFunc([](WidgetInfo& info) {

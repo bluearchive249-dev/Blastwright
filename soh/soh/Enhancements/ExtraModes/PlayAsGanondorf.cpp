@@ -193,8 +193,24 @@ static bool IsLookingFirstPerson(PlayState* play, Player* player) {
     return FindPlayerGanondorf(play) != NULL;
 }
 
+// Crawlspaces are too small for him: instead of showing Link, he travels through as a purple flame
+static bool IsCrawlFlame(PlayState* play, Player* player) {
+    if (!IsEnabled() || (play == NULL) || (player == NULL) || (player != GET_PLAYER(play)) ||
+        !(player->stateFlags2 & PLAYER_STATE2_CRAWLING) || !CVarGetInteger(CVAR_PLAY_AS_GDF("CrawlFlame"), 1)) {
+        return false;
+    }
+    if (CVarGetInteger(CVAR_PLAY_AS_GDF("ShowLinkInCutscenes"), 1) && (play->csCtx.state != CS_STATE_IDLE)) {
+        return false;
+    }
+    return FindPlayerGanondorf(play) != NULL;
+}
+
 static bool ShouldHideLinkModel(PlayState* play, Player* player) {
-    return ShouldHideLink(play, player) || IsLookingFirstPerson(play, player);
+    return ShouldHideLink(play, player) || IsLookingFirstPerson(play, player) || IsCrawlFlame(play, player);
+}
+
+extern "C" s32 PlayAsGanondorf_IsCrawlFlame(PlayState* play, Player* player) {
+    return IsCrawlFlame(play, player);
 }
 
 static void SetLinkShadowHidden(Player* player, bool hidden) {

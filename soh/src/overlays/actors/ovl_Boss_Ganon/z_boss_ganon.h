@@ -185,6 +185,7 @@ typedef struct BossGanon {
     Vec3f playerAimPos; // where attacks are thrown at
     f32 playerFloorY;   // floor below Link, replaces the arena floor (y = 0)
     Vec3f playerOrganPos; // where the organ stands (its room origin)
+    u8 playerCrawlFlame;  // travelling through a crawlspace as a purple flame
     s16 playerOrganCam;   // close-up camera on the keys while he plays (0: none)
     s16 playerOrganYaw;   // which way the organ faces
     f32 playerOrganSink;  // how far below the floor the organ is, 0 = fully up
