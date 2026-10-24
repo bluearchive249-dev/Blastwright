@@ -74,6 +74,8 @@ static bool IsStandingOnGround() {
     return CVarGetInteger(CVAR_PLAY_AS_GDF("WalkOnGround"), 1) && !sLevitating;
 }
 
+static bool sSprinting = false; // holding A on the ground: Ganondorf sprints
+
 static bool IsEnabled() {
     return CVarGetInteger(CVAR_PLAY_AS_GDF_ENABLED, 0) != 0;
 }
@@ -535,6 +537,7 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
 }
 
 extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Input* input) {
+    sSprinting = false;
     if (!ShouldHideLink(play, player)) {
         return;
     }
@@ -563,6 +566,12 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
 
     // A still opens doors, talks, climbs, grabs and so on, but no rolls, jump attacks or side hops
     u16 doAction = play->interfaceCtx.unk_1F0;
+
+    // Where A would roll or attack (blocked below), holding it makes him sprint
+    sSprinting = CVarGetInteger(CVAR_PLAY_AS_GDF("Sprint"), 1) && (ganon == NULL) && !busy && !sLevitating &&
+                 CHECK_BTN_ALL(input->cur.button, BTN_A) && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
+                 ((doAction == DO_ACTION_NONE) || (doAction == DO_ACTION_ATTACK) || (doAction == DO_ACTION_JUMP) ||
+                  (doAction == DO_ACTION_PUTAWAY));
     if (busy || sLevitating || (doAction == DO_ACTION_NONE) || (doAction == DO_ACTION_ATTACK) ||
         (doAction == DO_ACTION_JUMP) || (doAction == DO_ACTION_PUTAWAY)) {
         blocked |= BTN_A;
@@ -592,11 +601,26 @@ extern "C" s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player) {
     return ShouldHideLinkModel(play, player) || PlayAsGanondorf_IsTitleScreen(play);
 }
 
+// Holding A on the ground (where A has nothing else to do): Ganondorf sprints (see PlayAsGanondorf_FilterInput)
+extern "C" s32 PlayAsGanondorf_IsSprinting(void) {
+    return sSprinting && IsEnabled();
+}
+
 extern "C" f32 PlayAsGanondorf_GetRunSpeedFactor(PlayState* play, Player* player) {
     if (!ShouldHideLink(play, player)) {
         return 1.0f;
     }
-    return CVarGetFloat(CVAR_PLAY_AS_GDF("RunSpeed"), 1.5f);
+    return CVarGetFloat(CVAR_PLAY_AS_GDF("RunSpeed"), 1.5f) *
+           (sSprinting ? CVarGetFloat(CVAR_PLAY_AS_GDF("SprintSpeed"), 1.5f) : 1.0f);
+}
+
+// Holding a found item up: it's drawn above his hands instead of Link's
+extern "C" s32 PlayAsGanondorf_GetItemHoldPos(PlayState* play, Player* player, Vec3f* pos) {
+    if (!ShouldHideLink(play, player)) {
+        return false;
+    }
+    BossGanon* dorf = FindPlayerGanondorf(play);
+    return (dorf != NULL) && (FindPlayerGanon(play) == NULL) && BossGanon_Player_GetItemHoldPos(&dorf->actor, pos);
 }
 
 extern "C" s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye) {

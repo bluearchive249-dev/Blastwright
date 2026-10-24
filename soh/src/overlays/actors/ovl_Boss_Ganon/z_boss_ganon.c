@@ -5371,6 +5371,9 @@ void BossGanon_Player_SetupOrgan(BossGanon* this, PlayState* play);
 void BossGanon_Player_Organ(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play);
 void BossGanon_Player_Ride(BossGanon* this, PlayState* play);
+void BossGanon_Player_Climb(BossGanon* this, PlayState* play);
+void BossGanon_Player_ItemGet(BossGanon* this, PlayState* play);
+static void BossGanon_Player_TwistLean(BossGanon* this, f32 twist, f32 lean);
 static s32 BossGanon_Player_GetSeat(PlayState* play, Vec3f* seat);
 void BossGanon_Player_DarkAura(BossGanon* this, PlayState* play);
 static u8 sPlayerDarkAuraMode = false;
@@ -5599,6 +5602,7 @@ static f32 BossGanon_Player_WalkArmPhase(BossGanon* this) {
 // space), his legs run straight on two tracks.
 #define GDF_WALK_PELVIS_YAW -3641
 #define GDF_WALK_FOOT_SPLAY 1820 // 10 degrees outward
+#define GDF_CLIMB_WALL_GAP 10.0f // climbing: further from the wall than Link
 
 // out = (transposeA ? a^T : a) * b
 static void BossGanon_Player_Mul3(f32 a[3][3], f32 b[3][3], f32 out[3][3], s32 transposeA) {
@@ -5663,7 +5667,7 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
     SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, frameB, GDF_YOUNG_WALK_JOINTS, sYoungB);
     SkelAnime_InterpFrameTable(GDF_YOUNG_WALK_JOINTS, sYoung, sYoungA, sYoungB, frac);
 
-    stride = CLAMP(this->playerWalkStride, 1.0f, GDF_WALK_MAX_STRIDE);
+    stride = CLAMP(this->playerWalkStride, 1.0f, GDF_WALK_MAX_STRIDE + (0.7f * this->playerSprintWeight));
 
     for (b = 0; b < GDF_LIMB_COUNT_PLAYER; b++) {
         s8 y = sGdfBossToYoungLimb[b];
@@ -5764,8 +5768,10 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     u8 moving = (speed > 0.5f) && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
 
     Math_ApproachF(&this->playerWalkWeight, moving ? 1.0f : 0.0f, 1.0f, 0.15f);
+    // Sprinting (holding A): a faster cycle, longer strides and a forward lean
+    Math_ApproachF(&this->playerSprintWeight, (moving && PlayAsGanondorf_IsSprinting()) ? 1.0f : 0.0f, 1.0f, 0.1f);
 
-    rate = CLAMP(speed / GDF_WALK_NATURAL_SPEED, 0.5f, GDF_WALK_MAX_RATE);
+    rate = CLAMP(speed / GDF_WALK_NATURAL_SPEED, 0.5f, GDF_WALK_MAX_RATE + this->playerSprintWeight);
     this->playerWalkStride = speed / (GDF_WALK_NATURAL_SPEED * GDF_WALK_MAX_RATE);
     if (moving || (this->playerWalkWeight > 0.0f)) {
         this->playerWalkFrame += rate;
@@ -5775,6 +5781,9 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     }
 
     BossGanon_Player_ApplyWalk(this);
+    if (this->playerSprintWeight > 0.0f) {
+        BossGanon_Player_TwistLean(this, 0.0f, 0x0C00 * this->playerSprintWeight * this->playerWalkWeight);
+    }
 }
 
 // Keeps his lowest ankle at the floor (from the last draw), so any animation stands on the ground
@@ -5912,6 +5921,18 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
     f32 dx;
     f32 dy;
     f32 dz;
+
+    // Climbing: a little further from the wall than Link, he's much bigger
+    if (this->actionFunc == BossGanon_Player_Climb) {
+        target = player->actor.world.pos;
+        target.x -= Math_SinS(player->actor.shape.rot.y) * GDF_CLIMB_WALL_GAP;
+        target.z -= Math_CosS(player->actor.shape.rot.y) * GDF_CLIMB_WALL_GAP;
+        target.y += this->playerGroundOffset;
+        this->actor.world.pos.x += (target.x - this->actor.world.pos.x) * 0.5f;
+        this->actor.world.pos.y += (target.y - this->actor.world.pos.y) * 0.5f;
+        this->actor.world.pos.z += (target.z - this->actor.world.pos.z) * 0.5f;
+        return;
+    }
 
     // Riding: his pelvis on the saddle
     if ((this->actionFunc == BossGanon_Player_Ride) && BossGanon_Player_GetSeat(play, &target)) {
@@ -8146,6 +8167,29 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
+    // Climbing a ladder or a vine wall
+    if ((player->stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER) && (this->actionFunc != BossGanon_Player_Climb) &&
+        (this->actionFunc != BossGanon_Player_Downed) && !this->playerHidden) {
+        BossGanon_Player_ReleaseOrganCam(this, play);
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -5.0f);
+        this->actionFunc = BossGanon_Player_Climb;
+        this->playerWalkWeight = 0.0f;
+        this->playerStandLegsWeight = 0.0f;
+    }
+
+    // Holding up something he found (a chest, a heart piece, ...), like Link does
+    if ((player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) && (player->unk_862 != 0) &&
+        (this->actionFunc != BossGanon_Player_ItemGet) && (this->actionFunc != BossGanon_Player_Downed) &&
+        (this->actionFunc != BossGanon_Player_Ride) && !this->playerHidden) {
+        BossGanon_Player_ReleaseOrganCam(this, play);
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -5.0f);
+        this->actionFunc = BossGanon_Player_ItemGet;
+        this->playerItemWeight = 0.0f;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+    }
+
     // On his horse
     if ((player->stateFlags1 & PLAYER_STATE1_ON_HORSE) && (this->actionFunc != BossGanon_Player_Ride) &&
         (this->actionFunc != BossGanon_Player_Downed)) {
@@ -8203,7 +8247,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
     {
         // The dark aura handles his legs itself (it walks)
-        u8 standLegs = (this->actionFunc != BossGanon_Player_DarkAura) && this->playerGrounded && !this->playerHidden &&
+        u8 standLegs = (this->actionFunc != BossGanon_Player_DarkAura) && (this->actionFunc != BossGanon_Player_Climb) &&
+                       this->playerGrounded && !this->playerHidden &&
                        ((this->actionFunc == BossGanon_Player_Block) ||
                         (this->actionFunc == BossGanon_Player_ChargeLightBall) ||
                         (this->actionFunc == BossGanon_Player_Throw) ||
@@ -8213,7 +8258,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         // In fast (the morph into the action already smooths it); out over ~13 frames, longer than the 10-frame
         // morph back to his standing idle, so the floating root height never shows
         Math_ApproachF(&this->playerStandLegsWeight, standLegs ? 1.0f : 0.0f, 1.0f, standLegs ? 0.5f : 0.08f);
-        if (this->actionFunc == BossGanon_Player_DarkAura) {
+        if ((this->actionFunc == BossGanon_Player_DarkAura) || (this->actionFunc == BossGanon_Player_Climb)) {
             this->playerStandLegsWeight = 0.0f;
         } else if (this->playerGrounded) {
             BossGanon_Player_StandLegs(this);
@@ -8259,7 +8304,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     // After the action, so the block's own intangibility doesn't count as getting hurt
     this->playerPrevInvincibilityTimer = player->invincibilityTimer;
 
-    if (this->playerGrounded) {
+    if (this->playerGrounded && (this->actionFunc != BossGanon_Player_Climb)) {
         BossGanon_Player_UpdateGroundOffset(this, play);
     }
     BossGanon_Player_UpdateSwordHit(this, play);
@@ -8979,6 +9024,111 @@ void BossGanon_Player_Ride(BossGanon* this, PlayState* play) {
     // Fists forward on the reins
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfReinsPoses[0], 1.0f);
     BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfReinsPoses[1], 1.0f);
+}
+
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf", climbing ladders and vine walls, and holding up found items
+// ------------------------------------------------------------------------------------------------
+
+// Arm poses solved offline with inverse kinematics on his skeleton: fists on the ladder high above his head and at
+// chest height, and both fists raised together over his head holding an item
+static const Vec3s sGdfClimbPoses[4][3] = {
+    { { -6994, -3513, 7468 }, { 2852, -12664, -4315 }, { 4392, -9851, 1201 } }, // left arm, high
+    { { -3521, 3968, -14824 }, { -2707, -7560, -24466 }, { -7238, -8633, -1420 } }, // left arm, low
+    { { -28322, 19201, 21828 }, { 834, 7723, -14672 }, { 5723, -5859, -6160 } }, // right arm, high
+    { { 32551, 25869, 21196 }, { -1118, 6437, -14874 }, { -1091, -2672, -4555 } }, // right arm, low
+};
+static const Vec3s sGdfItemPoses[2][3] = {
+    { { 11691, 27520, -16011 }, { 3178, -1419, -16117 }, { 7921, -1511, -7597 } }, // left arm
+    { { -28634, 15814, 19375 }, { 1338, 7492, -14082 }, { 8790, -4294, -8015 } }, // right arm
+};
+
+// Hand over hand: each arm reaches up while the other pulls, the knee on the same side lifts with the reaching arm.
+// The cycle follows how far Link actually climbs.
+void BossGanon_Player_Climb(BossGanon* this, PlayState* play) {
+    static Vec3s sKneeL[GDF_YOUNG_WALK_JOINTS];
+    static Vec3s sKneeR[GDF_YOUNG_WALK_JOINTS];
+    static u8 sKneesRead = false;
+    Player* player = GET_PLAYER(play);
+    Vec3s* joints = this->skelAnime.jointTable;
+    Vec3s armL[3];
+    Vec3s armR[3];
+    f32 t;
+    s32 i;
+
+    if (!(player->stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER) || this->playerHidden) {
+        BossGanon_Player_SetupFloat(this, play);
+        return;
+    }
+    if (!sKneesRead) {
+        SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, 5, GDF_YOUNG_WALK_JOINTS, sKneeL);
+        SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, 20, GDF_YOUNG_WALK_JOINTS, sKneeR);
+        sKneesRead = true;
+    }
+
+    SkelAnime_Update(&this->skelAnime);
+    this->playerWalkWeight = 0.0f;
+    this->playerStandLegsWeight = 0.0f;
+    Math_ApproachZeroF(&this->playerGroundOffset, 1.0f, 4.0f);
+
+    sCape->backPush = -2.0f;
+    sCape->backSwayMagnitude = 0.25f;
+    sCape->sideSwayMagnitude = -1.0f;
+    sCape->minDist = 0.0f;
+
+    this->playerClimbPhase += Math_Vec3f_DistXYZ(&player->actor.world.pos, &player->actor.prevPos) * 0.25f;
+    t = 0.5f + (0.5f * Math_SinF(this->playerClimbPhase));
+
+    for (i = 0; i < 3; i++) {
+        BossGanon_Player_SlerpRot((Vec3s*)&sGdfClimbPoses[1][i], (Vec3s*)&sGdfClimbPoses[0][i], 1.0f - t, &armL[i]);
+        BossGanon_Player_SlerpRot((Vec3s*)&sGdfClimbPoses[3][i], (Vec3s*)&sGdfClimbPoses[2][i], t, &armR[i]);
+    }
+    BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, armL, 1.0f);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, armR, 1.0f);
+
+    // Knees: the left one up with the left arm, the right one with the right arm
+    for (i = 19; i <= 20; i++) {
+        BossGanon_Player_SlerpRot(&joints[1 + i], &sKneeL[1 + sGdfBossToYoungLimb[i]], (1.0f - t) * 0.8f,
+                                  &joints[1 + i]);
+    }
+    for (i = 22; i <= 23; i++) {
+        BossGanon_Player_SlerpRot(&joints[1 + i], &sKneeR[1 + sGdfBossToYoungLimb[i]], t * 0.8f, &joints[1 + i]);
+    }
+}
+
+// Both fists up over his head with the item between them, like Link holding up what he found
+void BossGanon_Player_ItemGet(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    if (!(player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) || (player->unk_862 == 0) || this->playerHidden) {
+        BossGanon_Player_SetupFloat(this, play);
+        return;
+    }
+
+    SkelAnime_Update(&this->skelAnime);
+    this->playerWalkWeight = 0.0f;
+    Math_ApproachF(&this->playerItemWeight, 1.0f, 1.0f, 0.2f);
+    BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfItemPoses[0], this->playerItemWeight);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfItemPoses[1], this->playerItemWeight);
+
+    sCape->backPush = -2.0f;
+    sCape->backSwayMagnitude = 0.25f;
+    sCape->sideSwayMagnitude = -1.0f;
+    sCape->minDist = 0.0f;
+}
+
+// Where the item he's holding up is drawn: between his fists (from the last draw)
+s32 BossGanon_Player_GetItemHoldPos(Actor* thisx, Vec3f* pos) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    if ((thisx == NULL) || !GDF_IS_PLAYER(this) || (this->actionFunc != BossGanon_Player_ItemGet) ||
+        this->playerHidden || (this->playerItemWeight < 0.5f)) {
+        return false;
+    }
+    pos->x = (this->unk_238.x + this->unk_22C.x) * 0.5f;
+    pos->y = (this->unk_238.y + this->unk_22C.y) * 0.5f;
+    pos->z = (this->unk_238.z + this->unk_22C.z) * 0.5f;
+    return true;
 }
 
 void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play) {

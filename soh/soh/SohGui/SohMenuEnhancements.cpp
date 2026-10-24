@@ -2174,6 +2174,22 @@ void SohMenu::AddMenuEnhancements() {
         .Options(FloatSliderOptions().Min(1.0f).Max(2.5f).DefaultValue(1.5f).Format("%.2fx").Tooltip(
             "How fast Ganondorf moves compared to Link, on the ground, in jumps and while levitating. "
             "1.0 is Link's speed."));
+    AddWidget(path, "Sprint (Hold A)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Sprint"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Hold A while running to sprint: faster, with longer strides and a forward lean. A still talks, opens "
+            "doors, climbs and so on wherever it has something to do."));
+    AddWidget(path, "Sprint Speed: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SprintSpeed"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Sprint"), 1) == 0;
+        })
+        .Options(FloatSliderOptions().Min(1.0f).Max(2.5f).DefaultValue(1.5f).Format("%.2fx").Tooltip(
+            "How much faster than his run he sprints."));
     AddWidget(path, "Ganondorf Camera Distance: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CameraDistance"))
         .PreFunc([](WidgetInfo& info) {

@@ -1712,8 +1712,13 @@ void Player_DrawGetItem(PlayState* play, Player* this) {
     // if (!this->giObjectLoading || !osRecvMesg(&this->giObjectLoadQueue, NULL, OS_MESG_NOBLOCK)) // OTRTODO: Do
     // something about osRecvMesg here...
     {
+        Vec3f ganondorfHands; // SoH: "Play as Ganondorf", he holds the item up between his fists
+
         this->giObjectLoading = false;
-        Player_DrawGetItemImpl(play, this, &sGetItemRefPos, ABS(this->unk_862));
+        Player_DrawGetItemImpl(play, this,
+                               PlayAsGanondorf_GetItemHoldPos(play, this, &ganondorfHands) ? &ganondorfHands
+                                                                                             : &sGetItemRefPos,
+                               ABS(this->unk_862));
     }
 }
 

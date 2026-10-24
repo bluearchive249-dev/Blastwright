@@ -185,6 +185,9 @@ typedef struct BossGanon {
     Vec3f playerAimPos; // where attacks are thrown at
     f32 playerFloorY;   // floor below Link, replaces the arena floor (y = 0)
     Vec3f playerOrganPos; // where the organ stands (its room origin)
+    f32 playerSprintWeight; // holding A on the ground: sprinting
+    f32 playerClimbPhase;   // ladder and vine climbing cycle
+    f32 playerItemWeight;   // holding a found item up
     f32 playerRideFrame;  // riding his horse: the young Ganondorf horseback ride cycle
     u8 playerCrawlFlame;  // travelling through a crawlspace as a purple flame
     s16 playerOrganCam;   // close-up camera on the keys while he plays (0: none)
@@ -234,6 +237,7 @@ typedef struct BossGanon {
 
 // SoH: "Play as Ganondorf"
 s32 BossGanon_Player_IsBusy(Actor* thisx);
+s32 BossGanon_Player_GetItemHoldPos(Actor* thisx, Vec3f* pos);
 s32 BossGanon_Player_IsHidden(Actor* thisx);
 s32 BossGanon_IsPlayerAttack(Actor* actor);
 s32 BossGanon_Player_CanAct(Actor* thisx);
