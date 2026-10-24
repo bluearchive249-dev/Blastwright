@@ -104,6 +104,51 @@ static u8 sMaskTex[MANT_TEX_WIDTH * MANT_TEX_HEIGHT] = { { 0 } };
 
 #include "overlays/ovl_En_Ganon_Mant/ovl_En_Ganon_Mant.h"
 
+// SoH: Phantom Ganon skin for the player Ganondorf ("Play as Ganondorf"). His cape turns black and gray, with a
+// ragged hem (some strands end early) and holes worn through it.
+static u8 sPhantomMantTex[MANT_TEX_WIDTH * MANT_TEX_HEIGHT * 2];
+static const u8 sPhantomHem[GANON_MANT_NUM_STRANDS] = { 12, 9, 11, 8, 12, 10, 7, 11, 9, 12, 8, 10 };
+
+static s32 EnGanonMant_IsPhantom(EnGanonMant* this) {
+    return this->ownVertices && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"), 0);
+}
+
+// The cape texture in grays, with holes (alpha 0) worn into the middle of the cape and wherever it was torn
+static s32 EnGanonMant_BuildPhantomTex(void) {
+    u8* src = (u8*)ResourceGetDataByName(gMantTex);
+    s32 i;
+
+    if (src == NULL) {
+        return false;
+    }
+    for (i = 0; i < MANT_TEX_WIDTH * MANT_TEX_HEIGHT; i++) {
+        s32 tx = i % MANT_TEX_WIDTH;
+        s32 ty = i / MANT_TEX_WIDTH;
+        u16 c = (src[2 * i] << 8) | src[2 * i + 1];
+        s32 r = (c >> 11) & 0x1F;
+        s32 g = (c >> 6) & 0x1F;
+        s32 b = (c >> 1) & 0x1F;
+        s32 gray = (r * 77 + g * 150 + b * 29) >> 8;
+        u32 hash = (u32)(tx * 73856093) ^ (u32)(ty * 19349663);
+        u8 hole;
+
+        gray = 2 + (gray * 15) / 31;
+        // The texture repeats mirrored along the cape: tx near 0 is both the top and the hem, so the holes stay in
+        // the middle of the cape
+        hash ^= hash >> 13;
+        hash *= 0x5BD1E995;
+        hash ^= hash >> 15;
+        hole = (tx >= 12) && ((hash % 100) < 9);
+        if (sMaskTex[i]) {
+            hole = true;
+        }
+        c = (gray << 11) | (gray << 6) | (gray << 1) | (hole ? 0 : 1);
+        sPhantomMantTex[2 * i] = c >> 8;
+        sPhantomMantTex[2 * i + 1] = c & 0xFF;
+    }
+    return true;
+}
+
 // SoH: double-buffered vertices for the cape that owns them (only the player-controlled Ganondorf's cape).
 // Filled from the shared buffers once so texture coordinates and colors match.
 #define GANON_MANT_NUM_VTX 144
@@ -373,22 +418,28 @@ void EnGanonMant_UpdateVertices(EnGanonMant* this) {
     strand = &this->strands[0];
     for (i = 0; i < GANON_MANT_NUM_STRANDS; i++, strand++) {
         for (j = 0, k = 0; j < GANON_MANT_NUM_JOINTS; j++, k += GANON_MANT_NUM_JOINTS) {
+            s16 jp = j;
+
+            // SoH: Phantom Ganon's ragged hem, this strand ends early
+            if (EnGanonMant_IsPhantom(this) && (j >= sPhantomHem[i])) {
+                jp = sPhantomHem[i] - 1;
+            }
             vtx = &vertices[sVerticesMap[i + k]];
             // SoH: the player-controlled Ganondorf's cape is stored relative to an anchor too, so the 60 fps
             // interpolation moves it smoothly together with him instead of in 20 fps steps
             if (this->isLinkCape || this->ownVertices) {
                 // SoH: store relative to the anchor at higher precision; the small cape would
                 // visibly snap to whole units otherwise
-                vtx->n.ob[0] = CLAMP((strand->joints[j].x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
-                vtx->n.ob[1] = CLAMP((strand->joints[j].y - this->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
-                vtx->n.ob[2] = CLAMP((strand->joints[j].z - this->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+                vtx->n.ob[0] = CLAMP((strand->joints[jp].x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+                vtx->n.ob[1] = CLAMP((strand->joints[jp].y - this->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+                vtx->n.ob[2] = CLAMP((strand->joints[jp].z - this->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
             } else {
-                vtx->n.ob[0] = strand->joints[j].x;
-                vtx->n.ob[1] = strand->joints[j].y;
-                vtx->n.ob[2] = strand->joints[j].z;
+                vtx->n.ob[0] = strand->joints[jp].x;
+                vtx->n.ob[1] = strand->joints[jp].y;
+                vtx->n.ob[2] = strand->joints[jp].z;
             }
-            Matrix_RotateY(strand->rotations[j].y, MTXMODE_NEW);
-            Matrix_RotateX(strand->rotations[j].x, MTXMODE_APPLY);
+            Matrix_RotateY(strand->rotations[jp].y, MTXMODE_NEW);
+            Matrix_RotateX(strand->rotations[jp].x, MTXMODE_APPLY);
             Matrix_MultVec3f(&up, &normal);
             vtx->n.n[0] = normal.x;
             vtx->n.n[1] = normal.y;
@@ -442,7 +493,16 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     // set texture
-    gSPDisplayList(POLY_OPA_DISP++, gMantMaterialDL);
+    if (EnGanonMant_IsPhantom(this) && EnGanonMant_BuildPhantomTex()) {
+        gSPInvalidateTexCache(POLY_OPA_DISP++, sPhantomMantTex);
+        gDPPipeSync(POLY_OPA_DISP++);
+        gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, sPhantomMantTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, MANT_TEX_WIDTH,
+                            MANT_TEX_HEIGHT, 0, G_TX_MIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_CLAMP, 5, 6, G_TX_NOLOD,
+                            G_TX_NOLOD);
+    } else {
+        gSPDisplayList(POLY_OPA_DISP++, gMantMaterialDL);
+    }
 
     // set vertices, vertices are double buffered to prevent
     // modification of vertices as they are being drawn

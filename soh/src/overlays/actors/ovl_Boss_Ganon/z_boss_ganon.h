@@ -233,10 +233,19 @@ typedef struct BossGanon {
     f32 playerJumpTopY;    // highest point of the jump, for the landing
     f32 playerAirWeight;   // 0 on the ground .. 1 in the air (jump pose)
     u8 playerOrganOcarina; // the organ is played as his ocarina (Link's songs), not for Ganondorf's Theme
+    // Phantom Ganon skin: his skeleton, posed from Ganondorf's every frame, and the spear's hit points
+    SkelAnime playerPgSkel;
+    Vec3s playerPgJoints[26];
+    Vec3s playerPgMorph[26];
+    u8 playerPgReady;
+    u8 playerSpearValid;
+    Vec3f playerSpearBase;
+    Vec3f playerSpearTip;
 } BossGanon;
 
 // SoH: "Play as Ganondorf"
 s32 BossGanon_Player_IsBusy(Actor* thisx);
+s32 BossGanon_Player_IsPhantom(void);
 s32 BossGanon_Player_GetItemHoldPos(Actor* thisx, Vec3f* pos);
 s32 BossGanon_Player_AuraReaches(PlayState* play, Actor* boss, Vec3f* pos);
 void BossGanon_Player_AuraFakeHit(Collider* col, ColliderInfo* elem, u32 dmgFlags);

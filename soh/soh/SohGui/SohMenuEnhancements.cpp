@@ -2214,6 +2214,16 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(30.0f).Max(150.0f).DefaultValue(70.0f).Format("%.0f").Tooltip(
             "How high Ganondorf floats above the ground. He floats at 150 in his boss fight."));
+    AddWidget(path, "Phantom Ganon Skin", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Play as Phantom Ganon: his model, his spear and his voice, with Ganondorf's cape in black and gray, "
+            "ragged and worn through. Always holds the spear: B, B, B is two slashes and a stab, stick + R then B a "
+            "lunging stab, R + B (or C-Left) a ball of light. No Big Magic or sword skills. D-Pad Left still toggles "
+            "the dark aura."));
     AddWidget(path, "Organ Instead of Ocarina", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganOcarina"))
         .PreFunc([](WidgetInfo& info) {

@@ -9,6 +9,7 @@
 #include "assets/objects/object_ganon_anime1/object_ganon_anime1.h"
 #include "assets/objects/object_ganon_anime2/object_ganon_anime2.h"
 #include "assets/objects/object_gndd/object_gndd.h"
+#include "assets/objects/object_gnd/object_gnd.h" // SoH: Phantom Ganon skin for "Play as Ganondorf"
 #include "soh/Enhancements/ExtraModes/GanondorfSword.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
@@ -87,6 +88,9 @@ static void BossGanon_Init_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Update_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Player_DrawSword(struct BossGanon* this, PlayState* play);
+static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF* base);
+static u8 sGdfPgCapture = false;
+static MtxF sGdfLimbMtx[25];
 static void BossGanon_LightBall_Update_Impl(Actor* thisx, PlayState* play);
 static void func_808E1EB4_Impl(Actor* thisx, PlayState* play);
 static void func_808E2544_Impl(Actor* thisx, PlayState* play);
@@ -594,6 +598,11 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
 
     // SoH: "Play as Ganondorf"
     if (GDF_IS_PLAYER(this)) {
+        if (this->playerPgReady) {
+            // Phantom Ganon's tables are part of the actor: only the skeleton registration goes
+            ResourceMgr_UnregisterSkeleton(&this->playerPgSkel);
+            this->playerPgReady = false;
+        }
         Collider_DestroyQuad(play, &this->playerSwordQuad);
         if ((this->playerSwordBlure >= 0) && (this->playerSwordBlure < TOTAL_EFFECT_COUNT)) {
             Effect_Delete(play, this->playerSwordBlure);
@@ -3507,6 +3516,11 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
             break;
     }
 
+    // SoH: Phantom Ganon skin, Ganondorf's own model isn't drawn
+    if (sGdfPgCapture) {
+        *dList = NULL;
+    }
+
     return 0;
 }
 
@@ -3529,6 +3543,11 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_2EC[bodyPart]);
     }
 
+    // SoH: Phantom Ganon skin, every limb's matrix for posing his skeleton
+    if (sGdfPgCapture && (limbIndex >= 1) && (limbIndex <= 25)) {
+        Matrix_Get(&sGdfLimbMtx[limbIndex - 1]);
+    }
+
     // SoH: "Play as Ganondorf", his hands hold the sword and the sheath
     if (GDF_IS_PLAYER(this)) {
         if (limbIndex == 6) {
@@ -3547,8 +3566,10 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
         OPEN_DISPS(play->state.gfxCtx);
 
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_208);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfEyesDL));
+        if (!sGdfPgCapture) {
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfEyesDL));
+        }
 
         CLOSE_DISPS(play->state.gfxCtx);
     } else if (limbIndex == 6) {
@@ -4098,7 +4119,22 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
 
     gSPSegment(POLY_XLU_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gGanondorfNormalEyeTex));
 
-    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, BossGanon_OverrideLimbDraw, BossGanon_PostLimbDraw, &this->actor);
+    // SoH: "Play as Ganondorf", Phantom Ganon skin: Ganondorf's skeleton still runs (without drawing) so everything
+    // that follows his hands, head and shoulders keeps working, and Phantom Ganon is drawn in the same pose
+    if (GDF_IS_PLAYER(this) && BossGanon_Player_IsPhantom()) {
+        MtxF base;
+
+        Matrix_Get(&base);
+        sGdfPgCapture = true;
+        SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, BossGanon_OverrideLimbDraw, BossGanon_PostLimbDraw,
+                                  &this->actor);
+        sGdfPgCapture = false;
+        BossGanon_Player_DrawPhantom(this, play, &base);
+    } else {
+        this->playerSpearValid = false;
+        SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, BossGanon_OverrideLimbDraw, BossGanon_PostLimbDraw,
+                                  &this->actor);
+    }
 
     // SoH: "Play as Ganondorf", sword stance
     if (GDF_IS_PLAYER(this)) {
@@ -5346,6 +5382,52 @@ void BossGanon_DrawEffects(PlayState* play) {
 
 #define CVAR_PLAY_AS_GDF(var) CVAR_ENHANCEMENT("PlayAsGanondorf." var)
 
+s32 BossGanon_Player_IsPhantom(void);
+
+// Phantom Ganon skin: his own voice and magic sounds in place of Ganondorf's
+static u16 BossGanon_Player_Voice(u16 sfx) {
+    // Looping sounds are passed as "id - SFX_FLAG"
+    u8 looping = !(sfx & SFX_FLAG);
+    u16 id = looping ? (sfx + SFX_FLAG) : sfx;
+    u16 out;
+
+    if (!BossGanon_Player_IsPhantom()) {
+        return sfx;
+    }
+    switch (id) {
+        case NA_SE_EN_GANON_LAUGH:
+            out = NA_SE_EN_FANTOM_LAUGH;
+            break;
+        case NA_SE_EN_GANON_AT_RETURN:
+        case NA_SE_EN_GANON_THROW:
+        case NA_SE_EN_GANON_THROW_BIG:
+            out = NA_SE_EN_FANTOM_VOICE;
+            break;
+        case NA_SE_EN_GANON_DAMAGE1:
+            out = NA_SE_EN_FANTOM_DAMAGE;
+            break;
+        case NA_SE_EN_GANON_DAMAGE2:
+            out = NA_SE_EN_FANTOM_DAMAGE2;
+            break;
+        case NA_SE_EN_GANON_SPARK:
+            out = NA_SE_EN_FANTOM_SPARK;
+            break;
+        case NA_SE_EN_GANON_CHARGE_MASIC:
+        case NA_SE_EN_GANON_THROW_MASIC:
+            out = NA_SE_EN_FANTOM_MASIC2;
+            break;
+        case NA_SE_EN_GANON_FIRE:
+            out = NA_SE_EN_FANTOM_FIRE;
+            break;
+        case NA_SE_EN_GANON_HIT_THUNDER:
+            out = NA_SE_EN_FANTOM_HIT_THUNDER;
+            break;
+        default:
+            return sfx;
+    }
+    return looping ? (out - SFX_FLAG) : out;
+}
+
 void BossGanon_Player_Update(Actor* thisx, PlayState* play);
 void BossGanon_PlayerLightBall_Update(Actor* thisx, PlayState* play);
 void BossGanon_PlayerBigMagic_Update(Actor* thisx, PlayState* play);
@@ -6459,7 +6541,9 @@ static void BossGanon_Player_ApplyStanceArms(BossGanon* this) {
     f32 phase;
     s32 i;
 
-    Math_ApproachF(&this->playerSheathArmWeight, (sPlayerSwordState != GDF_SWORD_OFF) ? 1.0f : 0.0f, 1.0f, 0.2f);
+    // Phantom Ganon has no sheath: his left arm stays free
+    Math_ApproachF(&this->playerSheathArmWeight,
+                   ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_IsPhantom()) ? 1.0f : 0.0f, 1.0f, 0.2f);
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
                               this->playerSheathArmWeight);
 
@@ -6729,14 +6813,14 @@ void BossGanon_Player_SetupLand(BossGanon* this, PlayState* play, f32 height) {
     pos.y = this->playerFloorY;
     Actor_RequestQuakeAndRumble(&this->actor, play, (height > 250.0f) ? 5 : 3, 12);
     Actor_SpawnFloorDustRing(play, &this->actor, &pos, 40.0f, 10, 6.0f, 400, 25, true);
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND));
 }
 
 // Down on one knee, a moment, then he rises
 void BossGanon_Player_Land(BossGanon* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
 
-    if (sPlayerSwordState != GDF_SWORD_OFF) {
+    if ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_IsPhantom()) {
         BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD], 1.0f);
     }
     sCape->minDist = 0.0f;
@@ -6833,7 +6917,7 @@ static void BossGanon_Player_SetupSwordDash(BossGanon* this, PlayState* play, s1
         player->invincibilityTimer = -8;
     }
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FLOAT);
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_AT_RETURN);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
 }
 
 // Stick direction in the world (camera-relative), or -1 when the stick is neutral
@@ -6860,18 +6944,18 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
     if (CVarGetInteger(CVAR_PLAY_AS_GDF("DPadLeftMode"), 0) == 0) {
         sPlayerDarkAuraMode = !sPlayerDarkAuraMode;
         if (sPlayerDarkAuraMode) {
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
             BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
             BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
         } else {
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
         }
         return true;
     }
     if (sPlayerSwordState == GDF_SWORD_OFF) {
         sPlayerSwordState = GDF_SWORD_SHEATHED;
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
         BossGanon_Player_SetupSwordIdle(this, play);
         return true;
     }
@@ -6908,13 +6992,53 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
         return;
     }
 
+    // Phantom Ganon: B slashes (B, B, then a stab), stick + R and B a lunging stab, R + B or C-Left a ball of light.
+    // No Big Magic and no sword skills. D-Pad Left still toggles the dark aura (so no boss can leave him stuck).
+    if (BossGanon_Player_IsPhantom()) {
+        u8 useCButtons = !CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0);
+
+        if (GanondorfSongs_IsOcarinaOut()) {
+            return;
+        }
+        if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
+            sPlayerDarkAuraMode = !sPlayerDarkAuraMode;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_SPARK);
+            if (sPlayerDarkAuraMode) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
+                BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
+            }
+            return;
+        }
+        stickYaw = BossGanon_Player_StickYaw(play);
+        if (CHECK_BTN_ALL(input->press.button, BTN_R) && (stickYaw >= 0)) {
+            BossGanon_Player_SetupSwordDash(this, play, (s16)stickYaw);
+            return;
+        }
+        if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+            if (sPlayerDarkAuraMode) {
+                BossGanon_Player_SetupDarkAura(this, play);
+            } else if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
+                BossGanon_Player_StartAttack(this, BTN_B);
+                BossGanon_Player_SetupChargeLightBall(this, play);
+            } else {
+                BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_COMBO1);
+            }
+        } else if (useCButtons && CHECK_BTN_ALL(input->press.button, BTN_CLEFT)) {
+            BossGanon_Player_StartAttack(this, BTN_CLEFT);
+            BossGanon_Player_SetupChargeLightBall(this, play);
+        } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
+            BossGanon_Player_SetupLaugh(this, play);
+        }
+        return;
+    }
+
     // D-Pad Left: blade back into the sheath, or the sword away
     if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
         if (sPlayerSwordState == GDF_SWORD_DRAWN) {
             BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_SHEATHE);
         } else {
             sPlayerSwordState = GDF_SWORD_OFF;
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
             BossGanon_Player_SetupFloat(this, play);
         }
         return;
@@ -6954,7 +7078,7 @@ static void BossGanon_Player_SwordImpact(BossGanon* this, PlayState* play, f32 r
 
     pos.y = this->playerFloorY + 2.0f;
     Actor_RequestQuakeAndRumble(&this->actor, play, 6, 20);
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND_IMP));
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
     EffectSsBlast_SpawnWhiteShockwave(play, &pos, &zero, &zero);
     Actor_SpawnFloorDustRing(play, &this->actor, &pos, radius * 0.4f, 16, 8.0f, 700, 30, true);
@@ -6982,7 +7106,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     }
 
     // Left arm keeps the sheath, right arm follows the attack, and his whole body moves with it
-    Math_ApproachF(&this->playerSheathArmWeight, 1.0f, 1.0f, 0.2f);
+    Math_ApproachF(&this->playerSheathArmWeight, BossGanon_Player_IsPhantom() ? 0.0f : 1.0f, 1.0f, 0.2f);
     BossGanon_Player_ApplyAttackBody(this, this->playerSwordTimer);
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
                               this->playerSheathArmWeight);
@@ -7002,13 +7126,15 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PUTAWAY);
     }
     if ((this->playerSwordAttack == GDF_SWORD_ATK_DRAW) && (this->playerSwordTimer == 18)) {
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
     }
 
     if (this->playerSwordTimer == atk->activeStart) {
         Audio_PlayActorSound2(&this->actor, atk->swingSfx);
-        if (this->playerSwordAttack != GDF_SWORD_ATK_DRAW) {
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_AT_RETURN);
+        if (BossGanon_Player_IsPhantom() && (this->playerSwordAttack == GDF_SWORD_ATK_THRUST)) {
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_ATTACK);
+        } else if (this->playerSwordAttack != GDF_SWORD_ATK_DRAW) {
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
         }
     }
 
@@ -7024,7 +7150,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     if (this->playerSwordTimer == atk->impactFrame) {
         if (this->playerSwordAttack == GDF_SWORD_ATK_WAVE) {
             // Dark energy flies off the blade towards whatever he's facing
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE));
             BossGanon_Player_AimRot(&this->playerBladeTip, &this->playerAimPos, &rotX, &rotY);
             Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->playerBladeTip.x,
                                this->playerBladeTip.y, this->playerBladeTip.z, rotX, rotY, 0,
@@ -7046,7 +7172,11 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     }
     if (this->playerSwordQueued && (this->playerSwordTimer >= atk->activeEnd) &&
         BossGanon_Player_CanStartAttack(this, play)) {
-        BossGanon_Player_SetupSwordAttack(this, play, atk->next);
+        // Phantom Ganon finishes the combo with a stab of the spear instead of the overhead slam
+        BossGanon_Player_SetupSwordAttack(this, play,
+                                          (BossGanon_Player_IsPhantom() && (atk->next == GDF_SWORD_ATK_COMBO3))
+                                              ? GDF_SWORD_ATK_THRUST
+                                              : atk->next);
         return;
     }
 
@@ -7116,6 +7246,233 @@ s32 BossGanon_Player_GetDash(Actor* thisx, s16* yaw, f32* speed) {
 
 // ---- Drawing and hits --------------------------------------------------------------------------
 
+// ---- Phantom Ganon skin ----
+// Phantom Ganon's skeleton has the same build as Ganondorf's (bones along +x, arms 3-12, legs 17-24), so each of his
+// limbs simply takes the world rotation of the matching Ganondorf limb. Only the hands are modelled differently
+// (his point along +y, with the spear through the fist along +x), so they get a fixed turn that lines his spear up
+// with where Ganondorf's sword blade would point. His legs are shorter: he's drawn bigger to stand as tall.
+#define GDF_PG_SCALE (5132.0f / 4133.0f)
+#define GDF_SPEAR_SCALE 0.75f
+#define GDF_SPEAR_BASE_Z 1500.0f
+#define GDF_SPEAR_TIP_Z 8520.0f
+
+// Ganondorf limb for each Phantom Ganon limb, and Phantom Ganon's limb parents
+static const s8 sGdfPgSource[25] = { 0, 1, 1, 3, 3, 4, 5, 7, 7, 8, 9, 9, 9, 1, 10, 18, 18, 19, 19, 20, 21, 22, 22, 23, 24 };
+static const s8 sGdfPgParent[25] = { -1, 0, 1, 2, 3, 4, 5, 2, 7, 8, 9, 10, 11, 2, 2, 0, 15, 16, 17, 18, 19, 16, 21, 22, 23 };
+// Row-major turns from his hand space into Ganondorf's (right hand: spear tip to the blade's -z; left: mirrored)
+static const f32 sGdfPgHandR[3][3] = { { 0, 1, 0 }, { 0, 0, -1 }, { -1, 0, 0 } };
+static const f32 sGdfPgHandL[3][3] = { { 0, 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 } };
+// The spear in his hand, as his own animations always hold it
+static const Vec3s sGdfPgSpearRot = { 16286, -16384, 16286 };
+
+s32 BossGanon_Player_IsPhantom(void) {
+    return CVarGetInteger(CVAR_PLAY_AS_GDF("PhantomGanon"), 0) != 0;
+}
+
+typedef f32 GdfMat3[3][3];
+
+static void BossGanon_Pg_FromMtxF(MtxF* mf, GdfMat3 out, f32* scale) {
+    s32 r;
+    s32 c;
+    f32 len;
+
+    // MtxF is column major: mf[c][r]
+    for (c = 0; c < 3; c++) {
+        len = sqrtf(SQ(mf->mf[c][0]) + SQ(mf->mf[c][1]) + SQ(mf->mf[c][2]));
+        if (len < 1e-8f) {
+            len = 1.0f;
+        }
+        for (r = 0; r < 3; r++) {
+            out[r][c] = mf->mf[c][r] / len;
+        }
+        if ((c == 0) && (scale != NULL)) {
+            *scale = len;
+        }
+    }
+}
+
+static void BossGanon_Pg_Mul(const GdfMat3 a, const GdfMat3 b, GdfMat3 out, s32 transposeA) {
+    s32 r;
+    s32 c;
+    s32 k;
+
+    for (r = 0; r < 3; r++) {
+        for (c = 0; c < 3; c++) {
+            f32 sum = 0.0f;
+
+            for (k = 0; k < 3; k++) {
+                sum += (transposeA ? a[k][r] : a[r][k]) * b[k][c];
+            }
+            out[r][c] = sum;
+        }
+    }
+}
+
+// R = Rz * Ry * Rx (the skeleton's rotation order)
+static void BossGanon_Pg_FromRot(Vec3s* rot, GdfMat3 out) {
+    f32 cx = Math_CosS(rot->x);
+    f32 sx = Math_SinS(rot->x);
+    f32 cy = Math_CosS(rot->y);
+    f32 sy = Math_SinS(rot->y);
+    f32 cz = Math_CosS(rot->z);
+    f32 sz = Math_SinS(rot->z);
+
+    out[0][0] = cz * cy;
+    out[0][1] = cz * sy * sx - sz * cx;
+    out[0][2] = cz * sy * cx + sz * sx;
+    out[1][0] = sz * cy;
+    out[1][1] = sz * sy * sx + cz * cx;
+    out[1][2] = sz * sy * cx - cz * sx;
+    out[2][0] = -sy;
+    out[2][1] = cy * sx;
+    out[2][2] = cy * cx;
+}
+
+static void BossGanon_Pg_ToRot(GdfMat3 m, Vec3s* rot) {
+    f32 sy = CLAMP(-m[2][0], -1.0f, 1.0f);
+
+    rot->x = (s16)(atan2f(m[2][1], m[2][2]) * (32768.0f / M_PI));
+    rot->y = (s16)(asinf(sy) * (32768.0f / M_PI));
+    rot->z = (s16)(atan2f(m[1][0], m[0][0]) * (32768.0f / M_PI));
+}
+
+static s32 BossGanon_Pg_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
+                                         void* thisx) {
+    // The spear is drawn in the post callback, a little smaller than his own
+    if (limbIndex == 13) {
+        *dList = NULL;
+    }
+    return false;
+}
+
+static void BossGanon_Pg_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
+    static Vec3f sBase = { 0.0f, 0.0f, GDF_SPEAR_BASE_Z };
+    static Vec3f sTip = { 0.0f, 0.0f, GDF_SPEAR_TIP_Z };
+    BossGanon* this = (BossGanon*)thisx;
+
+    if (limbIndex == 13) {
+        OPEN_DISPS(play->state.gfxCtx);
+        Matrix_Push();
+        Matrix_Scale(GDF_SPEAR_SCALE, GDF_SPEAR_SCALE, GDF_SPEAR_SCALE, MTXMODE_APPLY);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, gPhantomGanonSkelLimbsLimb_00C610DL_009298);
+        Matrix_MultVec3f(&sBase, &this->playerSpearBase);
+        Matrix_MultVec3f(&sTip, &this->playerSpearTip);
+        this->playerSpearValid = true;
+        Matrix_Pop();
+        CLOSE_DISPS(play->state.gfxCtx);
+    }
+}
+
+static Gfx* BossGanon_Pg_NullDL(GraphicsContext* gfxCtx) {
+    Gfx* dList = (Gfx*)Graph_Alloc(gfxCtx, sizeof(Gfx));
+
+    gSPEndDisplayList(dList);
+    return dList;
+}
+
+static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF* base) {
+    GdfMat3 baseRot;
+    GdfMat3 limbRot;
+    GdfMat3 gdfWorld[25];
+    GdfMat3 world[25];
+    GdfMat3 tmp;
+    GdfMat3 local;
+    f32 baseScale = 1.0f;
+    Vec3f rootPos;
+    Vec3f d;
+    s32 i;
+
+    if (!this->playerPgReady) {
+        SkelAnime_Init(play, &this->playerPgSkel, (SkeletonHeader*)gPhantomGanonSkel, NULL, this->playerPgJoints,
+                       this->playerPgMorph, 26);
+        this->playerPgReady = true;
+    }
+
+    // Ganondorf's limbs, relative to his actor
+    BossGanon_Pg_FromMtxF(base, baseRot, &baseScale);
+    for (i = 0; i < 25; i++) {
+        BossGanon_Pg_FromMtxF(&sGdfLimbMtx[i], limbRot, NULL);
+        BossGanon_Pg_Mul(baseRot, limbRot, gdfWorld[i], true);
+    }
+    d.x = (sGdfLimbMtx[0].mf[3][0] - base->mf[3][0]) / baseScale;
+    d.y = (sGdfLimbMtx[0].mf[3][1] - base->mf[3][1]) / baseScale;
+    d.z = (sGdfLimbMtx[0].mf[3][2] - base->mf[3][2]) / baseScale;
+    rootPos.x = baseRot[0][0] * d.x + baseRot[1][0] * d.y + baseRot[2][0] * d.z;
+    rootPos.y = baseRot[0][1] * d.x + baseRot[1][1] * d.y + baseRot[2][1] * d.z;
+    rootPos.z = baseRot[0][2] * d.x + baseRot[1][2] * d.y + baseRot[2][2] * d.z;
+
+    // His limbs take the same world rotations, then back to rotations relative to each parent
+    for (i = 0; i < 25; i++) {
+        if (i == 6) {
+            BossGanon_Pg_Mul(gdfWorld[sGdfPgSource[i]], sGdfPgHandL, world[i], false);
+        } else if (i == 10) {
+            BossGanon_Pg_Mul(gdfWorld[sGdfPgSource[i]], sGdfPgHandR, world[i], false);
+        } else if (i == 11) {
+            Vec3s spear = sGdfPgSpearRot;
+
+            BossGanon_Pg_FromRot(&spear, tmp);
+            BossGanon_Pg_Mul(world[10], tmp, world[i], false);
+        } else if (i == 12) {
+            memcpy(world[i], world[11], sizeof(GdfMat3));
+        } else {
+            memcpy(world[i], gdfWorld[sGdfPgSource[i]], sizeof(GdfMat3));
+        }
+
+        if (sGdfPgParent[i] < 0) {
+            memcpy(local, world[i], sizeof(GdfMat3));
+        } else {
+            BossGanon_Pg_Mul(world[sGdfPgParent[i]], world[i], local, true);
+        }
+        BossGanon_Pg_ToRot(local, &this->playerPgJoints[1 + i]);
+    }
+    this->playerPgJoints[0].x = (s16)(rootPos.x / GDF_PG_SCALE);
+    this->playerPgJoints[0].y = (s16)(rootPos.y / GDF_PG_SCALE);
+    this->playerPgJoints[0].z = (s16)(rootPos.z / GDF_PG_SCALE);
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Push();
+    Matrix_Put(base);
+    Matrix_Scale(GDF_PG_SCALE, GDF_PG_SCALE, GDF_PG_SCALE, MTXMODE_APPLY);
+    gSPSegment(POLY_OPA_DISP++, 0x08, BossGanon_Pg_NullDL(play->state.gfxCtx));
+    gDPSetEnvColor(POLY_OPA_DISP++, 255, 255, 255, 255);
+    this->playerSpearValid = false;
+    SkelAnime_DrawOpa(play, this->playerPgSkel.skeleton, this->playerPgJoints, BossGanon_Pg_OverrideLimbDraw,
+                      BossGanon_Pg_PostLimbDraw, this);
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Blade (or spear) positions for the hitbox and the trail
+static void BossGanon_Player_SetBlade(BossGanon* this, Vec3f* base, Vec3f* tip) {
+    const GdfSwordAttack* atk = &sGdfSwordAttacks[this->playerSwordAttack];
+    u8 swinging;
+
+    if (this->playerBladeValid) {
+        this->playerBladeBasePrev = this->playerBladeBase;
+        this->playerBladeTipPrev = this->playerBladeTip;
+    } else {
+        this->playerBladeBasePrev = *base;
+        this->playerBladeTipPrev = *tip;
+    }
+    this->playerBladeBase = *base;
+    this->playerBladeTip = *tip;
+    this->playerBladeValid = true;
+
+    // Trail while swinging
+    swinging = (this->actionFunc == BossGanon_Player_SwordAttack) &&
+               (this->playerSwordTimer >= atk->activeStart - 1) && (this->playerSwordTimer <= atk->activeEnd + 1);
+    if ((this->playerSwordBlure >= 0) && (this->playerSwordBlure < TOTAL_EFFECT_COUNT)) {
+        if (swinging) {
+            EffectBlure_AddVertex(Effect_GetByIndex(this->playerSwordBlure), tip, base);
+        } else {
+            EffectBlure_AddSpace(Effect_GetByIndex(this->playerSwordBlure));
+        }
+    }
+}
+
 // From the hand matrix (captured in the limb callback) to the sword's own frame
 static void BossGanon_Player_SwordFrame(MtxF* hand, f32 gripZ) {
     f32 scale = CVarGetFloat(CVAR_PLAY_AS_GDF("SwordSize"), GDF_SWORD_SCALE);
@@ -7132,8 +7489,16 @@ static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play) {
     static Vec3f sTip = { 0.0f, 0.0f, GDF_BLADE_TIP_Z };
     Gfx* swordDL;
     Gfx* sheathDL;
-    const GdfSwordAttack* atk = &sGdfSwordAttacks[this->playerSwordAttack];
-    u8 swinging;
+
+    // Phantom Ganon: his spear is part of his model
+    if (BossGanon_Player_IsPhantom()) {
+        if (!this->playerSpearValid || (sPlayerSwordState != GDF_SWORD_DRAWN)) {
+            this->playerBladeValid = false;
+            return;
+        }
+        BossGanon_Player_SetBlade(this, &this->playerSpearBase, &this->playerSpearTip);
+        return;
+    }
 
     if ((sPlayerSwordState == GDF_SWORD_OFF) || !this->playerHandMtxValid) {
         this->playerBladeValid = false;
@@ -7169,27 +7534,7 @@ static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play) {
 
         Matrix_MultVec3f(&sBase, &base);
         Matrix_MultVec3f(&sTip, &tip);
-        if (this->playerBladeValid) {
-            this->playerBladeBasePrev = this->playerBladeBase;
-            this->playerBladeTipPrev = this->playerBladeTip;
-        } else {
-            this->playerBladeBasePrev = base;
-            this->playerBladeTipPrev = tip;
-        }
-        this->playerBladeBase = base;
-        this->playerBladeTip = tip;
-        this->playerBladeValid = true;
-
-        // Trail while swinging
-        swinging = (this->actionFunc == BossGanon_Player_SwordAttack) &&
-                   (this->playerSwordTimer >= atk->activeStart - 1) && (this->playerSwordTimer <= atk->activeEnd + 1);
-        if ((this->playerSwordBlure >= 0) && (this->playerSwordBlure < TOTAL_EFFECT_COUNT)) {
-            if (swinging) {
-                EffectBlure_AddVertex(Effect_GetByIndex(this->playerSwordBlure), &tip, &base);
-            } else {
-                EffectBlure_AddSpace(Effect_GetByIndex(this->playerSwordBlure));
-            }
-        }
+        BossGanon_Player_SetBlade(this, &base, &tip);
     }
 
     Matrix_Pop();
@@ -7328,7 +7673,18 @@ void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play) {
     }
 }
 
+// Phantom Ganon always has his spear out; turning the skin off puts it away again
+static u8 sGdfPgSpearForced = false;
+
 void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play) {
+    if (BossGanon_Player_IsPhantom()) {
+        sPlayerSwordState = GDF_SWORD_DRAWN;
+        sGdfPgSpearForced = true;
+    } else if (sGdfPgSpearForced) {
+        sPlayerSwordState = GDF_SWORD_OFF;
+        sGdfPgSpearForced = false;
+    }
+
     // With the sword out, his idle is the sword stance
     if (sPlayerSwordState != GDF_SWORD_OFF) {
         BossGanon_Player_SetupSwordIdle(this, play);
@@ -7413,7 +7769,7 @@ void BossGanon_Player_ChargeLightBall(BossGanon* this, PlayState* play) {
     if (this->timers[0] == 17) {
         this->unk_26C = 10;
         this->unk_270 = Rand_ZeroFloat(M_PI);
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
     }
 
     if (this->timers[0] < 10) {
@@ -7464,8 +7820,8 @@ void BossGanon_Player_Throw(BossGanon* this, PlayState* play) {
 
     if (Animation_OnFrame(&this->skelAnime, 11.0f)) {
         this->unk_25C = 1;
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW);
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_MASIC);
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_MASIC));
         BossGanon_Player_AimRot(&this->unk_260, &this->playerAimPos, &rotX, &rotY);
         Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->unk_260.x, this->unk_260.y,
                            this->unk_260.z, rotX, rotY, 0, GDF_PARAMS_PLAYER_LIGHT_BALL);
@@ -7520,7 +7876,7 @@ void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play) {
             break;
 
         case 2:
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CHARGE_MASIC - SFX_FLAG);
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_CHARGE_MASIC - SFX_FLAG));
             this->unk_278.x = this->unk_2EC[0].x;
             this->unk_278.y = this->unk_2EC[0].y + 50.0f + 30.0f;
             this->unk_278.z = this->unk_2EC[0].z;
@@ -7539,7 +7895,7 @@ void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play) {
                 this->unk_1C2 = 3;
                 this->timers[0] = 6;
                 this->timers[1] = 15;
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE));
                 break;
             }
 
@@ -7621,8 +7977,8 @@ void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play) {
                                        GDF_PARAMS_PLAYER_BIG_MAGIC + i);
                 }
 
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_BIGMASIC);
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_BIG);
+                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_BIGMASIC));
+                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_BIG));
             }
 
             if (Animation_OnFrame(&this->skelAnime, 3.0f)) {
@@ -7671,7 +8027,7 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
     switch (this->unk_1C2) {
         case 0:
             if (this->timers[0] == 5) {
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND);
+                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND));
             }
 
             if (this->timers[0] < 14) {
@@ -7708,7 +8064,7 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
                 this->timers[0] = 10;
                 Actor_RequestQuakeAndRumble(&this->actor, play, 0xA, 0x14);
                 this->unk_19C = 35;
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
+                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND_IMP));
                 this->handLightBallScale = 0.0f;
                 sp60 = this->unk_260;
                 sp60.y = floorY;
@@ -7836,7 +8192,7 @@ static void BossGanon_Player_DeflectMagic(BossGanon* this, PlayState* play) {
             Vec3f vel;
 
             Audio_PlayActorSound2(actor, NA_SE_IT_SWORD_REFLECT_MG);
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_AT_RETURN); // "Hah!"
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN)); // "Hah!"
             sCape->attachLeftArmTimer = 10.0f;
 
             for (i = 0; i < 30; i++) {
@@ -7970,7 +8326,7 @@ void BossGanon_Player_Block(BossGanon* this, PlayState* play) {
             SkelAnime_Update(&this->skelAnime);
             sCape->attachShouldersTimer = 15.0f;
             Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_AT_RETURN); // "Hah!"
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN)); // "Hah!"
         }
     } else {
         sCape->sideSwayMagnitude = -13.0f;
@@ -8014,7 +8370,7 @@ void BossGanon_Player_SetupHurt(BossGanon* this, PlayState* play) {
     this->unk_2E8 = 0;
     this->unk_508 = 3.0f;
 
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE1);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DAMAGE1));
 }
 
 void BossGanon_Player_Hurt(BossGanon* this, PlayState* play) {
@@ -8033,7 +8389,7 @@ void BossGanon_Player_SetupDowned(BossGanon* this, PlayState* play) {
     this->actionFunc = BossGanon_Player_Downed;
     this->unk_1C2 = 0;
     this->actor.velocity.y = 0.0f;
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE2);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DAMAGE2));
 }
 
 static s32 BossGanon_Player_IsLinkDead(PlayState* play) {
@@ -8091,7 +8447,7 @@ void BossGanon_Player_Downed(BossGanon* this, PlayState* play) {
                 SkelAnime_Update(&this->skelAnime);
                 sCape->attachShouldersTimer = 18.0f;
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_RESTORE);
+                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_RESTORE));
             }
             break;
 
@@ -8192,7 +8548,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -5.0f);
         this->actionFunc = BossGanon_Player_ItemGet;
         this->playerItemWeight = 0.0f;
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
     }
 
     // On his horse
@@ -8282,7 +8638,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
             pos.y += 20.0f;
             EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 150, 0, 200, 120, 255, 255, 60, 0, 120, 1, 9, false);
-            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
             this->playerCrawlFlame = flame;
         }
     }
@@ -8518,7 +8874,7 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
         return;
     }
 
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_FIRE - SFX_FLAG);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_FIRE - SFX_FLAG));
     Actor_SetScale(&this->actor, ((this->unk_1A2 % 2) != 0) ? 6.0f : 5.25f);
     this->actor.shape.rot.z += (s16)(Rand_ZeroOne() * 20000.0f) + 0x4000;
 
@@ -8774,7 +9130,7 @@ void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play) {
     this->actionFunc = BossGanon_Player_DarkAura;
     this->playerAuraTimer = 0;
     memset(sGdfAuraVictims, 0, sizeof(sGdfAuraVictims));
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE));
     Audio_PlayActorSound2(&this->actor, NA_SE_EV_TRIFORCE_MARK);
 }
 
@@ -8915,10 +9271,10 @@ void BossGanon_Player_DarkAura(BossGanon* this, PlayState* play) {
         BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
     }
     if ((this->playerAuraTimer % 45) == 0) {
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DARKWAVE);
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE));
     }
     if ((this->playerAuraTimer % 9) == 0) {
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_SPARK);
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
     }
 
     if (this->playerAuraScale > 0.05f) {
@@ -9216,7 +9572,7 @@ void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play) {
         this->fwork[GDF_TRIFORCE_ENV_G] = 100.0f;
     }
 
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
 }
 
 void BossGanon_Player_Laugh(BossGanon* this, PlayState* play) {
@@ -9499,7 +9855,7 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
 
             if (this->playerOrganSink == 0.0f) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_STONE_BOUND);
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
+                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND_IMP));
                 Actor_RequestQuakeAndRumble(&this->actor, play, 6, 12);
                 BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
                 Animation_MorphToLoop(&this->skelAnime, &gGanondorfPlayOrganAnim, -5.0f);
