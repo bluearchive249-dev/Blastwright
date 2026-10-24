@@ -25,6 +25,7 @@ s32 PlayAsGanondorf_BreathesUnderwater(PlayState* play, Player* player);
 // Called from Player_Draw. Link stays invisible while Ganondorf is shown.
 s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player);
 s32 PlayAsGanondorf_IsCrawlFlame(PlayState* play, Player* player);
+s32 PlayAsGanondorf_UseGanonHorse(void);
 
 // Used by the camera instead of Player_GetHeight, so it frames Ganondorf instead of Link.
 f32 PlayAsGanondorf_GetCameraHeight(Player* player);

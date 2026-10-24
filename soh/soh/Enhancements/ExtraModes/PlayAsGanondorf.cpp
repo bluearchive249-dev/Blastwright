@@ -209,6 +209,11 @@ static bool ShouldHideLinkModel(PlayState* play, Player* player) {
     return ShouldHideLink(play, player) || IsLookingFirstPerson(play, player) || IsCrawlFlame(play, player);
 }
 
+// Epona is drawn as his black horse
+extern "C" s32 PlayAsGanondorf_UseGanonHorse(void) {
+    return IsEnabled() && CVarGetInteger(CVAR_PLAY_AS_GDF("GanondorfHorse"), 1);
+}
+
 extern "C" s32 PlayAsGanondorf_IsCrawlFlame(PlayState* play, Player* player) {
     return IsCrawlFlame(play, player);
 }
@@ -424,14 +429,16 @@ static void UpdateGanon(PlayState* play, Player* player, BossGanon* dorf) {
 
     if (ganon == NULL) {
         bool canTransform = BossGanon_Player_CanAct(&dorf->actor) && !BossGanon_Player_IsHidden(&dorf->actor) &&
-                            !sLevitating && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
+                            !sLevitating && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
+                            !(player->stateFlags1 & PLAYER_STATE1_ON_HORSE);
 
         // Turned back (or the transformation never finished). Not when Ganon comes back in a new area.
         if (!sWantGanon) {
             UpdateGanonMusic(play, false);
         }
 
-        if (sWantGanon || (toggle && canTransform)) {
+        // Not on horseback (he comes back once Link gets off)
+        if ((sWantGanon && !(player->stateFlags1 & PLAYER_STATE1_ON_HORSE)) || (toggle && canTransform)) {
             // home.rot.z = 1: already Ganon (a new area), no transformation
             Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_GANON2, player->actor.world.pos.x,
                         player->actor.world.pos.y, player->actor.world.pos.z, 0, player->actor.shape.rot.y,

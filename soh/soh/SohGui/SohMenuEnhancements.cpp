@@ -2202,6 +2202,21 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "When Link plays the ocarina, Ganondorf raises his organ and plays the song on it instead, with an organ "
             "sound (the windmill's organ). Needs Keep C-Button Items to take the ocarina out."));
+    AddWidget(path, "Ganondorf's Horse Instead of Epona", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanondorfHorse"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Epona is drawn as his black horse from the castle gate cutscene, and he rides it seated, fists on the "
+            "reins. Epona's own riding (speed, jumps, races) is unchanged."));
+    AddWidget(path, "Horse Seat Height: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.HorseSeatHeight"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 0) == 0;
+        })
+        .Options(FloatSliderOptions().Min(-40.0f).Max(40.0f).DefaultValue(0.0f).Format("%.0f").Tooltip(
+            "Raises or lowers him on the saddle, if he sits too high or sinks into the horse."));
     AddWidget(path, "Purple Flame in Crawlspaces", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CrawlFlame"))
         .PreFunc([](WidgetInfo& info) {

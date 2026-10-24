@@ -8,6 +8,8 @@
 #include "overlays/actors/ovl_En_In/z_en_in.h"
 #include "objects/object_horse/object_horse.h"
 #include "objects/object_hni/object_hni.h"
+#include "objects/object_horse_ganon/object_horse_ganon.h" // SoH: Play as Ganondorf
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "scenes/overworld/spot09/spot09_scene.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <assert.h>
@@ -907,6 +909,10 @@ void EnHorse_Destroy(Actor* thisx, PlayState* play) {
         Audio_StopSfxByPos(&this->unk_21C);
     }
     Skin_Free(play, &this->skin);
+    if (this->gdfSkinReady) {
+        Skin_Free(play, &this->gdfSkin);
+        this->gdfSkinReady = false;
+    }
     Collider_DestroyCylinder(play, &this->cyl1);
     Collider_DestroyCylinder(play, &this->cyl2);
     Collider_DestroyJntSph(play, &this->jntSph);
@@ -3852,13 +3858,90 @@ s32 EnHorse_OverrideLimbDraw(Actor* thisx, PlayState* play, s32 limbIndex, Skin*
     return drawOriginalLimb;
 }
 
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf", Epona is drawn as Ganondorf's black horse (the one from the castle gate cutscene)
+//
+// Only the look changes: Epona's skeleton keeps running all of her logic (her limb positions place the rider, the
+// hooves and the colliders), it just isn't drawn. The black horse (gHorseGanonSkel: the same rig with a few extra
+// limbs, about 1.15 times bigger) plays its matching animation, kept in step with Epona's, and is drawn instead. It
+// has no jumping or refusing animations, so those use its gallop and whinny.
+// ------------------------------------------------------------------------------------------------
+
+extern MtxF gSkinLimbMatrices[];
+
+static AnimationHeader* sGanonHorseAnims[] = {
+    &gHorseGanonIdleAnim,    &gHorseGanonWhinnyAnim,    &gHorseGanonWhinnyAnim,
+    &gHorseGanonRearingAnim, &gHorseGanonWalkingAnim,   &gHorseGanonTrottingAnim,
+    &gHorseGanonGallopingAnim, &gHorseGanonGallopingAnim, &gHorseGanonGallopingAnim,
+};
+
+#define GANON_HORSE_SADDLE_LIMB 36 // Epona's limb 30
+
+static s32 EnHorse_UseGanondorfHorse(EnHorse* this) {
+    return (this->type == HORSE_EPONA) && PlayAsGanondorf_UseGanonHorse();
+}
+
+s32 EnHorse_GetGanondorfSeat(Actor* horse, Vec3f* seat) {
+    EnHorse* this = (EnHorse*)horse;
+
+    if ((horse == NULL) || (horse->id != ACTOR_EN_HORSE) || !this->gdfSeatValid || !EnHorse_UseGanondorfHorse(this)) {
+        return false;
+    }
+    *seat = this->gdfSeatPos;
+    return true;
+}
+
+static void EnHorse_GanondorfHorsePostDraw(Actor* thisx, PlayState* play, Skin* skin) {
+    EnHorse* this = (EnHorse*)thisx;
+    // Epona's rider offset, scaled to the bigger horse
+    Vec3f seatOffset = { 690.0f, -1920.0f, 0.0f };
+
+    Skin_GetLimbPos(skin, GANON_HORSE_SADDLE_LIMB, &seatOffset, &this->gdfSeatPos);
+    this->gdfSeatValid = true;
+}
+
+static void EnHorse_DrawGanondorfHorse(EnHorse* this, PlayState* play, s32 setTranslation) {
+    SkelAnime* epona = &this->skin.skelAnime;
+    SkelAnime* horse;
+    s32 idx = CLAMP(this->animationIdx, 0, ARRAY_COUNT(sGanonHorseAnims) - 1);
+    f32 frac;
+
+    if (!this->gdfSkinReady) {
+        Skin_Init(play, &this->gdfSkin, &gHorseGanonSkel, &gHorseGanonIdleAnim);
+        this->gdfSkinReady = true;
+        this->gdfAnimIdx = -1;
+    }
+    horse = &this->gdfSkin.skelAnime;
+
+    // Same animation as Epona's, at the same point of it
+    if (this->gdfAnimIdx != idx) {
+        Animation_Change(horse, sGanonHorseAnims[idx], 0.0f, 0.0f, Animation_GetLastFrame(sGanonHorseAnims[idx]),
+                         ANIMMODE_ONCE, -3.0f);
+        this->gdfAnimIdx = idx;
+    }
+    frac = (epona->endFrame > 0.0f) ? (epona->curFrame / epona->endFrame) : 0.0f;
+    horse->curFrame = CLAMP(frac, 0.0f, 1.0f) * horse->endFrame;
+    horse->playSpeed = 0.0f;
+    SkelAnime_Update(horse);
+
+    // Epona's limbs (for the rider, hooves and colliders), without drawing her
+    Skin_ApplyAnimTransformations(&this->skin, gSkinLimbMatrices, &this->actor, setTranslation);
+    EnHorse_PostDraw(&this->actor, play, &this->skin);
+
+    // The black horse in her place
+    func_800A6330(&this->actor, play, &this->gdfSkin, EnHorse_GanondorfHorsePostDraw, setTranslation);
+}
+
 void EnHorse_Draw(Actor* thisx, PlayState* play) {
     EnHorse* this = (EnHorse*)thisx;
 
+    this->gdfSeatValid = false;
     if (!(this->stateFlags & ENHORSE_INACTIVE)) {
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
         this->stateFlags |= ENHORSE_DRAW;
-        if (this->stateFlags & ENHORSE_JUMPING) {
+        if (EnHorse_UseGanondorfHorse(this)) {
+            EnHorse_DrawGanondorfHorse(this, play, !(this->stateFlags & ENHORSE_JUMPING));
+        } else if (this->stateFlags & ENHORSE_JUMPING) {
             func_800A6360(thisx, play, &this->skin, EnHorse_PostDraw, EnHorse_OverrideLimbDraw, false);
         } else {
             func_800A6360(thisx, play, &this->skin, EnHorse_PostDraw, EnHorse_OverrideLimbDraw, true);

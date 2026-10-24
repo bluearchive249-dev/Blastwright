@@ -160,7 +160,16 @@ typedef struct EnHorse {
     /* 0x03D8 */ Vec3f frontLeftHoof;
     /* 0x03E4 */ Vec3f backRightHoof;
     /* 0x03F0 */ Vec3f backLeftHoof;
-} EnHorse; // size = 0x03FC
+    // SoH: "Play as Ganondorf", Epona is drawn as his black horse
+    Skin gdfSkin;
+    s8 gdfAnimIdx;
+    u8 gdfSkinReady;
+    u8 gdfSeatValid;
+    Vec3f gdfSeatPos;
+} EnHorse;
+
+// SoH: "Play as Ganondorf", where he sits on his horse (false when Epona isn't drawn as it)
+s32 EnHorse_GetGanondorfSeat(Actor* horse, Vec3f* seat);
 
 #define EN_HORSE_CHECK_1(horseActor) \
     (((horseActor)->stateFlags & ENHORSE_FLAG_6)  \

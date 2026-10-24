@@ -14,6 +14,7 @@
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
+#include "overlays/actors/ovl_En_Horse/z_en_horse.h" // SoH: riding his horse
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h" // SoH: shocks on enemies in his dark aura
 #include "objects/gameplay_keep/gameplay_keep.h" // SoH: the torch flame for his crawlspace form
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
@@ -5369,6 +5370,8 @@ void BossGanon_Player_Laugh(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupOrgan(BossGanon* this, PlayState* play);
 void BossGanon_Player_Organ(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play);
+void BossGanon_Player_Ride(BossGanon* this, PlayState* play);
+static s32 BossGanon_Player_GetSeat(PlayState* play, Vec3f* seat);
 void BossGanon_Player_DarkAura(BossGanon* this, PlayState* play);
 static u8 sPlayerDarkAuraMode = false;
 static void BossGanon_Player_DeflectMagic(BossGanon* this, PlayState* play);
@@ -5875,6 +5878,13 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
     f32 dx;
     f32 dy;
     f32 dz;
+
+    // Riding: his pelvis on the saddle
+    if ((this->actionFunc == BossGanon_Player_Ride) && BossGanon_Player_GetSeat(play, &target)) {
+        target.y += CVarGetFloat(CVAR_PLAY_AS_GDF("HorseSeatHeight"), 0.0f) - 72.56f;
+        this->actor.world.pos = target;
+        return;
+    }
 
     target.x = player->actor.world.pos.x;
     target.y = player->actor.world.pos.y + BossGanon_Player_GetHeightAboveLink(this);
@@ -8098,6 +8108,22 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
+    // On his horse
+    if ((player->stateFlags1 & PLAYER_STATE1_ON_HORSE) && (this->actionFunc != BossGanon_Player_Ride) &&
+        (this->actionFunc != BossGanon_Player_Downed)) {
+        Vec3f seat;
+
+        if (BossGanon_Player_GetSeat(play, &seat)) {
+            BossGanon_Player_ReleaseOrganCam(this, play);
+            BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+            Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -5.0f);
+            this->actionFunc = BossGanon_Player_Ride;
+            this->playerRideFrame = 0.0f;
+            this->playerWalkWeight = 0.0f;
+            this->playerStandLegsWeight = 0.0f;
+        }
+    }
+
     // The organ is his ocarina: when Link plays it, Ganondorf plays the organ
     if ((player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING) && PlayAsGanondorf_UseOrganOcarina() &&
         (this->actionFunc != BossGanon_Player_Organ) && (this->actionFunc != BossGanon_Player_Downed)) {
@@ -8832,6 +8858,87 @@ static void BossGanon_Player_DrawCrawlFlame(BossGanon* this, PlayState* play) {
     Matrix_Pop();
 
     CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf", riding his horse (Epona, drawn as his black horse unless that's turned off)
+//
+// Seated on the saddle: young Ganondorf's horseback ride cycle on his legs (it straddles the horse), his own upright
+// torso, and both fists forward on the reins (solved offline with inverse kinematics on his skeleton).
+// ------------------------------------------------------------------------------------------------
+
+#define GDF_RIDE_CYCLE_FRAMES 24.0f
+
+static const Vec3s sGdfReinsPoses[2][3] = {
+    { { -2360, 1441, -10464 }, { 937, -6137, -15592 }, { -1175, -1047, -4413 } }, // left arm
+    { { 32515, 31667, 18489 }, { 149, 6346, -13011 }, { 2096, 1076, -3143 } }, // right arm
+};
+
+static s32 BossGanon_Player_GetSeat(PlayState* play, Vec3f* seat) {
+    Player* player = GET_PLAYER(play);
+    Actor* horse = player->rideActor;
+
+    if (!(player->stateFlags1 & PLAYER_STATE1_ON_HORSE) || (horse == NULL) || (horse->id != ACTOR_EN_HORSE)) {
+        return false;
+    }
+    // His black horse's saddle, or Epona's (where Link sits)
+    if (!EnHorse_GetGanondorfSeat(horse, seat)) {
+        *seat = ((EnHorse*)horse)->riderPos;
+    }
+    return true;
+}
+
+void BossGanon_Player_Ride(BossGanon* this, PlayState* play) {
+    static Vec3s sRideA[GDF_YOUNG_WALK_JOINTS];
+    static Vec3s sRideB[GDF_YOUNG_WALK_JOINTS];
+    static Vec3s sRide[GDF_YOUNG_WALK_JOINTS];
+    Player* player = GET_PLAYER(play);
+    Vec3s* joints = this->skelAnime.jointTable;
+    Actor* horse = player->rideActor;
+    Vec3f seat;
+    f32 speed = (horse != NULL) ? fabsf(horse->speedXZ) : 0.0f;
+    s32 frameA;
+    s32 frameB;
+    s32 b;
+
+    if (!BossGanon_Player_GetSeat(play, &seat)) {
+        BossGanon_Player_SetupFloat(this, play);
+        return;
+    }
+
+    SkelAnime_Update(&this->skelAnime);
+    this->playerWalkWeight = 0.0f;
+
+    sCape->backPush = -2.0f;
+    sCape->backSwayMagnitude = 0.25f + (speed * 0.08f);
+    sCape->sideSwayMagnitude = -1.0f;
+    sCape->minDist = 0.0f;
+
+    // The ride cycle runs with the horse's speed, gently when it stands
+    this->playerRideFrame += 0.35f + (speed * 0.12f);
+    while (this->playerRideFrame >= GDF_RIDE_CYCLE_FRAMES) {
+        this->playerRideFrame -= GDF_RIDE_CYCLE_FRAMES;
+    }
+    frameA = (s32)this->playerRideFrame;
+    frameB = (frameA + 1) % (s32)GDF_RIDE_CYCLE_FRAMES;
+    SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfHorsebackRideAnim, frameA, GDF_YOUNG_WALK_JOINTS, sRideA);
+    SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfHorsebackRideAnim, frameB, GDF_YOUNG_WALK_JOINTS, sRideB);
+    SkelAnime_InterpFrameTable(GDF_YOUNG_WALK_JOINTS, sRide, sRideA, sRideB, this->playerRideFrame - frameA);
+
+    // Straddling legs (pelvis and legs from the ride; his own feet)
+    for (b = 18; b < GDF_LIMB_COUNT_PLAYER; b++) {
+        s8 y = sGdfBossToYoungLimb[b];
+
+        if (y >= 0) {
+            joints[1 + b] = sRide[1 + y];
+        }
+    }
+    // Upright, facing forward
+    joints[1] = (Vec3s){ 0, 0, 0 };
+
+    // Fists forward on the reins
+    BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfReinsPoses[0], 1.0f);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfReinsPoses[1], 1.0f);
 }
 
 void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play) {
