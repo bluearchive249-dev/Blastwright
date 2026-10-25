@@ -18,6 +18,7 @@
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h" // SoH: riding his horse
+#include "overlays/actors/ovl_En_Heishi1/z_en_heishi1.h" // SoH: guards hunting him after a murder
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h" // SoH: shocks on enemies in his dark aura
 #include "objects/gameplay_keep/gameplay_keep.h" // SoH: the torch flame for his crawlspace form
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
@@ -5470,6 +5471,116 @@ static s32 BossGanon_Player_NpcInVolume(Actor* npc, GdfAtVolume* v) {
     return false;
 }
 
+// ---- The guards hunt him (after a murder in the market) ----
+// A murder anywhere in Castle Town makes him wanted. While he's wanted, alarm bells ring through the market and
+// guards come for him with their spears, a new one running in for every one he cuts down (three in the market, six
+// on the castle grounds, where they swarm him). It lasts until he leaves the market by the drawbridge.
+s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId);
+static u8 sGdfWanted = false;
+static s16 sGdfLastScene = -1;
+static s16 sGdfBellTimer = 0;
+
+s32 BossGanon_Player_IsWanted(void) {
+    return sGdfWanted;
+}
+
+static s32 BossGanon_Player_IsMarketScene(s16 scene) {
+    switch (scene) {
+        case SCENE_MARKET_DAY:
+        case SCENE_MARKET_NIGHT:
+        case SCENE_MARKET_ENTRANCE_DAY:
+        case SCENE_MARKET_ENTRANCE_NIGHT:
+        case SCENE_BACK_ALLEY_DAY:
+        case SCENE_BACK_ALLEY_NIGHT:
+        case SCENE_TEMPLE_OF_TIME_EXTERIOR_DAY:
+        case SCENE_TEMPLE_OF_TIME_EXTERIOR_NIGHT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static s32 BossGanon_Player_IsCastleScene(s16 scene) {
+    return (scene == SCENE_HYRULE_CASTLE) || (scene == SCENE_CASTLE_COURTYARD_GUARDS_DAY) ||
+           (scene == SCENE_CASTLE_COURTYARD_GUARDS_NIGHT);
+}
+
+static s32 BossGanon_Player_IsHunter(Actor* actor) {
+    return (actor->id == ACTOR_EN_HEISHI1) && (actor->params == EN_HEISHI1_PARAMS_HUNTER);
+}
+
+// Scene changes: leaving the market entrance for Hyrule Field (over the drawbridge) ends it
+static void BossGanon_Player_ManhuntSceneChange(PlayState* play) {
+    if (((sGdfLastScene == SCENE_MARKET_ENTRANCE_DAY) || (sGdfLastScene == SCENE_MARKET_ENTRANCE_NIGHT)) &&
+        (play->sceneNum == SCENE_HYRULE_FIELD)) {
+        sGdfWanted = false;
+    }
+    sGdfLastScene = play->sceneNum;
+    sGdfBellTimer = 20;
+}
+
+// A new guard, out of sight behind the camera, on the ground
+static void BossGanon_Player_SpawnHunter(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Camera* cam = GET_ACTIVE_CAM(play);
+    s16 behind = Math_Vec3f_Yaw(&cam->at, &cam->eye);
+    s32 attempt;
+
+    if (Object_GetIndex(&play->objectCtx, OBJECT_SD) < 0) {
+        Object_Spawn(&play->objectCtx, OBJECT_SD);
+    }
+    for (attempt = 0; attempt < 6; attempt++) {
+        s16 yaw = behind + (s16)Rand_CenteredFloat(0x6000) + ((attempt >= 3) ? 0x8000 : 0);
+        f32 dist = 380.0f + Rand_ZeroFloat(220.0f);
+        CollisionPoly* poly;
+        Vec3f pos;
+        f32 floorY;
+
+        pos.x = player->actor.world.pos.x + Math_SinS(yaw) * dist;
+        pos.y = player->actor.world.pos.y + 150.0f;
+        pos.z = player->actor.world.pos.z + Math_CosS(yaw) * dist;
+        floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &pos);
+        if ((floorY < BGCHECK_Y_MIN + 10.0f) || (fabsf(floorY - player->actor.world.pos.y) > 120.0f)) {
+            continue;
+        }
+        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HEISHI1, pos.x, floorY, pos.z, 0,
+                    Math_Vec3f_Yaw(&pos, &player->actor.world.pos), 0, EN_HEISHI1_PARAMS_HUNTER);
+        return;
+    }
+}
+
+static void BossGanon_Player_UpdateManhunt(BossGanon* this, PlayState* play) {
+    s16 scene = play->sceneNum;
+    s32 market = BossGanon_Player_IsMarketScene(scene);
+    s32 castle = BossGanon_Player_IsCastleScene(scene);
+    s32 want = castle ? 6 : 3;
+    s32 count = 0;
+    Actor* actor;
+
+    if (!sGdfWanted || !(market || castle)) {
+        return;
+    }
+
+    // An ominous bell, slow and low, until he's out over the drawbridge
+    if (market && (--sGdfBellTimer <= 0)) {
+        static f32 sBellFreq = 0.55f;
+        static f32 sBellVol = 1.0f;
+
+        sGdfBellTimer = 75;
+        Audio_PlaySfxGeneral(NA_SE_EV_SHIP_BELL, &gSfxDefaultPos, 4, &sBellFreq, &sBellVol, &gSfxDefaultReverb);
+    }
+
+    for (actor = play->actorCtx.actorLists[ACTORCAT_NPC].head; actor != NULL; actor = actor->next) {
+        if (BossGanon_Player_IsHunter(actor) && (actor->update != NULL)) {
+            count++;
+        }
+    }
+    // Endless: whenever one falls another comes running
+    if ((count < want) && ((play->gameplayFrames % 15) == 0) && !this->playerHidden) {
+        BossGanon_Player_SpawnHunter(play);
+    }
+}
+
 static void BossGanon_Player_SlayNpc(PlayState* play, Actor* npc) {
     static Color_RGBA8 sBloodPrim = { 170, 0, 0, 255 };
     static Color_RGBA8 sBloodEnv = { 70, 0, 0, 255 };
@@ -5506,7 +5617,12 @@ static void BossGanon_Player_SlayNpc(PlayState* play, Actor* npc) {
     SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 40, NA_SE_IT_SWORD_STRIKE_HARD);
     SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 40, NA_SE_EN_EXTINCT);
 
-    GanondorfKills_Record(npc);
+    if (!BossGanon_Player_IsHunter(npc)) {
+        GanondorfKills_Record(npc);
+        if (BossGanon_Player_IsMarketScene(play->sceneNum)) {
+            sGdfWanted = true;
+        }
+    }
     Actor_Kill(npc);
 }
 
@@ -7813,6 +7929,7 @@ void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
     this->playerPrevInvincibilityTimer = player->invincibilityTimer;
     this->playerOrganSink = GDF_ORGAN_SINK_DEPTH;
     this->triforceType = GDF_TRIFORCE_DORF;
+    BossGanon_Player_ManhuntSceneChange(play);
     BossGanon_Player_SnapToLink(this, play);
     BossGanon_Player_UpdateAim(this, play);
     this->playerAimYaw = this->actor.yawTowardsPlayer;
@@ -8678,6 +8795,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     BossGanon_Player_SlayNpcs(this, play);
+    BossGanon_Player_UpdateManhunt(this, play);
 
     // The engine sets yawTowardsPlayer to the direction of Link every frame, but Link stands right under him, so that
     // direction is meaningless and he'd turn to it mid-attack. Restore the aim from the last update.
@@ -10147,6 +10265,8 @@ BOSS_GANON_CONTEXT_ENTRY(BossGanon_PlayerBigMagic_Update)
 #include "overlays/ovl_Boss_Ganon/ovl_Boss_Ganon.h"
 
 void BossGanon_Reset(void) {
+    sGdfWanted = false; // SoH: the manhunt ends with a reset
+    sGdfLastScene = -1;
     sSeed1 = 0;
     sSeed2 = 0;
     sSeed3 = 0;

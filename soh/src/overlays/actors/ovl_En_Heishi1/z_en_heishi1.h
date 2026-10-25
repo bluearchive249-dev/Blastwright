@@ -50,6 +50,14 @@ typedef struct EnHeishi1 {
         s16 timers[3];
     };
     /* 0x02AA */ s16 waypoint;
-} EnHeishi1; // size = 0x02AC
+    // SoH: "Play as Ganondorf", a guard hunting him after a murder in the market (type EN_HEISHI1_TYPE_HUNTER)
+    ColliderCylinder hunterBody;  // pushes against Link and the other guards
+    ColliderCylinder hunterSpear; // the stab
+    s16 hunterTimer;
+    u8 hunterStabbing;
+} EnHeishi1;
+
+#define EN_HEISHI1_TYPE_HUNTER 0x7F
+#define EN_HEISHI1_PARAMS_HUNTER (EN_HEISHI1_TYPE_HUNTER << 8)
 
 #endif

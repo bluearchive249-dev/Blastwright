@@ -247,6 +247,8 @@ typedef struct BossGanon {
 // SoH: "Play as Ganondorf"
 s32 BossGanon_Player_IsBusy(Actor* thisx);
 s32 BossGanon_Player_IsPhantom(void);
+// The guards hunt him (he murdered someone in the market and hasn't left by the drawbridge)
+s32 BossGanon_Player_IsWanted(void);
 // Killing NPCs (option): attack volumes from Ganon's form, and the check itself
 void BossGanon_Player_NoteAttackCylinder(ColliderCylinder* cyl);
 void BossGanon_Player_NoteAttackSphere(Vec3f* center, f32 radius);

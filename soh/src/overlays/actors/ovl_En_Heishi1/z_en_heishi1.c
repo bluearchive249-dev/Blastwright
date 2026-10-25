@@ -9,6 +9,7 @@
 #include "vt.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h" // SoH: guards hunting the player Ganondorf
 
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
@@ -75,6 +76,116 @@ void EnHeishi1_Reset(void) {
     sPlayerIsCaught = false;
 }
 
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf". After a murder in the market, guards hunt him: they run at him and stab with their
+// spears (1 heart a stab). Spawned and replaced by z_boss_ganon.c (BossGanon_Player_UpdateManhunt).
+// ------------------------------------------------------------------------------------------------
+static void EnHeishi1_HunterChase(EnHeishi1* this, PlayState* play);
+static void EnHeishi1_HunterStab(EnHeishi1* this, PlayState* play);
+
+static ColliderCylinderInit sHunterBodyInit = {
+    { COLTYPE_HIT0, AT_NONE, AC_NONE, OC1_ON | OC1_TYPE_ALL, OC2_TYPE_1, COLSHAPE_CYLINDER },
+    { ELEMTYPE_UNK0, { 0x00000000, 0x00, 0x00 }, { 0x00000000, 0x00, 0x00 }, TOUCH_NONE, BUMP_NONE, OCELEM_ON },
+    { 18, 70, 0, { 0, 0, 0 } },
+};
+
+// A spear stab: one heart
+static ColliderCylinderInit sHunterSpearInit = {
+    { COLTYPE_NONE, AT_ON | AT_TYPE_ENEMY, AC_NONE, OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
+    { ELEMTYPE_UNK0, { 0xFFCFFFFF, 0x00, 0x10 }, { 0x00000000, 0x00, 0x00 }, TOUCH_ON | TOUCH_SFX_NORMAL, BUMP_NONE,
+      OCELEM_NONE },
+    { 22, 60, 10, { 0, 0, 0 } },
+};
+
+#define HUNTER_RUN_SPEED 5.5f
+#define HUNTER_STAB_RANGE 75.0f
+#define HUNTER_STAB_HIT_START 6
+#define HUNTER_STAB_HIT_END 11
+
+static void EnHeishi1_SetupHunterChase(EnHeishi1* this, PlayState* play) {
+    Animation_Change(&this->skelAnime, &gEnHeishiWalkAnim, 2.2f, 0.0f, Animation_GetLastFrame(&gEnHeishiWalkAnim),
+                     ANIMMODE_LOOP, -4.0f);
+    this->hunterStabbing = false;
+    this->actionFunc = EnHeishi1_HunterChase;
+}
+
+static void EnHeishi1_HunterChase(EnHeishi1* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+    Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 3, 0x1200, 0x100);
+    this->actor.world.rot.y = this->actor.shape.rot.y;
+    Math_ApproachF(&this->actor.speedXZ, HUNTER_RUN_SPEED, 1.0f, 0.6f);
+
+    if (Animation_OnFrame(&this->skelAnime, 1.0f) || Animation_OnFrame(&this->skelAnime, 9.0f)) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EV_KNIGHT_WALK);
+    }
+
+    if ((this->hunterTimer == 0) && (this->actor.xzDistToPlayer < HUNTER_STAB_RANGE) &&
+        (fabsf(this->actor.yDistToPlayer) < 60.0f)) {
+        Animation_Change(&this->skelAnime, &gEnHeishiSlamSpearAnim, 1.6f, 0.0f,
+                         Animation_GetLastFrame(&gEnHeishiSlamSpearAnim), ANIMMODE_ONCE, -3.0f);
+        this->actor.speedXZ = 0.0f;
+        this->hunterStabbing = true;
+        this->actionFunc = EnHeishi1_HunterStab;
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_SWING);
+    }
+}
+
+static void EnHeishi1_HunterStab(EnHeishi1* this, PlayState* play) {
+    s32 frame;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 4, 0x600, 0x100);
+    this->actor.world.rot.y = this->actor.shape.rot.y;
+    Math_ApproachZeroF(&this->actor.speedXZ, 1.0f, 1.0f);
+
+    frame = (s32)this->skelAnime.curFrame;
+    if (this->hunterStabbing && (frame >= HUNTER_STAB_HIT_START) && (frame <= HUNTER_STAB_HIT_END)) {
+        // The spear point, in front of him
+        this->hunterSpear.dim.pos.x = (s16)(this->actor.world.pos.x + Math_SinS(this->actor.shape.rot.y) * 45.0f);
+        this->hunterSpear.dim.pos.y = (s16)this->actor.world.pos.y;
+        this->hunterSpear.dim.pos.z = (s16)(this->actor.world.pos.z + Math_CosS(this->actor.shape.rot.y) * 45.0f);
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->hunterSpear.base);
+    }
+    if (this->hunterSpear.base.atFlags & AT_HIT) {
+        this->hunterSpear.base.atFlags &= ~AT_HIT;
+        this->hunterStabbing = false; // one hit a stab
+    }
+
+    if (Animation_OnFrame(&this->skelAnime, Animation_GetLastFrame(&gEnHeishiSlamSpearAnim))) {
+        this->hunterTimer = 12 + (s16)Rand_ZeroFloat(10.0f);
+        EnHeishi1_SetupHunterChase(this, play);
+    }
+}
+
+static void EnHeishi1_HunterUpdate(EnHeishi1* this, PlayState* play) {
+    if (this->hunterTimer != 0) {
+        this->hunterTimer--;
+    }
+    this->actionFunc(this, play);
+    Actor_MoveXZGravity(&this->actor);
+    Actor_UpdateBgCheckInfo(play, &this->actor, 30.0f, 20.0f, 60.0f, 0x1D); // walls, floor, water
+    Actor_SetFocus(&this->actor, 60.0f);
+
+    Collider_UpdateCylinder(&this->actor, &this->hunterBody);
+    CollisionCheck_SetOC(play, &play->colChkCtx, &this->hunterBody.base);
+}
+
+static void EnHeishi1_HunterInit(EnHeishi1* this, PlayState* play) {
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sAnimParamsInit[0]); i++) {
+        this->animParams[i] = sAnimParamsInit[1][i];
+    }
+    this->actor.gravity = -1.0f;
+    this->actor.flags |= ACTOR_FLAG_DRAW_CULLING_DISABLED;
+    Collider_InitCylinder(play, &this->hunterBody);
+    Collider_SetCylinder(play, &this->hunterBody, &this->actor, &sHunterBodyInit);
+    Collider_InitCylinder(play, &this->hunterSpear);
+    Collider_SetCylinder(play, &this->hunterSpear, &this->actor, &sHunterSpearInit);
+    this->hunterTimer = 10;
+    EnHeishi1_SetupHunterChase(this, play);
+}
+
 void EnHeishi1_Init(Actor* thisx, PlayState* play) {
     s32 pad;
     EnHeishi1* this = (EnHeishi1*)thisx;
@@ -86,6 +197,11 @@ void EnHeishi1_Init(Actor* thisx, PlayState* play) {
 
     this->type = (this->actor.params >> 8) & 0xFF;
     this->path = this->actor.params & 0xFF;
+
+    if (this->type == EN_HEISHI1_TYPE_HUNTER) {
+        EnHeishi1_HunterInit(this, play);
+        return;
+    }
 
     for (i = 0; i < ARRAY_COUNT(sAnimParamsInit[0]); i++) {
         this->animParams[i] = sAnimParamsInit[this->type][i];
@@ -152,6 +268,12 @@ void EnHeishi1_Init(Actor* thisx, PlayState* play) {
 }
 
 void EnHeishi1_Destroy(Actor* thisx, PlayState* play) {
+    EnHeishi1* this = (EnHeishi1*)thisx;
+
+    if (this->type == EN_HEISHI1_TYPE_HUNTER) {
+        Collider_DestroyCylinder(play, &this->hunterBody);
+        Collider_DestroyCylinder(play, &this->hunterSpear);
+    }
 }
 
 void EnHeishi1_SetupWalk(EnHeishi1* this, PlayState* play) {
@@ -412,6 +534,11 @@ void EnHeishi1_Update(Actor* thisx, PlayState* play) {
     s32 pad2;
     Camera* activeCam;
 
+    if (this->type == EN_HEISHI1_TYPE_HUNTER) {
+        EnHeishi1_HunterUpdate(this, play);
+        return;
+    }
+
     this->activeTimer++;
 
     for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
@@ -437,7 +564,8 @@ void EnHeishi1_Update(Actor* thisx, PlayState* play) {
         if (this->type != 5) {
             path = this->path * 2;
             if ((sCamDataIdxs[path] == activeCam->camDataIdx) || (sCamDataIdxs[path + 1] == activeCam->camDataIdx)) {
-                if (!sPlayerIsCaught) {
+                // SoH: "Play as Ganondorf", while he's wanted the guards fight him instead of sending him out
+                if (!sPlayerIsCaught && !BossGanon_Player_IsWanted()) {
                     if ((this->actionFunc == EnHeishi1_Walk) || (this->actionFunc == EnHeishi1_Wait)) {
                         Vec3f searchBallVel;
                         Vec3f searchBallAccel = { 0.0f, 0.0f, 0.0f };
