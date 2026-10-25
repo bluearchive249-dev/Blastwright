@@ -93,6 +93,7 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Player_DrawSword(struct BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF* base);
 static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play);
+static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight);
 static u8 sGdfPgCapture = false;
 static MtxF sGdfLimbMtx[25];
 static void BossGanon_LightBall_Update_Impl(Actor* thisx, PlayState* play);
@@ -6143,15 +6144,40 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     rate = CLAMP(speed / GDF_WALK_NATURAL_SPEED, 0.5f, GDF_WALK_MAX_RATE + this->playerSprintWeight);
     this->playerWalkStride = speed / (GDF_WALK_NATURAL_SPEED * GDF_WALK_MAX_RATE);
     if (moving || (this->playerWalkWeight > 0.0f)) {
+        f32 prev = this->playerWalkFrame;
+
         this->playerWalkFrame += rate;
         while (this->playerWalkFrame >= GDF_WALK_CYCLE_FRAMES) {
             this->playerWalkFrame -= GDF_WALK_CYCLE_FRAMES;
+        }
+
+        // His footsteps, on the frames his heels come down (right foot at 1, left at 16), with the floor's sound
+        if (moving && !this->playerHidden) {
+            static const f32 sContacts[] = { 1.0f, 16.0f };
+            s32 i;
+
+            for (i = 0; i < ARRAY_COUNT(sContacts); i++) {
+                f32 c = sContacts[i];
+                u8 crossed = (prev < this->playerWalkFrame) ? ((prev < c) && (this->playerWalkFrame >= c))
+                                                            : ((prev < c) || (this->playerWalkFrame >= c));
+
+                if (crossed) {
+                    u16 sfx = NA_SE_PL_WALK_GROUND + player->floorSfxOffset + player->ageProperties->unk_94;
+
+                    func_800F4010(&player->actor.projectedPos, sfx, speed * 0.6f);
+                    if (this->playerSprintWeight > 0.5f) {
+                        Audio_PlayActorSound2(&this->actor, NA_SE_PL_WALK_HEAVYBOOTS);
+                    }
+                    player->stateFlags2 |= PLAYER_STATE2_FOOTSTEP;
+                }
+            }
         }
     }
 
     BossGanon_Player_ApplyWalk(this);
     if (this->playerSprintWeight > 0.0f) {
         BossGanon_Player_TwistLean(this, 0.0f, 0x0C00 * this->playerSprintWeight * this->playerWalkWeight);
+        BossGanon_Player_ApplyRunArms(this, this->playerSprintWeight * this->playerWalkWeight);
     }
 }
 
@@ -7799,6 +7825,73 @@ static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play) {
     BossGanon_Pg_ToRot(tmp2, &joints[1 + 22]);
 
     BossGanon_Player_TwistLean(this, 0.0f, -0x0C00 * w);
+}
+
+// Sprinting arms: a runner's swing, heavy and wide. Each upper arm swings forward and back about his shoulders'
+// sideways axis, opposite to its leg (the right arm is back when the right foot is forward, at walk frame 0), and the
+// elbows bend so his fists pump. Added on top of the walk's own arm swing.
+#define GDF_RUN_ARM_SWING_DEG 42.0f
+#define GDF_RUN_ELBOW_DEG 85.0f
+
+static void BossGanon_Pg_RotX(f32 deg, GdfMat3 out) {
+    f32 a = deg * (M_PI / 180.0f);
+
+    out[0][0] = 1.0f; out[0][1] = 0.0f;     out[0][2] = 0.0f;
+    out[1][0] = 0.0f; out[1][1] = cosf(a);  out[1][2] = -sinf(a);
+    out[2][0] = 0.0f; out[2][1] = sinf(a);  out[2][2] = cosf(a);
+}
+
+static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight) {
+    static const s8 sArmChains[2][3] = { { 2, 3, 4 }, { 6, 7, 8 } }; // shoulder, upper arm, forearm (left, right)
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 cycle = Math_CosS((s16)(this->playerWalkFrame * (0x10000 / GDF_WALK_CYCLE_FRAMES)));
+    GdfMat3 body;
+    GdfMat3 rootRot;
+    GdfMat3 tmp;
+    s32 side;
+
+    if (weight <= 0.0f) {
+        return;
+    }
+
+    // Root and torso, the arms' parents
+    BossGanon_Pg_FromRot(&joints[1 + 0], rootRot);
+    BossGanon_Pg_FromRot(&joints[1 + 1], tmp);
+    BossGanon_Pg_Mul(rootRot, tmp, body, false);
+
+    for (side = 0; side < 2; side++) {
+        GdfMat3 shoulder;
+        GdfMat3 upper;
+        GdfMat3 fore;
+        GdfMat3 rot;
+        GdfMat3 upperNew;
+        GdfMat3 foreNew;
+        GdfMat3 local;
+        // Right arm back at frame 0, left arm forward
+        f32 swing = GDF_RUN_ARM_SWING_DEG * weight * ((side == 1) ? -cycle : cycle);
+        f32 elbow = GDF_RUN_ELBOW_DEG * weight;
+        s32 sh = sArmChains[side][0];
+        s32 up = sArmChains[side][1];
+        s32 fo = sArmChains[side][2];
+
+        BossGanon_Pg_FromRot(&joints[1 + sh], tmp);
+        BossGanon_Pg_Mul(body, tmp, shoulder, false);
+        BossGanon_Pg_FromRot(&joints[1 + up], tmp);
+        BossGanon_Pg_Mul(shoulder, tmp, upper, false);
+        BossGanon_Pg_FromRot(&joints[1 + fo], tmp);
+        BossGanon_Pg_Mul(upper, tmp, fore, false);
+
+        // Forward is +z: turning about x by a negative angle swings a hanging limb forward
+        BossGanon_Pg_RotX(-swing, rot);
+        BossGanon_Pg_Mul(rot, upper, upperNew, false);
+        BossGanon_Pg_RotX(-(swing + elbow), rot);
+        BossGanon_Pg_Mul(rot, fore, foreNew, false);
+
+        BossGanon_Pg_Mul(shoulder, upperNew, local, true);
+        BossGanon_Pg_ToRot(local, &joints[1 + up]);
+        BossGanon_Pg_Mul(upperNew, foreNew, local, true);
+        BossGanon_Pg_ToRot(local, &joints[1 + fo]);
+    }
 }
 
 // Blade (or spear) positions for the hitbox and the trail

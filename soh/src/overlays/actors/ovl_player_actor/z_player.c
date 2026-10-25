@@ -1767,6 +1767,11 @@ void Player_PlayFloorSfxByAge(Player* this, u16 sfxId) {
 void Player_PlaySteppingSfx(Player* this, f32 pitchAdjustment) {
     s32 sfxId;
 
+    // SoH: "Play as Ganondorf", his own feet make the sound (z_boss_ganon.c)
+    if (PlayAsGanondorf_OwnsFootsteps(this)) {
+        return;
+    }
+
     if (this->currentBoots == PLAYER_BOOTS_IRON) {
         sfxId = NA_SE_PL_WALK_HEAVYBOOTS;
     } else {

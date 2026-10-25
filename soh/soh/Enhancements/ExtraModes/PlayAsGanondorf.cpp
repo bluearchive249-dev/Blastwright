@@ -661,6 +661,13 @@ extern "C" s32 PlayAsGanondorf_GetLookAtPos(Player* player, Vec3f* pos) {
     return true;
 }
 
+// Ganondorf walking on the ground plays his own footsteps, in time with his feet (z_boss_ganon.c), so Link's
+// (invisible) ones are muted
+extern "C" s32 PlayAsGanondorf_OwnsFootsteps(Player* player) {
+    return (gPlayState != NULL) && ShouldHideLink(gPlayState, player) && IsStandingOnGround() &&
+           (FindPlayerGanon(gPlayState) == NULL);
+}
+
 // He kicks doors open (z_en_door.c): while he's shown, not Link
 extern "C" s32 PlayAsGanondorf_ShouldKickDoors(void) {
     return (gPlayState != NULL) && CVarGetInteger(CVAR_PLAY_AS_GDF("DoorKick"), 1) &&

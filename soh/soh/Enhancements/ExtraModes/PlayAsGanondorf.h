@@ -65,6 +65,9 @@ s32 PlayAsGanondorf_UsePoeNavi(void);
 
 // He kicks doors off their hinges instead of opening them
 s32 PlayAsGanondorf_ShouldKickDoors(void);
+
+// His own footsteps replace Link's while he walks on the ground
+s32 PlayAsGanondorf_OwnsFootsteps(Player* player);
 u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId);
 
 #ifdef __cplusplus
