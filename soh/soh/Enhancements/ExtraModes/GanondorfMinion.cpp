@@ -122,8 +122,60 @@ static const std::unordered_map<uint16_t, const char*> sMinionLines = {
     { 0x01AB, "Master! Be careful! Don't get swallowed by those whirlpools!" },
 };
 
+// The opening, rewritten: the Deku Tree banishes the Poe from his forest for haunting it, and she seeks out the
+// dark power she senses in the Kokiri village... Ganondorf, "sleeping" in Link's house.
+struct MinionScene {
+    const char* text;
+    TextBoxType type;
+    TextBoxPosition position;
+};
+
+static const std::unordered_map<uint16_t, MinionScene> sMinionOpening = {
+    // The Deku Tree calls out (no box)
+    { 0x1099, { "Poe...&Wretched little Poe, where art thou?&Come hither....", TEXTBOX_TYPE_NONE_NO_SHADOW,
+                TEXTBOX_POS_MIDDLE } },
+    // ...and passes judgement
+    { 0x109A, { "So, Poe... thou hast come at last.&Hear the words of the Deku Tree...^"
+                "For far too long hast thou haunted this sacred grove... Thy lantern flickers in the night and "
+                "frightens the Kokiri children.^"
+                "Thou dost moan in the treetops, snuff out the fairies' light, and play thy wicked tricks upon "
+                "the lost...^"
+                "A climate of evil is descending upon this realm... I will not have a creature of darkness lurking "
+                "within my forest.^"
+                "The Kokiri Forest is the source of life. It shall be no home to the dead.^"
+                "Therefore, by my word... thou art banished from this forest, never to return!^"
+                "Begone, Poe! Begone! Go and haunt some other land!",
+                TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM } },
+    // Link's house: she finds him asleep
+    { 0x1095, { "Psst... M-Master? Are you awake?&Please don't smite me!^"
+                "I followed a dark aura all the way here... so powerful, so wonderfully evil... and it led me "
+                "straight to you!",
+                TEXTBOX_TYPE_BLACK, TEXTBOX_POS_TOP } },
+    { 0x1096, { "Master, please wake up! I've come to serve you!^"
+                "That old stump threw me out of his forest... but I would much rather serve the King of Evil! "
+                "Will you have me?",
+                TEXTBOX_TYPE_BLACK, TEXTBOX_POS_TOP } },
+    // He gets up
+    { 0x1000, { "You're awake! I'm a humble Poe, Master, and your loyal servant from this day on!^"
+                "The Great Deku Tree banished me for haunting his grove... His loss! I'll follow you anywhere and "
+                "tell you everything I see. Hehehe!",
+                TEXTBOX_TYPE_BLUE, TEXTBOX_POS_VARIABLE } },
+    { 0x1098, { "That old Deku Tree has summoned you, Master!&Let's go and see what the withered stump wants.",
+                TEXTBOX_TYPE_BLUE, TEXTBOX_POS_VARIABLE } },
+};
+
 static void BuildMinionMessage(uint16_t* textId, bool* loadFromMessageTable) {
     if (!PlayAsGanondorf_UsePoeNavi()) {
+        return;
+    }
+    auto scene = sMinionOpening.find(*textId);
+    if (scene != sMinionOpening.end()) {
+        CustomMessage msg = CustomMessage(scene->second.text);
+        msg.SetTextBoxType(scene->second.type);
+        msg.SetTextBoxPosition(scene->second.position);
+        *loadFromMessageTable = false;
+        msg.AutoFormat();
+        msg.LoadIntoFont();
         return;
     }
     auto it = sMinionLines.find(*textId);
