@@ -8201,6 +8201,11 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
     f32 floorY = this->playerFloorY;
     f32 hover = BossGanon_Player_GetHoverHeight();
     f32 heightTarget;
+    // On the ground he hops up and slams down onto his feet (his legs stand, see StandLegs); the floating heights
+    // are for levitating, where he rises above his hover height and slams down to just over the floor
+    u8 grounded = this->playerGrounded;
+    f32 baseY = grounded ? player->actor.world.pos.y : (player->actor.world.pos.y + hover);
+    f32 impactY = grounded ? player->actor.world.pos.y : (floorY + 60.0f);
     s16 i;
     Vec3f sp6C;
     Vec3f sp60;
@@ -8215,11 +8220,11 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
             }
 
             if (this->timers[0] < 14) {
-                heightTarget = player->actor.world.pos.y + hover + 90.0f;
+                heightTarget = baseY + 90.0f;
                 this->unk_258 += (Rand_ZeroFloat(M_PI / 2) + (M_PI / 2));
                 Math_ApproachF(&this->handLightBallScale, 7.0f, 0.5f, 1.0f);
             } else {
-                heightTarget = player->actor.world.pos.y + hover + 40.0f;
+                heightTarget = baseY + 40.0f;
             }
 
             Math_ApproachF(&this->actor.world.pos.y, heightTarget, 0.1f, this->actor.velocity.y);
@@ -8242,8 +8247,8 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
             Math_ApproachF(&this->actor.velocity.y, -50.0f, 1.0f, 10.0f);
             this->actor.world.pos.y += this->actor.velocity.y;
 
-            if (this->actor.world.pos.y < (floorY + 60.0f)) {
-                this->actor.world.pos.y = floorY + 60.0f;
+            if (this->actor.world.pos.y < impactY) {
+                this->actor.world.pos.y = impactY;
                 this->unk_1C2 = 2;
                 this->timers[0] = 10;
                 Actor_RequestQuakeAndRumble(&this->actor, play, 0xA, 0x14);
@@ -8275,7 +8280,11 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
 
         case 3:
         case 4:
-            Math_ApproachF(&this->actor.world.pos.y, player->actor.world.pos.y + hover, 0.1f, this->actor.velocity.y);
+            if (grounded) {
+                this->actor.world.pos.y = baseY; // he landed on his feet
+            } else {
+                Math_ApproachF(&this->actor.world.pos.y, baseY, 0.1f, this->actor.velocity.y);
+            }
             Math_ApproachF(&this->actor.velocity.y, 20.0f, 1.0f, 1.0f);
 
             if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
@@ -8804,7 +8813,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
                         (this->actionFunc == BossGanon_Player_ChargeLightBall) ||
                         (this->actionFunc == BossGanon_Player_Throw) ||
                         (this->actionFunc == BossGanon_Player_ChargeBigMagic) ||
-                        (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Hurt));
+                        (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Hurt) ||
+                        (this->actionFunc == BossGanon_Player_Pound));
 
         // In fast (the morph into the action already smooths it); out over ~13 frames, longer than the 10-frame
         // morph back to his standing idle, so the floating root height never shows
