@@ -7815,6 +7815,7 @@ void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
     this->triforceType = GDF_TRIFORCE_DORF;
     BossGanon_Player_SnapToLink(this, play);
     BossGanon_Player_UpdateAim(this, play);
+    this->playerAimYaw = this->actor.yawTowardsPlayer;
     BossGanon_Player_SetupFloat(this, play);
 }
 
@@ -8669,6 +8670,10 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
     BossGanon_Player_SlayNpcs(this, play);
 
+    // The engine sets yawTowardsPlayer to the direction of Link every frame, but Link stands right under him, so that
+    // direction is meaningless and he'd turn to it mid-attack. Restore the aim from the last update.
+    this->actor.yawTowardsPlayer = this->playerAimYaw;
+
     sCape->gravity = -3.0f;
     this->shockGlow = false;
     this->unk_1A2++;
@@ -8889,6 +8894,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Math_ApproachS(&this->actor.shape.rot.y, player->actor.shape.rot.y, 2, 0x2000);
     }
     this->actor.world.rot.y = this->actor.shape.rot.y;
+    this->playerAimYaw = this->actor.yawTowardsPlayer;
 
     // Used for the leg sway
     this->actor.velocity.x = this->actor.world.pos.x - this->actor.prevPos.x;

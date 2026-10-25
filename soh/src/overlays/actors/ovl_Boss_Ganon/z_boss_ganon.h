@@ -238,6 +238,7 @@ typedef struct BossGanon {
     Vec3s playerPgJoints[26];
     Vec3s playerPgMorph[26];
     u8 playerPgReady;
+    s16 playerAimYaw; // the attack direction (the engine overwrites yawTowardsPlayer every frame)
     u8 playerSpearValid;
     Vec3f playerSpearBase;
     Vec3f playerSpearTip;
