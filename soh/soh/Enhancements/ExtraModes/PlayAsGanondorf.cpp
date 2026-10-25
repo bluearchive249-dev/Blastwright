@@ -661,6 +661,12 @@ extern "C" s32 PlayAsGanondorf_GetLookAtPos(Player* player, Vec3f* pos) {
     return true;
 }
 
+// He kicks doors open (z_en_door.c): while he's shown, not Link
+extern "C" s32 PlayAsGanondorf_ShouldKickDoors(void) {
+    return (gPlayState != NULL) && CVarGetInteger(CVAR_PLAY_AS_GDF("DoorKick"), 1) &&
+           ShouldHideLink(gPlayState, GET_PLAYER(gPlayState));
+}
+
 // The Poe minion stands in for Navi: her look, her voice and her words
 extern "C" s32 PlayAsGanondorf_UsePoeNavi(void) {
     return IsEnabled() && CVarGetInteger(CVAR_PLAY_AS_GDF("PoeNavi"), 1);

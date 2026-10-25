@@ -62,6 +62,9 @@ s32 PlayAsGanondorf_GetLookAtPos(Player* player, Vec3f* pos);
 
 // Navi is a Poe minion: drawn as a purple-red Poe, with a Poe's laugh and her own lines
 s32 PlayAsGanondorf_UsePoeNavi(void);
+
+// He kicks doors off their hinges instead of opening them
+s32 PlayAsGanondorf_ShouldKickDoors(void);
 u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId);
 
 #ifdef __cplusplus

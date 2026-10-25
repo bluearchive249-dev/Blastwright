@@ -19,6 +19,7 @@
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h" // SoH: riding his horse
 #include "overlays/actors/ovl_En_Heishi1/z_en_heishi1.h" // SoH: guards hunting him after a murder
+#include "overlays/actors/ovl_En_Door/z_en_door.h" // SoH: he kicks doors open
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h" // SoH: shocks on enemies in his dark aura
 #include "objects/gameplay_keep/gameplay_keep.h" // SoH: the torch flame for his crawlspace form
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
@@ -91,6 +92,7 @@ static void BossGanon_Update_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Player_DrawSword(struct BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF* base);
+static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play);
 static u8 sGdfPgCapture = false;
 static MtxF sGdfLimbMtx[25];
 static void BossGanon_LightBall_Update_Impl(Actor* thisx, PlayState* play);
@@ -7742,6 +7744,63 @@ static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF*
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// Door kick: while Link opens a door, Ganondorf raises his right leg straight out in front (the whole leg turns about
+// the hip) and leans back, timed so the foot lands on the frame the door flies off (z_en_door.c)
+#define GDF_KICK_LIFT_DEG 80.0f
+
+static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    EnDoor* door = (EnDoor*)player->doorActor;
+    Vec3s* joints = this->skelAnime.jointTable;
+    GdfMat3 root;
+    GdfMat3 pelvis;
+    GdfMat3 hip;
+    GdfMat3 thigh;
+    GdfMat3 lift;
+    GdfMat3 tmp;
+    GdfMat3 tmp2;
+    f32 frame;
+    f32 w;
+    f32 a;
+
+    if ((door == NULL) || (door->actor.id != ACTOR_EN_DOOR) || (door->actor.update == NULL) ||
+        !door->playerIsOpening || !PlayAsGanondorf_ShouldKickDoors() || this->playerHidden) {
+        return;
+    }
+    frame = door->skelAnime.curFrame;
+    if (frame < 12.0f) {
+        w = 0.0f;
+    } else if (frame < 23.0f) {
+        w = (frame - 12.0f) / 11.0f;
+    } else if (frame < 30.0f) {
+        w = 1.0f;
+    } else if (frame < 42.0f) {
+        w = 1.0f - (frame - 30.0f) / 12.0f;
+    } else {
+        w = 0.0f;
+    }
+    if (w <= 0.0f) {
+        return;
+    }
+    w = w * w * (3.0f - 2.0f * w);
+
+    // Turn the right thigh about the actor's sideways axis, through the root and pelvis
+    BossGanon_Pg_FromRot(&joints[1 + 0], root);
+    BossGanon_Pg_FromRot(&joints[1 + 18], tmp);
+    BossGanon_Pg_Mul(root, tmp, pelvis, false);
+    a = -GDF_KICK_LIFT_DEG * w * (M_PI / 180.0f);
+    lift[0][0] = 1.0f; lift[0][1] = 0.0f;     lift[0][2] = 0.0f;
+    lift[1][0] = 0.0f; lift[1][1] = cosf(a);  lift[1][2] = -sinf(a);
+    lift[2][0] = 0.0f; lift[2][1] = sinf(a);  lift[2][2] = cosf(a);
+    BossGanon_Pg_FromRot(&joints[1 + 22], thigh);
+    BossGanon_Pg_Mul(pelvis, thigh, hip, false);      // thigh in actor space
+    BossGanon_Pg_Mul(lift, hip, tmp, false);          // lifted
+    BossGanon_Pg_Mul(pelvis, tmp, tmp2, true);        // back to pelvis space
+    BossGanon_Pg_ToRot(tmp2, &joints[1 + 22]);
+
+    BossGanon_Player_TwistLean(this, 0.0f, -0x0C00 * w);
+}
+
 // Blade (or spear) positions for the hitbox and the trail
 static void BossGanon_Player_SetBlade(BossGanon* this, Vec3f* base, Vec3f* tip) {
     const GdfSwordAttack* atk = &sGdfSwordAttacks[this->playerSwordAttack];
@@ -8945,6 +9004,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
             this->playerStandLegsWeight = 0.0f;
         }
     }
+
+    // He kicks doors open
+    BossGanon_Player_ApplyDoorKick(this, play);
 
     // Into and out of a crawlspace: a puff of dark smoke as he turns into the flame and back
     {

@@ -2305,6 +2305,14 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(0.5f).Max(2.0f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
             "Speed of the songs (applies the next time a song starts)."));
+    AddWidget(path, "Kick Doors Open", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.DoorKick"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "He doesn't open doors, he kicks them off their hinges: the door flies, tumbles and slams flat onto the "
+            "floor in a cloud of dust. It's back in its frame once he's gone."));
     AddWidget(path, "Poe Minion Instead of Navi", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PoeNavi"))
         .PreFunc([](WidgetInfo& info) {

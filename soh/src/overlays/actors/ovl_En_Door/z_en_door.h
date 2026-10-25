@@ -58,6 +58,14 @@ typedef struct EnDoor {
     // #region SOH [Randomizer]
     /*        */ RandomizerInf randomizerInf;
     // #endregion
+    // SoH: "Play as Ganondorf", he kicks doors off their hinges
+    u8 gdfKickState; // 0 none, 1 flying, 2 lying on the floor
+    Vec3s gdfClosedJoints[5];
+    Vec3f gdfFlyPos;
+    Vec3f gdfFlyVel;
+    s16 gdfFlyYaw;
+    s16 gdfFlyPitch;
+    s16 gdfFlyDir; // +1 / -1: which way the panel falls
 } EnDoor; // size = 0x01D8
 
 #ifdef __cplusplus
