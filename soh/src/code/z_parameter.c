@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "vt.h"
 #include "textures/parameter_static/parameter_static.h"
 #include "textures/do_action_static/do_action_static.h"
@@ -2831,12 +2832,12 @@ void Interface_SetNaviCall(PlayState* play, u16 naviCallState) {
         (play->csCtx.state == CS_STATE_IDLE)) {
         if (!CVarGetInteger(CVAR_AUDIO("DisableNaviCallAudio"), 0)) {
             // clang-format off
-            if (naviCallState == 0x1E) { Audio_PlaySfxGeneral(NA_SE_VO_NAVY_CALL, &gSfxDefaultPos, 4,
+            if (naviCallState == 0x1E) { Audio_PlaySfxGeneral(PlayAsGanondorf_GetNaviSfx(NA_SE_VO_NAVY_CALL), &gSfxDefaultPos, 4,
                                                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb); }
             // clang-format on
 
             if (naviCallState == 0x1D) {
-                func_800F4524(&gSfxDefaultPos, NA_SE_VO_NA_HELLO_2, 32);
+                func_800F4524(&gSfxDefaultPos, PlayAsGanondorf_GetNaviSfx(NA_SE_VO_NA_HELLO_2), 32);
             }
         }
 

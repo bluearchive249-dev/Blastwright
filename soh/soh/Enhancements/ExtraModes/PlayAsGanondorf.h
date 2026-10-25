@@ -57,6 +57,13 @@ s32 PlayAsGanondorf_UseTitleScreen(void);
 // True while that title screen is running
 s32 PlayAsGanondorf_IsTitleScreen(PlayState* play);
 
+// Where NPCs look when they look at him (his head)
+s32 PlayAsGanondorf_GetLookAtPos(Player* player, Vec3f* pos);
+
+// Navi is a Poe minion: drawn as a purple-red Poe, with a Poe's laugh and her own lines
+s32 PlayAsGanondorf_UsePoeNavi(void);
+u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId);
+
 #ifdef __cplusplus
 }
 #endif

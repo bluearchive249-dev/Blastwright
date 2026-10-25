@@ -4421,6 +4421,18 @@ void Npc_TrackPointWithLimits(Actor* actor, NpcInteractInfo* interactInfo, s16 m
     offsetActorPos.y = actor->world.pos.y + interactInfo->yOffset;
     offsetActorPos.z = actor->world.pos.z;
 
+    // SoH: "Play as Ganondorf", an NPC tracking the player (its point is on Link) looks up at Ganondorf's head
+    if (gPlayState != NULL) {
+        Player* trackedPlayer = GET_PLAYER(gPlayState);
+        Vec3f head;
+
+        if ((trackedPlayer != NULL) &&
+            (Math_Vec3f_DistXZ(&interactInfo->trackPos, &trackedPlayer->actor.world.pos) < 10.0f) &&
+            PlayAsGanondorf_GetLookAtPos(trackedPlayer, &head)) {
+            interactInfo->trackPos.y = head.y;
+        }
+    }
+
     pitchTowardsTarget = Math_Vec3f_Pitch(&offsetActorPos, &interactInfo->trackPos);
     yawTowardsTarget = Math_Vec3f_Yaw(&offsetActorPos, &interactInfo->trackPos);
     bodyYawDiff = Math_Vec3f_Yaw(&actor->world.pos, &interactInfo->trackPos) - actor->shape.rot.y;
@@ -6477,6 +6489,7 @@ s32 Actor_TrackPlayerSetFocusHeight(PlayState* play, Actor* actor, Vec3s* arg2, 
         sp2C = play->view.eye;
     } else {
         sp2C = player->actor.focus.pos;
+        PlayAsGanondorf_GetLookAtPos(player, &sp2C); // SoH: they look at Ganondorf's head
     }
 
     Actor_TrackPoint(actor, &sp2C, arg2, arg3);
@@ -6508,6 +6521,7 @@ s32 Actor_TrackPlayer(PlayState* play, Actor* actor, Vec3s* arg2, Vec3s* arg3, V
         sp24 = play->view.eye;
     } else {
         sp24 = player->actor.focus.pos;
+        PlayAsGanondorf_GetLookAtPos(player, &sp24); // SoH: they look at Ganondorf's head
     }
 
     Actor_TrackPoint(actor, &sp24, arg2, arg3);

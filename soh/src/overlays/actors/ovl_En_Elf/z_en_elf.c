@@ -5,6 +5,8 @@
  */
 
 #include "z_en_elf.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
+#include "objects/object_poh/object_poh.h" // SoH: the Poe minion in place of Navi
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include <assert.h>
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
@@ -1050,7 +1052,7 @@ void func_80A04414(EnElf* this, PlayState* play) {
             }
 
             if (this->unk_2C7 == 0) {
-                Audio_PlayActorSound2(&this->actor, targetSound);
+                Audio_PlayActorSound2(&this->actor, PlayAsGanondorf_GetNaviSfx(targetSound));
             }
 
             this->fairyFlags |= 1;
@@ -1495,6 +1497,77 @@ s32 EnElf_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* p
     return false;
 }
 
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf", Navi is a Poe minion: a small purple-red Poe with her lantern, which glows in Navi's
+// colors (white, green for people, yellow for enemies). Uses the regular Poe's model and float animation.
+// ------------------------------------------------------------------------------------------------
+#define POE_NAVI_SCALE 0.0045f
+#define POE_NAVI_LANTERN_LIMB 18
+
+static SkelAnime sPoeNaviSkel;
+static Vec3s sPoeNaviJoints[21];
+static Vec3s sPoeNaviMorph[21];
+static u8 sPoeNaviReady = false;
+static u32 sPoeNaviLastFrame = 0;
+static MtxF sPoeNaviLanternMtx;
+
+static s32 EnElf_PoeOverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
+                                     void* thisx) {
+    if (limbIndex == POE_NAVI_LANTERN_LIMB) {
+        *dList = NULL; // drawn on its own, glowing
+    }
+    return false;
+}
+
+static void EnElf_PoePostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
+    if (limbIndex == POE_NAVI_LANTERN_LIMB) {
+        Matrix_Get(&sPoeNaviLanternMtx);
+    }
+}
+
+static void EnElf_DrawPoeNavi(EnElf* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 alphaScale = this->disappearTimer < 0 ? (this->disappearTimer * (7.0f / 6000.0f)) + 1.0f : 1.0f;
+    s16 faceYaw = Math_Vec3f_Yaw(&this->actor.world.pos, &play->view.eye);
+
+    if (alphaScale <= 0.05f) {
+        return;
+    }
+    if (!sPoeNaviReady) {
+        SkelAnime_Init(play, &sPoeNaviSkel, (SkeletonHeader*)gPoeSkel, (AnimationHeader*)gPoeFloatAnim,
+                       sPoeNaviJoints, sPoeNaviMorph, 21);
+        sPoeNaviReady = true;
+    }
+    if (sPoeNaviLastFrame != play->gameplayFrames) {
+        sPoeNaviLastFrame = play->gameplayFrames;
+        SkelAnime_Update(&sPoeNaviSkel);
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Push();
+    Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y - 8.0f, this->actor.world.pos.z, MTXMODE_NEW);
+    Matrix_RotateY(BINANG_TO_RAD(faceYaw), MTXMODE_APPLY);
+    Matrix_Scale(POE_NAVI_SCALE, POE_NAVI_SCALE, POE_NAVI_SCALE, MTXMODE_APPLY);
+
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    // Body: purple-red
+    gDPSetEnvColor(POLY_OPA_DISP++, 230, 70, 140, 255);
+    gSPSegment(POLY_OPA_DISP++, 0x08, D_80116280 + 2);
+    SkelAnime_DrawOpa(play, sPoeNaviSkel.skeleton, sPoeNaviSkel.jointTable, EnElf_PoeOverrideLimbDraw,
+                      EnElf_PoePostLimbDraw, this);
+
+    // Lantern, in Navi's glow color
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetEnvColor(POLY_OPA_DISP++, (u8)this->outerColor.r, (u8)this->outerColor.g, (u8)this->outerColor.b, 255);
+    Matrix_Put(&sPoeNaviLanternMtx);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, gPoeLanternDL);
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void EnElf_Draw(Actor* thisx, PlayState* play) {
     s32 pad;
     f32 alphaScale;
@@ -1506,6 +1579,11 @@ void EnElf_Draw(Actor* thisx, PlayState* play) {
 
     if ((this->unk_2A8 != 8) && !(this->fairyFlags & 8)) {
         if (!(player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON) || (kREG(90) < this->actor.projectedPos.z)) {
+            // SoH: "Play as Ganondorf", the Poe minion instead of Navi
+            if ((this->actor.params == FAIRY_NAVI) && PlayAsGanondorf_UsePoeNavi()) {
+                EnElf_DrawPoeNavi(this, play);
+                return;
+            }
             dListHead = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
 
             OPEN_DISPS(play->state.gfxCtx);

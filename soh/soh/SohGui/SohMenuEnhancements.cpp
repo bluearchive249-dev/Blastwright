@@ -2305,6 +2305,15 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(0.5f).Max(2.0f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
             "Speed of the songs (applies the next time a song starts)."));
+    AddWidget(path, "Poe Minion Instead of Navi", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PoeNavi"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Navi is a small purple-red Poe, one of Ganondorf's minions. Her lantern glows in Navi's colors, she "
+            "cackles instead of \"Hey!\", and her advice and remarks are those of a fawning servant of the King of "
+            "Evil (the same hints, in her own words)."));
     AddWidget(path, "Purple Flame in Crawlspaces", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CrawlFlame"))
         .PreFunc([](WidgetInfo& info) {

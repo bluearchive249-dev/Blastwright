@@ -643,6 +643,49 @@ extern "C" s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye) {
     return true;
 }
 
+// Where people look when they look at him: his head, not Link's (NPCs that track the player's head, z_actor.c)
+extern "C" s32 PlayAsGanondorf_GetLookAtPos(Player* player, Vec3f* pos) {
+    if ((gPlayState == NULL) || !ShouldHideLink(gPlayState, player)) {
+        return false;
+    }
+    pos->x = player->actor.world.pos.x;
+    pos->y = player->actor.world.pos.y + (IsStandingOnGround()
+                                              ? GDF_STANDING_EYE_HEIGHT
+                                              : CVarGetFloat(CVAR_PLAY_AS_GDF("HoverHeight"), 70.0f) + GDF_EYES_ABOVE_ROOT);
+    pos->z = player->actor.world.pos.z;
+
+    BossGanon2* ganon = FindPlayerGanon(gPlayState);
+    if (ganon != NULL) {
+        pos->y = player->actor.world.pos.y + BossGanon2_Player_GetHeadHeight(&ganon->actor) - 20.0f;
+    }
+    return true;
+}
+
+// The Poe minion stands in for Navi: her look, her voice and her words
+extern "C" s32 PlayAsGanondorf_UsePoeNavi(void) {
+    return IsEnabled() && CVarGetInteger(CVAR_PLAY_AS_GDF("PoeNavi"), 1);
+}
+
+extern "C" u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId) {
+    if (!PlayAsGanondorf_UsePoeNavi()) {
+        return sfxId;
+    }
+    switch (sfxId) {
+        case NA_SE_VO_NAVY_ENEMY:
+        case NA_SE_VO_NAVY_CALL:
+            return NA_SE_EN_PO_LAUGH2;
+        case NA_SE_VO_NAVY_HELLO:
+        case NA_SE_VO_NAVY_HEAR:
+        case NA_SE_VO_NA_HELLO_0:
+        case NA_SE_VO_NA_HELLO_1:
+        case NA_SE_VO_NA_HELLO_2:
+        case NA_SE_VO_NA_HELLO_3:
+            return NA_SE_EN_PO_LAUGH;
+        default:
+            return sfxId;
+    }
+}
+
 // Every camera mode scales its distance and height from the player's height, so report Ganondorf's
 extern "C" f32 PlayAsGanondorf_GetCameraHeight(Player* player) {
     f32 height = Player_GetHeight(player);
