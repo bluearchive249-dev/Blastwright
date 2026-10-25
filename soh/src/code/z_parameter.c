@@ -26,6 +26,7 @@
 
 #include "message_data_static.h"
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/ExtraModes/GanondorfHud.h"
 extern MessageTableEntry* sNesMessageEntryTablePtr;
 extern MessageTableEntry* sGerMessageEntryTablePtr;
 extern MessageTableEntry* sFraMessageEntryTablePtr;
@@ -3448,6 +3449,53 @@ void Interface_DrawLineupTick(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+static const char sGdfTitleFlameTex[] = "__OTR__objects/object_mag/gTitleFlameEffectTex";
+
+// SoH: "Play as Ganondorf", the title logo's flames (the same scrolling flame texture and combiner) around the magic
+// meter, in red and gold
+static void Interface_DrawGanondorfMagicFlames(PlayState* play, s16 barX, s16 barY) {
+    InterfaceContext* interfaceCtx = &play->interfaceCtx;
+    s32 maskWidth;
+    s32 maskHeight;
+    const u8* mask = GanondorfHud_GetBarFlameMask(gSaveContext.magicCapacity, &maskWidth, &maskHeight);
+    s32 left = barX - GDF_BAR_FLAME_PAD_X;
+    s32 top = barY - GDF_BAR_FLAME_PAD_TOP;
+    s32 scroll = (play->gameplayFrames * -3) & 0x7F;
+    // The flames flare up while magic is being spent and settle to a steady burn otherwise
+    f32 flare = (gSaveContext.magicState == MAGIC_STATE_CONSUME || gSaveContext.magicState == MAGIC_STATE_METER_FLASH_1 ||
+                 gSaveContext.magicState == MAGIC_STATE_METER_FLASH_2 ||
+                 gSaveContext.magicState == MAGIC_STATE_METER_FLASH_3)
+                    ? 1.0f
+                    : 0.0f;
+    s32 lodFrac = (s32)(96.0f + 14.0f * Math_SinS(play->gameplayFrames * 0x0900) - 30.0f * flare);
+
+    if (mask == NULL) {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_39Overlay(play->state.gfxCtx);
+    gDPSetCycleType(OVERLAY_DISP++, G_CYC_2CYCLE);
+    gDPSetAlphaCompare(OVERLAY_DISP++, G_AC_THRESHOLD);
+    gDPSetRenderMode(OVERLAY_DISP++, G_RM_PASS, G_RM_CLD_SURF2);
+    gDPSetCombineLERP(OVERLAY_DISP++, TEXEL1, PRIMITIVE, PRIM_LOD_FRAC, TEXEL0, TEXEL1, 1, PRIM_LOD_FRAC, TEXEL0,
+                      PRIMITIVE, ENVIRONMENT, COMBINED, ENVIRONMENT, COMBINED, 0, PRIMITIVE, 0);
+    gDPSetPrimColor(OVERLAY_DISP++, 0, lodFrac, 255, 190, 60, interfaceCtx->magicAlpha);
+    gDPSetEnvColor(OVERLAY_DISP++, 200, 0, 0, 255);
+    gDPLoadMultiTile(OVERLAY_DISP++, mask, 0x0000, G_TX_RENDERTILE, G_IM_FMT_I, G_IM_SIZ_8b, maskWidth, maskHeight, 0, 0,
+                     maskWidth - 1, maskHeight - 1, 0, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP,
+                     G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+    gDPLoadMultiBlock(OVERLAY_DISP++, sGdfTitleFlameTex, 0x0100, 1, G_IM_FMT_I, G_IM_SIZ_8b, 32, 32, 0,
+                      G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 5, G_TX_NOLOD, G_TX_NOLOD);
+    gDPSetTileSize(OVERLAY_DISP++, 1, 0, scroll, 31 << 2, (31 << 2) + scroll);
+    gSPWideTextureRectangle(OVERLAY_DISP++, left << 2, top << 2, (left + maskWidth) << 2, (top + maskHeight) << 2,
+                            G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
+    gDPPipeSync(OVERLAY_DISP++);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void Interface_DrawMagicBar(PlayState* play) {
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
     s16 magicDrop = R_MAGIC_BAR_LARGE_Y - R_MAGIC_BAR_SMALL_Y + 2;
@@ -3463,6 +3511,13 @@ void Interface_DrawMagicBar(PlayState* play) {
         magicbar_green = CVarGetColor24(CVAR_COSMETIC("Consumable.Magic.Value"), magicbar_green);
     }
     GameInteractor_Should(VB_APPLY_MAGIC_METER_FILL_COLOR, true, &magicbar_green);
+
+    // SoH: "Play as Ganondorf", his magic burns red
+    if (PlayAsGanondorf_UseGanondorfHud()) {
+        magicbar_green.r = 235;
+        magicbar_green.g = 30;
+        magicbar_green.b = 10;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -3549,6 +3604,11 @@ void Interface_DrawMagicBar(PlayState* play) {
             rMagicBarX = rMagicBarX_original;
             PosX_MidEnd = PosX_MidEnd_original;
             rMagicFillX = rMagicFillX_original;
+        }
+
+        // SoH: "Play as Ganondorf", the title screen's flames burn around his magic meter
+        if (PlayAsGanondorf_UseGanondorfHud()) {
+            Interface_DrawGanondorfMagicFlames(play, PosX_Start, magicBarY);
         }
 
         Gfx_SetupDL_39Overlay(play->state.gfxCtx);

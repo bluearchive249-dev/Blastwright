@@ -674,6 +674,10 @@ extern "C" s32 PlayAsGanondorf_ShouldKickDoors(void) {
            ShouldHideLink(gPlayState, GET_PLAYER(gPlayState));
 }
 
+extern "C" s32 PlayAsGanondorf_UseGanondorfHud(void) {
+    return IsEnabled() && CVarGetInteger(CVAR_PLAY_AS_GDF("GanondorfHud"), 1);
+}
+
 // The Poe minion stands in for Navi: her look, her voice and her words
 extern "C" s32 PlayAsGanondorf_UsePoeNavi(void) {
     return IsEnabled() && CVarGetInteger(CVAR_PLAY_AS_GDF("PoeNavi"), 1);

@@ -70,6 +70,9 @@ s32 PlayAsGanondorf_ShouldKickDoors(void);
 s32 PlayAsGanondorf_OwnsFootsteps(Player* player);
 u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId);
 
+// His own HUD: purple diamonds for hearts and a magic meter wreathed in flames
+s32 PlayAsGanondorf_UseGanondorfHud(void);
+
 #ifdef __cplusplus
 }
 #endif

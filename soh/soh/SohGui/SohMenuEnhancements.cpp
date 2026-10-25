@@ -2322,6 +2322,14 @@ void SohMenu::AddMenuEnhancements() {
             "Navi is a small purple-red Poe, one of Ganondorf's minions. Her lantern glows in Navi's colors, she "
             "cackles instead of \"Hey!\", and her advice and remarks are those of a fawning servant of the King of "
             "Evil (the same hints, in her own words)."));
+    AddWidget(path, "Ganondorf HUD", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanondorfHud"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "His life is counted in purple diamonds instead of hearts (set in gold once he has double defense), and "
+            "his magic meter burns red, wreathed in the title screen's flames."));
     AddWidget(path, "Purple Flame in Crawlspaces", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CrawlFlame"))
         .PreFunc([](WidgetInfo& info) {

@@ -5,6 +5,8 @@
 #include "soh/Enhancements/cosmetics/cosmeticsTypes.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
+#include "soh/Enhancements/ExtraModes/GanondorfHud.h"
 
 s16 Top_LM_Margin = 0;
 s16 Left_LM_Margin = 0;
@@ -407,7 +409,44 @@ void HealthMeter_Draw(PlayState* play) {
         HeartsScale = CVarGetFloat(CVAR_COSMETIC("HUD.HeartsCount.Scale"), 0.7f);
     }
     static u32 epoch = 0;
+    // SoH: "Play as Ganondorf", purple diamonds in place of the hearts. The heart colours are swapped for his for the
+    // length of this draw and put back at the end.
+    s32 gdfHud = PlayAsGanondorf_UseGanondorfHud();
+    s16 savedHeartColors[18];
     epoch++;
+
+    if (gdfHud) {
+        s16* colors[18] = {
+            &interfaceCtx->beatingHeartPrim[0], &interfaceCtx->beatingHeartPrim[1], &interfaceCtx->beatingHeartPrim[2],
+            &interfaceCtx->beatingHeartEnv[0],  &interfaceCtx->beatingHeartEnv[1],  &interfaceCtx->beatingHeartEnv[2],
+            &interfaceCtx->heartsPrimR[0],      &interfaceCtx->heartsPrimG[0],      &interfaceCtx->heartsPrimB[0],
+            &interfaceCtx->heartsEnvR[0],       &interfaceCtx->heartsEnvG[0],       &interfaceCtx->heartsEnvB[0],
+            &interfaceCtx->heartsPrimR[1],      &interfaceCtx->heartsPrimG[1],      &interfaceCtx->heartsPrimB[1],
+            &interfaceCtx->heartsEnvR[1],       &interfaceCtx->heartsEnvG[1],       &interfaceCtx->heartsEnvB[1],
+        };
+        // The diamond being drained glows brighter, as the beating heart does
+        static const s16 gdfColors[18] = {
+            235, 130, 255, 70, 0, 110, // beating
+            190, 60,  255, 45, 0, 75,  // full and empty
+            190, 60,  255, 45, 0, 75,  // the second set (unused)
+        };
+        s32 k;
+
+        for (k = 0; k < 18; k++) {
+            savedHeartColors[k] = *colors[k];
+            *colors[k] = gdfColors[k];
+        }
+        // Double defense: the diamonds are set in gold instead of the hearts' white rims
+        if (ddHeartCountMinusOne >= 0) {
+            interfaceCtx->beatingHeartEnv[0] = 170;
+            interfaceCtx->beatingHeartEnv[1] = 120;
+            interfaceCtx->beatingHeartEnv[2] = 10;
+            interfaceCtx->heartsEnvR[0] = interfaceCtx->heartsEnvR[1] = 140;
+            interfaceCtx->heartsEnvG[0] = interfaceCtx->heartsEnvG[1] = 95;
+            interfaceCtx->heartsEnvB[0] = interfaceCtx->heartsEnvB[1] = 10;
+        }
+        ddHeartCountMinusOne = -1;
+    }
 
     OPEN_DISPS(gfxCtx);
 
@@ -497,6 +536,15 @@ void HealthMeter_Draw(PlayState* play) {
                 heartBgImg = sHeartTextures[curHeartFraction];
             } else {
                 heartBgImg = gHeartEmptyTex;
+            }
+            if (gdfHud) {
+                if (i < fullHeartCount) {
+                    heartBgImg = (void*)GanondorfHud_GetDiamondTex(GDF_DIAMOND_FULL);
+                } else if (i == fullHeartCount) {
+                    heartBgImg = (void*)GanondorfHud_GetDiamondForFraction(curHeartFraction);
+                } else {
+                    heartBgImg = (void*)GanondorfHud_GetDiamondTex(GDF_DIAMOND_EMPTY);
+                }
             }
         } else {
             if (i < fullHeartCount) {
@@ -642,6 +690,22 @@ void HealthMeter_Draw(PlayState* play) {
     }
 
     CLOSE_DISPS(gfxCtx);
+
+    if (gdfHud) {
+        s16* colors[18] = {
+            &interfaceCtx->beatingHeartPrim[0], &interfaceCtx->beatingHeartPrim[1], &interfaceCtx->beatingHeartPrim[2],
+            &interfaceCtx->beatingHeartEnv[0],  &interfaceCtx->beatingHeartEnv[1],  &interfaceCtx->beatingHeartEnv[2],
+            &interfaceCtx->heartsPrimR[0],      &interfaceCtx->heartsPrimG[0],      &interfaceCtx->heartsPrimB[0],
+            &interfaceCtx->heartsEnvR[0],       &interfaceCtx->heartsEnvG[0],       &interfaceCtx->heartsEnvB[0],
+            &interfaceCtx->heartsPrimR[1],      &interfaceCtx->heartsPrimG[1],      &interfaceCtx->heartsPrimB[1],
+            &interfaceCtx->heartsEnvR[1],       &interfaceCtx->heartsEnvG[1],       &interfaceCtx->heartsEnvB[1],
+        };
+        s32 k;
+
+        for (k = 0; k < 18; k++) {
+            *colors[k] = savedHeartColors[k];
+        }
+    }
 }
 
 void HealthMeter_HandleCriticalAlarm(PlayState* play) {
