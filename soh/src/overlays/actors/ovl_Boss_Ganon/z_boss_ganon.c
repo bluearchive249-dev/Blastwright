@@ -3529,6 +3529,10 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
     return 0;
 }
 
+// SoH: "Play as Ganondorf", his head (limb 18) from his last draw: Link's head, hat and focus while Link is hidden
+static Vec3f sGdfPlayerHeadPos;
+static u8 sGdfPlayerHeadValid = false;
+
 void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
     static s8 bodyPartLimbMap[] = {
         -1, -1, 1, -1, 3, 4, 5, -1, 6, 7, 8, -1, -1, -1, -1, -1, -1, -1, -1, 2, 12, 13, 14, 9, 10, 11, -1, -1, -1, -1,
@@ -3546,6 +3550,13 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
     bodyPart = bodyPartLimbMap[limbIndex];
     if (bodyPart >= 0) {
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_2EC[bodyPart]);
+    }
+
+    if ((limbIndex == 18) && GDF_IS_PLAYER(this)) {
+        static Vec3f sHeadCenter = { 800.0f, 0.0f, 0.0f }; // a little way up the head from the neck joint
+
+        Matrix_MultVec3f(&sHeadCenter, &sGdfPlayerHeadPos);
+        sGdfPlayerHeadValid = true;
     }
 
     // SoH: Phantom Ganon skin, every limb's matrix for posing his skeleton
@@ -9119,19 +9130,28 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     // Link isn't drawn, so his body part positions (used by enemies for grabs, effects and aiming) would go stale.
     // Use Ganondorf's from his last draw instead.
     if (!this->playerHidden) {
+        // Ganondorf's body parts (unk_2EC): 0 chest (torso + 30), 1 torso, 2 pelvis, 3-5 one arm, 6-8 the other,
+        // 9-11 one leg, 12-14 the other. His head is captured on its own (sGdfPlayerHeadPos).
         static const u8 sLinkToDorfBodyPart[] = {
-            1,          // waist
+            2,          // waist: his pelvis
             12, 13, 14, // right leg
             9,  10, 11, // left leg
-            2,  2,      // head, hat
+            0,  0,      // head, hat (replaced by his head below)
             0,          // collar
             3,  4,  5,  // left arm
             6,  7,  8,  // right arm
-            0,  0,      // sheath, torso
+            2,  1,      // sheath, torso
         };
 
         for (i = 0; (i < ARRAY_COUNT(sLinkToDorfBodyPart)) && (i < ARRAY_COUNT(player->bodyPartsPos)); i++) {
             player->bodyPartsPos[i] = this->unk_2EC[sLinkToDorfBodyPart[i]];
+        }
+        // His head, not his hips: Navi/the Poe hovers by the hat, enemies aim at the focus, NPCs look at it
+        if (sGdfPlayerHeadValid) {
+            player->bodyPartsPos[PLAYER_BODYPART_HEAD] = sGdfPlayerHeadPos;
+            player->bodyPartsPos[PLAYER_BODYPART_HAT] = sGdfPlayerHeadPos;
+            player->bodyPartsPos[PLAYER_BODYPART_HAT].y += 15.0f;
+            player->actor.focus.pos = sGdfPlayerHeadPos;
         }
     }
 
@@ -10421,6 +10441,7 @@ BOSS_GANON_CONTEXT_ENTRY(BossGanon_PlayerBigMagic_Update)
 
 void BossGanon_Reset(void) {
     sGdfWanted = false; // SoH: the manhunt ends with a reset
+    sGdfPlayerHeadValid = false;
     sGdfLastScene = -1;
     sSeed1 = 0;
     sSeed2 = 0;

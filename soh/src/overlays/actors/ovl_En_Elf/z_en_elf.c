@@ -1508,6 +1508,8 @@ static SkelAnime sPoeNaviSkel;
 static Vec3s sPoeNaviJoints[21];
 static Vec3s sPoeNaviMorph[21];
 static u8 sPoeNaviReady = false;
+static s16 sPoeNaviYaw = 0;
+static f32 sPoeNaviLean = 0.0f;
 static u32 sPoeNaviLastFrame = 0;
 static MtxF sPoeNaviLanternMtx;
 
@@ -1528,7 +1530,7 @@ static void EnElf_PoePostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, V
 static void EnElf_DrawPoeNavi(EnElf* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     f32 alphaScale = this->disappearTimer < 0 ? (this->disappearTimer * (7.0f / 6000.0f)) + 1.0f : 1.0f;
-    s16 faceYaw = Math_Vec3f_Yaw(&this->actor.world.pos, &play->view.eye);
+    f32 lean = 0.0f;
 
     if (alphaScale <= 0.05f) {
         return;
@@ -1539,15 +1541,34 @@ static void EnElf_DrawPoeNavi(EnElf* this, PlayState* play) {
         sPoeNaviReady = true;
     }
     if (sPoeNaviLastFrame != play->gameplayFrames) {
+        f32 dx = this->actor.world.pos.x - this->actor.prevPos.x;
+        f32 dz = this->actor.world.pos.z - this->actor.prevPos.z;
+        f32 speed = sqrtf(SQ(dx) + SQ(dz));
+        Actor* target = player->focusActor;
+        s16 targetYaw;
+
         sPoeNaviLastFrame = play->gameplayFrames;
         SkelAnime_Update(&sPoeNaviSkel);
+
+        // She looks where she's going, at whatever her master has targeted, and otherwise turns to face him
+        if ((target != NULL) && (target != &player->actor) && (target != &this->actor)) {
+            targetYaw = Math_Vec3f_Yaw(&this->actor.world.pos, &target->focus.pos);
+        } else if (speed > 1.5f) {
+            targetYaw = Math_Atan2S(dz, dx);
+        } else {
+            targetYaw = Math_Vec3f_Yaw(&this->actor.world.pos, &player->bodyPartsPos[PLAYER_BODYPART_HEAD]);
+        }
+        Math_SmoothStepToS(&sPoeNaviYaw, targetYaw, 4, 0x1800, 0x100);
+        Math_SmoothStepToF(&sPoeNaviLean, CLAMP_MAX(speed * 0.05f, 0.4f), 0.3f, 0.1f, 0.0f);
     }
+    lean = sPoeNaviLean;
 
     OPEN_DISPS(play->state.gfxCtx);
 
     Matrix_Push();
     Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y - 8.0f, this->actor.world.pos.z, MTXMODE_NEW);
-    Matrix_RotateY(BINANG_TO_RAD(faceYaw), MTXMODE_APPLY);
+    Matrix_RotateY(BINANG_TO_RAD(sPoeNaviYaw), MTXMODE_APPLY);
+    Matrix_RotateX(lean, MTXMODE_APPLY); // leans into it when flying fast
     Matrix_Scale(POE_NAVI_SCALE, POE_NAVI_SCALE, POE_NAVI_SCALE, MTXMODE_APPLY);
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
