@@ -94,6 +94,7 @@ static void BossGanon_Player_DrawSword(struct BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF* base);
 static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight);
+static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight);
 static u8 sGdfPgCapture = false;
 static MtxF sGdfLimbMtx[25];
 static void BossGanon_LightBall_Update_Impl(Actor* thisx, PlayState* play);
@@ -6187,8 +6188,13 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
 
     BossGanon_Player_ApplyWalk(this);
     if (this->playerSprintWeight > 0.0f) {
-        BossGanon_Player_TwistLean(this, 0.0f, 0x0C00 * this->playerSprintWeight * this->playerWalkWeight);
-        BossGanon_Player_ApplyRunArms(this, this->playerSprintWeight * this->playerWalkWeight);
+        f32 runWeight = this->playerSprintWeight * this->playerWalkWeight;
+        // Shoulders turn against the hips with each stride (the right shoulder comes forward with the right arm)
+        f32 twist = -0x0500 * Math_CosS((s16)(this->playerWalkFrame * (0x10000 / GDF_WALK_CYCLE_FRAMES)));
+
+        BossGanon_Player_TwistLean(this, twist * runWeight, 0x0C00 * runWeight);
+        BossGanon_Player_ApplyRunArms(this, runWeight);
+        BossGanon_Player_ApplyRunLegs(this, runWeight);
     }
 }
 
@@ -7841,7 +7847,7 @@ static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play) {
 // Sprinting arms: a runner's swing, heavy and wide. Each upper arm swings forward and back about his shoulders'
 // sideways axis, opposite to its leg (the right arm is back when the right foot is forward, at walk frame 0), and the
 // elbows bend so his fists pump. Added on top of the walk's own arm swing.
-#define GDF_RUN_ARM_SWING_DEG 42.0f
+#define GDF_RUN_ARM_SWING_DEG 46.0f
 #define GDF_RUN_ELBOW_DEG 85.0f
 
 static void BossGanon_Pg_RotX(f32 deg, GdfMat3 out) {
@@ -7879,8 +7885,10 @@ static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight) {
         GdfMat3 foreNew;
         GdfMat3 local;
         // Right arm back at frame 0, left arm forward
-        f32 swing = GDF_RUN_ARM_SWING_DEG * weight * ((side == 1) ? -cycle : cycle);
-        f32 elbow = GDF_RUN_ELBOW_DEG * weight;
+        f32 armCycle = (side == 1) ? -cycle : cycle;
+        // Swings further in front than behind, and the fist pumps up toward the chest as the arm comes forward
+        f32 swing = (GDF_RUN_ARM_SWING_DEG * armCycle + 8.0f) * weight;
+        f32 elbow = (GDF_RUN_ELBOW_DEG + 15.0f * MAX(armCycle, 0.0f)) * weight;
         s32 sh = sArmChains[side][0];
         s32 up = sArmChains[side][1];
         s32 fo = sArmChains[side][2];
@@ -7902,6 +7910,80 @@ static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight) {
         BossGanon_Pg_ToRot(local, &joints[1 + up]);
         BossGanon_Pg_Mul(upperNew, foreNew, local, true);
         BossGanon_Pg_ToRot(local, &joints[1 + fo]);
+    }
+}
+
+// Sprinting legs, after a runner's cycle (reference: a sprint animation the user found): on top of the walk's stride,
+// the trailing leg's heel kicks up behind him after it pushes off, then the knee drives up high in front with the shin
+// hanging under it, and the leg reaches down for the next step. Each leg's phase is 0 when its heel comes down (the
+// right one at walk frame 1, the left half a cycle later).
+#define GDF_RUN_KNEE_DRIVE_DEG 38.0f // extra thigh lift in front, late in the swing
+#define GDF_RUN_HEEL_KICK_DEG 80.0f  // extra knee bend behind, early in the swing
+
+static f32 BossGanon_Player_RunBump(f32 phase, f32 center, f32 width) {
+    f32 d = phase - center;
+
+    while (d > 0.5f) {
+        d -= 1.0f;
+    }
+    while (d < -0.5f) {
+        d += 1.0f;
+    }
+    if (fabsf(d) >= width) {
+        return 0.0f;
+    }
+    return 0.5f * (1.0f + cosf(M_PI * d / width));
+}
+
+static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight) {
+    static const s8 sLegChains[2][2] = { { 22, 23 }, { 19, 20 } }; // thigh, shin (right, left)
+    Vec3s* joints = this->skelAnime.jointTable;
+    GdfMat3 rootRot;
+    GdfMat3 pelvis;
+    GdfMat3 tmp;
+    f32 basePhase = (this->playerWalkFrame - 1.0f) / GDF_WALK_CYCLE_FRAMES;
+    s32 side;
+
+    if (weight <= 0.0f) {
+        return;
+    }
+
+    BossGanon_Pg_FromRot(&joints[1 + 0], rootRot);
+    BossGanon_Pg_FromRot(&joints[1 + 18], tmp);
+    BossGanon_Pg_Mul(rootRot, tmp, pelvis, false);
+
+    for (side = 0; side < 2; side++) {
+        GdfMat3 thigh;
+        GdfMat3 shin;
+        GdfMat3 rot;
+        GdfMat3 thighNew;
+        GdfMat3 shinNew;
+        GdfMat3 local;
+        f32 phase = basePhase + ((side == 1) ? 0.5f : 0.0f);
+        f32 drive;
+        f32 kick;
+        s32 th = sLegChains[side][0];
+        s32 sh = sLegChains[side][1];
+
+        phase -= floorf(phase);
+        drive = GDF_RUN_KNEE_DRIVE_DEG * BossGanon_Player_RunBump(phase, 0.82f, 0.22f) * weight;
+        kick = GDF_RUN_HEEL_KICK_DEG * BossGanon_Player_RunBump(phase, 0.55f, 0.22f) * weight;
+
+        BossGanon_Pg_FromRot(&joints[1 + th], tmp);
+        BossGanon_Pg_Mul(pelvis, tmp, thigh, false);
+        BossGanon_Pg_FromRot(&joints[1 + sh], tmp);
+        BossGanon_Pg_Mul(thigh, tmp, shin, false);
+
+        // Thigh up in front (negative turns forward); the shin hangs under the raised knee, and folds back for the kick
+        BossGanon_Pg_RotX(-drive, rot);
+        BossGanon_Pg_Mul(rot, thigh, thighNew, false);
+        BossGanon_Pg_RotX(-drive + drive * 0.85f + kick, rot);
+        BossGanon_Pg_Mul(rot, shin, shinNew, false);
+
+        BossGanon_Pg_Mul(pelvis, thighNew, local, true);
+        BossGanon_Pg_ToRot(local, &joints[1 + th]);
+        BossGanon_Pg_Mul(thighNew, shinNew, local, true);
+        BossGanon_Pg_ToRot(local, &joints[1 + sh]);
     }
 }
 
