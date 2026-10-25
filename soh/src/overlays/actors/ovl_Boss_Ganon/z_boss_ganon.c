@@ -8892,6 +8892,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 3, 0x1000);
     } else if (this->actionFunc != BossGanon_Player_Downed) {
         Math_ApproachS(&this->actor.shape.rot.y, player->actor.shape.rot.y, 2, 0x2000);
+        // Between attacks his aim is wherever Link faces, so an attack that doesn't aim itself goes straight ahead
+        this->actor.yawTowardsPlayer = player->actor.shape.rot.y;
     }
     this->actor.world.rot.y = this->actor.shape.rot.y;
     this->playerAimYaw = this->actor.yawTowardsPlayer;
