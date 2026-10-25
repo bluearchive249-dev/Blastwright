@@ -4,7 +4,9 @@
 // dungeons say the same things Navi's did, so the hints still work, but in the voice of a fawning servant of the King
 // of Evil who calls him Master. Only used while the Poe minion option is on.
 
+#include <cstring>
 #include <string>
+#include <vector>
 #include <unordered_map>
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -17,6 +19,8 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 #include "PlayAsGanondorf.h"
+#include "message_data_static.h"
+extern MessageTableEntry* sNesMessageEntryTablePtr;
 }
 
 // & starts a new line, ^ a new text box
@@ -287,10 +291,82 @@ static const std::unordered_map<uint16_t, MinionScene> sMinionOpening = {
                 TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM } },
     { 0x102C, { "Hmph... Good-bye, old stump...", TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM } },
     { 0x103F, { "If you press C-Up, you can change your view.^In a place like this, it switches to a top-down view. "
-                "Outdoors, in a field for example, it switches to a first-person view.^Also, when \"Navi\" shows in "
+                "Outdoors, in a field for example, it switches to a first-person view.^Also, when \"Poe\" shows in "
                 "the upper right of your screen, your Poe wants to talk to you. Use C-Up to hear her out!",
                 TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM } },
 };
+
+// Everyone else's lines that take her for a fairy: the game's own message, its control codes kept, with words swapped.
+// Written as raw message bytes: \x01 new line, \x04 new box, \x1A unskippable box, \x05 + letter a colour (split
+// from the letter so it doesn't run into the escape), \x0B wait for the scene.
+struct MinionEdit {
+    const char* from;
+    const char* to;
+};
+
+static const std::unordered_map<uint16_t, std::vector<MinionEdit>> sMinionEdits = {
+    // Malon, child and adult: he isn't her "fairy boy" any more
+    { 0x2000, { { "the fairy boy from", "the Poe man from" } } },
+    { 0x2041, { { "a fairy boy from", "a Poe man from" } } },
+    { 0x2043, { { "fairy boy?", "Poe man?" } } },
+    { 0x2047, { { "it's the fairy boy again", "it's the Poe man again" }, { "my friend, fairy boy!", "my friend, Poe man!" } } },
+    { 0x2048, { { "you, fairy boy...", "you, Poe man..." } } },
+    { 0x204A, { { "you, fairy boy.", "you, Poe man." } } },
+    // Hyrule's townsfolk and the Zora composer brothers' friend
+    { 0x7174, { { "Hi, fairy boy!", "Hi, Poe man!" } } },
+    { 0x40A3, { { "the fairy buddy I", "the ghost buddy I" } } },
+    // Princess Zelda in the courtyard: "Is that... a Poe?!"
+    { 0x70FA,
+      { { "\x05" "Da fairy\x05" "@\t?!\x04\x1AThen, are you...\x01" "Are you from the forest?",
+          "\x05" "Da Poe\x05" "@\t?!\x04\x1ASo the forest IS haunted...\x01Then, are you...\x01" "Are you from the forest?" } } },
+    // ...and her dream: the boy from the forest had a fairy, not a ghost
+    { 0x70FC,
+      { { "followed by a \x05" "Dfairy\x05" "@...\x0B",
+          "followed by a \x05" "Dfairy\x05" "@...\x04\x1AYours is a \x05" "DPoe\x05" "@... and you look\x01more like the storm clouds than\x01the light... But no matter!\x0B" } } },
+};
+
+static const MessageTableEntry* FindMessageEntry(uint16_t textId) {
+    if (sNesMessageEntryTablePtr == nullptr) {
+        return nullptr;
+    }
+    for (const MessageTableEntry* entry = sNesMessageEntryTablePtr; entry->textId != 0xFFFF; entry++) {
+        if (entry->textId == textId) {
+            return entry;
+        }
+    }
+    return nullptr;
+}
+
+static bool BuildEditedMessage(uint16_t textId) {
+    auto edits = sMinionEdits.find(textId);
+    if (edits == sMinionEdits.end() || gSaveContext.language != LANGUAGE_ENG) {
+        return false;
+    }
+    const MessageTableEntry* entry = FindMessageEntry(textId);
+    if (entry == nullptr || entry->segment == nullptr) {
+        return false;
+    }
+    std::string text(entry->segment, entry->msgSize);
+    size_t end = text.find('\x02');
+    if (end != std::string::npos) {
+        text.resize(end + 1);
+    }
+    bool changed = false;
+    for (const MinionEdit& edit : edits->second) {
+        size_t pos = text.find(edit.from);
+        if (pos != std::string::npos) {
+            text.replace(pos, strlen(edit.from), edit.to);
+            changed = true;
+        }
+    }
+    if (!changed) {
+        return false; // a different text than expected (a mod or another version): leave it alone
+    }
+    CustomMessage msg = CustomMessage(text, (TextBoxType)(entry->typePos >> 4),
+                                      (TextBoxPosition)(entry->typePos & 0xF));
+    msg.LoadIntoFont();
+    return true;
+}
 
 static void BuildMinionMessage(uint16_t* textId, bool* loadFromMessageTable) {
     if (!PlayAsGanondorf_UsePoeNavi()) {
@@ -304,6 +380,10 @@ static void BuildMinionMessage(uint16_t* textId, bool* loadFromMessageTable) {
         *loadFromMessageTable = false;
         msg.AutoFormat();
         msg.LoadIntoFont();
+        return;
+    }
+    if (BuildEditedMessage(*textId)) {
+        *loadFromMessageTable = false;
         return;
     }
     auto it = sMinionLines.find(*textId);
