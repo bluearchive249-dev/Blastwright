@@ -10156,6 +10156,22 @@ void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play) {
 void BossGanon_Player_Laugh(BossGanon* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
 
+    // The raised-hand animation is a standing one: its root sits a standing height above the floating animation's,
+    // so levitating he'd pop up for the taunt. In the air, keep the floating root (and its dangling legs).
+    if (!this->playerGrounded) {
+        Vec3s floatPose[GDF_LIMB_COUNT_PLAYER + 1];
+        Vec3s* joints = this->skelAnime.jointTable;
+        s32 i;
+
+        SkelAnime_GetFrameData((AnimationHeader*)gGanondorfFloatAnim,
+                               (s32)(this->unk_1A2 % (s32)Animation_GetLastFrame(&gGanondorfFloatAnim)),
+                               GDF_LIMB_COUNT_PLAYER + 1, floatPose);
+        joints[0] = floatPose[0];
+        for (i = 18; i < GDF_LIMB_COUNT_PLAYER; i++) {
+            joints[1 + i] = floatPose[1 + i]; // pelvis and legs
+        }
+    }
+
     this->legSwayEnabled = true;
     sCape->backPush = -3.0f;
     sCape->backSwayMagnitude = 0.25f;
