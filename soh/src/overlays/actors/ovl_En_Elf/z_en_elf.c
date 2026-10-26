@@ -1535,6 +1535,10 @@ static void EnElf_DrawPoeNavi(EnElf* this, PlayState* play) {
     if (alphaScale <= 0.05f) {
         return;
     }
+    // While her master holds up what he found (and opens chests), she keeps out of the camera's way
+    if (player->stateFlags1 & (PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS)) {
+        return;
+    }
     if (!sPoeNaviReady) {
         SkelAnime_Init(play, &sPoeNaviSkel, (SkeletonHeader*)gPoeSkel, (AnimationHeader*)gPoeFloatAnim,
                        sPoeNaviJoints, sPoeNaviMorph, 21);

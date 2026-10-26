@@ -20,6 +20,7 @@
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h" // SoH: riding his horse
 #include "overlays/actors/ovl_En_Heishi1/z_en_heishi1.h" // SoH: guards hunting him after a murder
 #include "overlays/actors/ovl_En_Door/z_en_door.h" // SoH: he kicks doors open
+#include "overlays/actors/ovl_En_Box/z_en_box.h"   // SoH: ...and chests
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h" // SoH: shocks on enemies in his dark aura
 #include "objects/gameplay_keep/gameplay_keep.h" // SoH: the torch flame for his crawlspace form
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
@@ -7874,6 +7875,82 @@ static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF*
 // the hip) and leans back, timed so the foot lands on the frame the door flies off (z_en_door.c)
 #define GDF_KICK_LIFT_DEG 80.0f
 
+// Raises his right leg straight out by `deg` (scaled by the weight `w`, 0 to 1) and leans back
+static void BossGanon_Player_KickPose(BossGanon* this, f32 w, f32 deg) {
+    Vec3s* joints = this->skelAnime.jointTable;
+    GdfMat3 root;
+    GdfMat3 pelvis;
+    GdfMat3 hip;
+    GdfMat3 thigh;
+    GdfMat3 lift;
+    GdfMat3 tmp;
+    GdfMat3 tmp2;
+    f32 a;
+
+    w = w * w * (3.0f - 2.0f * w);
+    BossGanon_Pg_FromRot(&joints[1 + 0], root);
+    BossGanon_Pg_FromRot(&joints[1 + 18], tmp);
+    BossGanon_Pg_Mul(root, tmp, pelvis, false);
+    a = -deg * w * (M_PI / 180.0f);
+    lift[0][0] = 1.0f; lift[0][1] = 0.0f;     lift[0][2] = 0.0f;
+    lift[1][0] = 0.0f; lift[1][1] = cosf(a);  lift[1][2] = -sinf(a);
+    lift[2][0] = 0.0f; lift[2][1] = sinf(a);  lift[2][2] = cosf(a);
+    BossGanon_Pg_FromRot(&joints[1 + 22], thigh);
+    BossGanon_Pg_Mul(pelvis, thigh, hip, false);
+    BossGanon_Pg_Mul(lift, hip, tmp, false);
+    BossGanon_Pg_Mul(pelvis, tmp, tmp2, true);
+    BossGanon_Pg_ToRot(tmp2, &joints[1 + 22]);
+
+    BossGanon_Player_TwistLean(this, 0.0f, -0x0C00 * w);
+}
+
+// Chests: while Link opens one, he boots the lid open instead, the foot landing on the frame the lid bursts open
+// (z_en_box.c, EN_BOX_GDF_KICK_FRAME). A lower kick than for doors, so the foot stops at the lid.
+#define GDF_CHEST_KICK_DEG 58.0f
+
+static void BossGanon_Player_ApplyChestKick(BossGanon* this, PlayState* play) {
+    static Actor* sKickedBox = NULL;
+    static s16 sAfterKick = 0; // frames since the foot landed
+    Player* player = GET_PLAYER(play);
+    Actor* actor;
+    EnBox* opening = NULL;
+    f32 w = 0.0f;
+
+    if (!PlayAsGanondorf_ShouldKickDoors() || this->playerHidden) {
+        sKickedBox = NULL;
+        return;
+    }
+    for (actor = play->actorCtx.actorLists[ACTORCAT_CHEST].head; actor != NULL; actor = actor->next) {
+        if ((actor->id == ACTOR_EN_BOX) && (((EnBox*)actor)->unk_1F4 > 0) &&
+            (Actor_WorldDistXZToActor(actor, &player->actor) < 120.0f)) {
+            opening = (EnBox*)actor;
+            break;
+        }
+    }
+    if (opening == NULL) {
+        sKickedBox = NULL;
+        return;
+    }
+
+    if (opening->skelanime.curFrame < EN_BOX_GDF_KICK_FRAME) {
+        // Winding up, the foot coming up to the lid
+        if ((sKickedBox != &opening->dyna.actor) && (opening->skelanime.curFrame >= 66.0f)) {
+            w = (opening->skelanime.curFrame - 66.0f) / (EN_BOX_GDF_KICK_FRAME - 66.0f);
+        }
+    } else {
+        if (sKickedBox != &opening->dyna.actor) {
+            sKickedBox = &opening->dyna.actor;
+            sAfterKick = 0;
+        }
+        // Held a moment as the lid flies, then back down
+        sAfterKick++;
+        w = (sAfterKick < 8) ? 1.0f : 1.0f - ((sAfterKick - 8) / 12.0f);
+    }
+    if (w > 0.0f) {
+        BossGanon_Player_KickPose(this, CLAMP(w, 0.0f, 1.0f), GDF_CHEST_KICK_DEG);
+    }
+}
+
 static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     EnDoor* door = (EnDoor*)player->doorActor;
@@ -9378,6 +9455,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
     // He kicks doors open
     BossGanon_Player_ApplyDoorKick(this, play);
+    BossGanon_Player_ApplyChestKick(this, play);
 
     // Into and out of a crawlspace: a puff of dark smoke as he turns into the flame and back
     {

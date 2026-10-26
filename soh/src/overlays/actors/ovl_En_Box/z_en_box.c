@@ -7,6 +7,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/randomizer/item_category_adj.h"
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 
 #define FLAGS 0
 
@@ -482,6 +483,18 @@ void EnBox_Open(EnBox* this, PlayState* play) {
         }
     } else {
         sfxId = 0;
+
+        // SoH: "Play as Ganondorf", he kicks the chest open: the lid bursts open on his kick, in a cloud of dust
+        if ((this->unk_1F4 > 0) && PlayAsGanondorf_ShouldKickDoors() &&
+            Animation_OnFrame(&this->skelanime, EN_BOX_GDF_KICK_FRAME)) {
+            this->skelanime.playSpeed = 4.0f;
+            EnBox_SpawnDust(this, play);
+            Actor_RequestQuakeAndRumble(&this->dyna.actor, play, 3, 8);
+            Audio_PlaySfxGeneral(NA_SE_IT_HAMMER_HIT, &this->dyna.actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            Audio_PlaySfxGeneral(NA_SE_EV_WOODPLATE_BOUND, &this->dyna.actor.projectedPos, 4,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
 
         if (Animation_OnFrame(&this->skelanime, 30.0f)) {
             sfxId = NA_SE_EV_TBOX_UNLOCK;

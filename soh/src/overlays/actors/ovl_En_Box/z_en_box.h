@@ -51,4 +51,7 @@ typedef struct EnBox {
     /*        */ Gfx* boxBodyDL;
 } EnBox; // size = 0x01FC
 
+// SoH: "Play as Ganondorf", the animation frame where his kick lands and the lid bursts open
+#define EN_BOX_GDF_KICK_FRAME 86.0f
+
 #endif
