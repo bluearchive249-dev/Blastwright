@@ -530,6 +530,26 @@ static PlayerAgeProperties sAgeProperties[] = {
     },
 };
 
+// SoH: "Play as Ganondorf", he's much taller than Link, so he reaches and hauls himself onto higher ledges: ledges are
+// looked for up to 200 units up (Link: 111), he steps or pulls himself up onto anything under 160 (Link: 79.4; above
+// that Link jumps for the ledge), and the high step starts at 95 (Link: 59). Not while swimming.
+static s32 Player_GdfTallLedges(Player* this) {
+    return (gPlayState != NULL) && !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) &&
+           PlayAsGanondorf_ShouldHideLink(gPlayState, this);
+}
+
+static f32 Player_LedgeCheckHeight(Player* this) {
+    return Player_GdfTallLedges(this) ? 200.0f : this->ageProperties->unk_0C;
+}
+
+static f32 Player_LedgeJumpHeight(Player* this) {
+    return Player_GdfTallLedges(this) ? 160.0f : this->ageProperties->unk_14;
+}
+
+static f32 Player_LedgeHighStepHeight(Player* this) {
+    return Player_GdfTallLedges(this) ? 95.0f : this->ageProperties->unk_18;
+}
+
 static u32 sNoclipEnabled = false;
 static f32 sControlStickMagnitude = 0.0f;
 static s16 sControlStickAngle = 0;
@@ -5008,7 +5028,7 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
     f32 sp24;
 
     if (!(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) && (this->ledgeClimbType >= 2) &&
-        (!(this->stateFlags1 & PLAYER_STATE1_IN_WATER) || (this->ageProperties->unk_14 > this->yDistToLedge))) {
+        (!(this->stateFlags1 & PLAYER_STATE1_IN_WATER) || (Player_LedgeJumpHeight(this) > this->yDistToLedge))) {
         sp3C = 0;
 
         if (func_808332B8(this)) {
@@ -5021,7 +5041,7 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
                 return 0;
             }
         } else if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) ||
-                   ((this->ageProperties->unk_14 <= this->yDistToLedge) &&
+                   ((Player_LedgeJumpHeight(this) <= this->yDistToLedge) &&
                     (this->stateFlags1 & PLAYER_STATE1_IN_WATER))) {
             return 0;
         }
@@ -5044,7 +5064,7 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
 
             sp34 = this->yDistToLedge;
 
-            if (this->ageProperties->unk_14 <= sp34) {
+            if (Player_LedgeJumpHeight(this) <= sp34) {
                 anim = &gPlayerAnim_link_normal_250jump_start;
                 this->linearVelocity = 1.0f;
             } else {
@@ -5058,7 +5078,7 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
                     anim = &gPlayerAnim_link_swimer_swim_15step_up;
                     sp34 -= (60.0f * this->ageProperties->unk_08);
                     this->stateFlags1 &= ~PLAYER_STATE1_IN_WATER;
-                } else if (this->ageProperties->unk_18 <= sp34) {
+                } else if (Player_LedgeHighStepHeight(this) <= sp34) {
                     anim = &gPlayerAnim_link_normal_150step_up;
                     sp34 -= (59.0f * this->ageProperties->unk_08);
                 } else {
@@ -10229,8 +10249,8 @@ void Player_Action_80845668(Player* this, PlayState* play) {
         if (LinkAnimation_OnFrame(&this->skelAnime, 8.0f)) {
             temp1 = this->yDistToLedge;
 
-            if (temp1 > this->ageProperties->unk_0C) {
-                temp1 = this->ageProperties->unk_0C;
+            if (temp1 > Player_LedgeCheckHeight(this)) {
+                temp1 = Player_LedgeCheckHeight(this);
             }
 
             if (this->stateFlags1 & PLAYER_STATE1_IN_WATER) {
@@ -11422,7 +11442,7 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
                 vLedgeCheckOffsetXZ = this->distToInteractWall + 10.0f;
                 ledgeCheckPos.x = this->actor.world.pos.x - (vLedgeCheckOffsetXZ * wallPolyNormalX);
                 ledgeCheckPos.z = this->actor.world.pos.z - (vLedgeCheckOffsetXZ * wallPolyNormalZ);
-                ledgeCheckPos.y = this->actor.world.pos.y + this->ageProperties->unk_0C;
+                ledgeCheckPos.y = this->actor.world.pos.y + Player_LedgeCheckHeight(this);
 
                 ledgePosY = BgCheck_EntityRaycastFloor1(&play->colCtx, &ledgeFloorPoly, &ledgeCheckPos);
                 yDistToLedge = ledgePosY - this->actor.world.pos.y;
@@ -11445,9 +11465,9 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
                     } else if (func_80041DE4(&play->colCtx, wallPoly, this->actor.wallBgId) == 0) {
                         if (this->ageProperties->unk_1C <= this->yDistToLedge) {
                             if (ABS(ledgeFloorPoly->normal.y) > 28000) {
-                                if (this->ageProperties->unk_14 <= this->yDistToLedge) {
+                                if (Player_LedgeJumpHeight(this) <= this->yDistToLedge) {
                                     nextLedgeClimbType = 4;
-                                } else if (this->ageProperties->unk_18 <= this->yDistToLedge) {
+                                } else if (Player_LedgeHighStepHeight(this) <= this->yDistToLedge) {
                                     nextLedgeClimbType = 3;
                                 } else {
                                     nextLedgeClimbType = 2;

@@ -11,6 +11,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 
 MapData* gMapData;
 
@@ -792,6 +793,12 @@ void Minimap_Draw(PlayState* play) {
     bool enableMapToggle =
         !(CVarGetInteger(CVAR_DEVELOPER_TOOLS("DebugEnabled"), 0) || CVarGetInteger(CVAR_CHEAT("MoonJumpOnL"), 0)) ||
         CVarGetInteger(CVAR_DEVELOPER_TOOLS("EnableMapToggle"), 0);
+
+    // SoH: "Play as Ganondorf", L is his levitation: the minimap always shows and L doesn't hide it
+    if (PlayAsGanondorf_OwnsLButton()) {
+        enableMapToggle = false;
+        R_MINIMAP_DISABLED = 0;
+    }
 
     if (play->pauseCtx.state < 4) {
         // Minimap margins

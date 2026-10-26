@@ -3530,6 +3530,34 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
     return 0;
 }
 
+// SoH: "Play as Ganondorf", the lowest point of his model from his last draw, from a few points on the outside of his
+// hands, shins and feet (measured on his model, in each limb's own space): toes, heels, soles, knees and knuckles. The
+// ground offset keeps that point on the floor, so no animation (kneeling, the heavy landing, getting up) sinks him in.
+static const Vec3f sGdfContactPoints[6][8] = {
+    // left hand (limb 6)
+    { { 584, -529, 345 }, { 159, 303, -299 }, { 1174, 315, 207 }, { 977, -387, -322 }, { 410, 166, 563 },
+      { 162, -349, -243 }, { 1142, -262, 373 }, { 958, 124, -426 } },
+    // right hand (limb 10)
+    { { 584, -529, -345 }, { 159, 303, 299 }, { 1174, 315, -207 }, { 977, -387, 322 }, { 410, 166, -563 },
+      { 162, -349, 243 }, { 1142, -262, -373 }, { 958, 124, 426 } },
+    // left shin (limb 21): the knee end
+    { { 1800, -737, 17 }, { 575, 971, -45 }, { 71, -645, -34 }, { 2170, 968, -20 }, { 2224, 123, 737 },
+      { 2224, 123, -711 }, { 392, 27, 671 }, { 392, 27, -595 } },
+    // left foot (limb 22): heel, sole and toes
+    { { -391, -592, -565 }, { 208, -592, 1277 }, { 2324, -351, -313 }, { -539, -586, 773 }, { 373, -592, -565 },
+      { 596, -586, 773 }, { 2324, -351, 311 }, { -324, -156, 1160 } },
+    // right shin (limb 24)
+    { { 1800, -737, -18 }, { 575, 971, 44 }, { 71, -645, 34 }, { 2170, 968, 19 }, { 2224, 123, -737 },
+      { 2224, 123, 710 }, { 392, 27, -671 }, { 392, 27, 594 } },
+    // right foot (limb 25)
+    { { -372, -592, -565 }, { 237, -592, 1277 }, { 2324, -351, -312 }, { -596, -586, 772 }, { 391, -592, -565 },
+      { -273, -156, 1161 }, { 2324, -351, 312 }, { 538, -586, 773 } },
+};
+static s16 sGdfFastGroundTimer = 0;   // frames left where the ground offset follows his pose at once
+static f32 sGdfMeshLowY = 0.0f;       // world height of his lowest point, last draw
+static f32 sGdfMeshLowYNext = 1.0e9f; // being gathered during this draw
+static u8 sGdfMeshLowValid = false;
+
 // SoH: "Play as Ganondorf", his head (limb 18) from his last draw: Link's head, hat and focus while Link is hidden
 static Vec3f sGdfPlayerHeadPos;
 static u8 sGdfPlayerHeadValid = false;
@@ -3551,6 +3579,28 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
     bodyPart = bodyPartLimbMap[limbIndex];
     if (bodyPart >= 0) {
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_2EC[bodyPart]);
+    }
+
+    if (GDF_IS_PLAYER(this)) {
+        s32 set = -1;
+
+        switch (limbIndex) {
+            case 6: set = 0; break;
+            case 10: set = 1; break;
+            case 21: set = 2; break;
+            case 22: set = 3; break;
+            case 24: set = 4; break;
+            case 25: set = 5; break;
+        }
+        if (set >= 0) {
+            Vec3f p;
+            s32 k;
+
+            for (k = 0; k < 8; k++) {
+                Matrix_MultVec3f(&sGdfContactPoints[set][k], &p);
+                sGdfMeshLowYNext = MIN(sGdfMeshLowYNext, p.y);
+            }
+        }
     }
 
     if ((limbIndex == 18) && GDF_IS_PLAYER(this)) {
@@ -4156,6 +4206,12 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     // SoH: "Play as Ganondorf", sword stance
     if (GDF_IS_PLAYER(this)) {
         BossGanon_Player_DrawSword(this, play);
+        // His lowest point, for the ground offset
+        sGdfMeshLowValid = sGdfMeshLowYNext < 1.0e8f;
+        if (sGdfMeshLowValid) {
+            sGdfMeshLowY = sGdfMeshLowYNext;
+        }
+        sGdfMeshLowYNext = 1.0e9f;
     }
 
     this->unk_2EC[0].x = this->unk_2EC[1].x;
@@ -5752,6 +5808,10 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play);
 void BossGanon_Player_Ride(BossGanon* this, PlayState* play);
 void BossGanon_Player_Climb(BossGanon* this, PlayState* play);
+void BossGanon_Player_LedgeClimb(BossGanon* this, PlayState* play);
+void BossGanon_Player_SetupLedgeClimb(BossGanon* this, PlayState* play);
+static void BossGanon_Player_PlaceLedgeClimb(BossGanon* this, PlayState* play);
+static f32 BossGanon_Player_RunBump(f32 phase, f32 center, f32 width);
 void BossGanon_Player_ItemGet(BossGanon* this, PlayState* play);
 static void BossGanon_Player_TwistLean(BossGanon* this, f32 twist, f32 lean);
 static s32 BossGanon_Player_GetSeat(PlayState* play, Vec3f* seat);
@@ -5914,6 +5974,7 @@ void SkelAnime_GetFrameData(AnimationHeader* animation, s32 frame, s32 limbCount
 #define GDF_WALK_MAX_RATE 2.5f
 #define GDF_WALK_MAX_STRIDE 1.6f
 #define GDF_ANKLE_HEIGHT 9.9f // his ankles above the floor when standing
+#define GDF_SOLE_CLEARANCE 2.5f // his lowest point (soles, toes, knees, knuckles) above the floor
 #define GDF_LEFT_FOOT_BODYPART 14
 #define GDF_RIGHT_FOOT_BODYPART 11
 #define GDF_LEFT_KNEE_BODYPART 13
@@ -6208,13 +6269,28 @@ static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play
     f32 ankleAboveRoot = MIN(lowestAnkle, lowestKnee) - this->actor.world.pos.y;
     f32 target = GDF_ANKLE_HEIGHT - ankleAboveRoot + (this->playerFloorY - player->actor.world.pos.y);
 
+    // Better: the lowest point of the model itself (toes, heels, knees, knuckles), kept just above the floor. The
+    // joints alone let tucked toes and a planted hand go through the floor when kneeling.
+    if (sGdfMeshLowValid) {
+        f32 meshAboveRoot = sGdfMeshLowY - this->actor.world.pos.y;
+
+        if ((meshAboveRoot > -300.0f) && (meshAboveRoot < 100.0f)) {
+            target = MAX(target, GDF_SOLE_CLEARANCE - meshAboveRoot + (this->playerFloorY - player->actor.world.pos.y));
+        }
+    }
+
     if (this->playerHidden || (ankleAboveRoot < -300.0f) || (ankleAboveRoot > 100.0f)) {
         return; // not drawn (stale), or not a sensible pose
     }
 
     target = CLAMP(target, -20.0f, BossGanon_Player_GetHoverHeight() + 60.0f);
-    // The landing drops him onto one knee in two frames: follow it at once, or he sinks into the floor first
-    if (this->actionFunc == BossGanon_Player_Land) {
+    // The landing drops him onto one knee in two frames: follow it at once, or he sinks into the floor first. Same
+    // while he blends from getting up into his standing idle afterwards: the get-up ends with his root far lower than
+    // the idle's, and a slow follow let the blend lift him off the floor for a moment.
+    if (sGdfFastGroundTimer > 0) {
+        sGdfFastGroundTimer--;
+    }
+    if ((this->actionFunc == BossGanon_Player_Land) || (sGdfFastGroundTimer > 0)) {
         Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
     } else {
         Math_ApproachF(&this->playerGroundOffset, target, 0.5f, 6.0f);
@@ -6341,6 +6417,12 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
     f32 dx;
     f32 dy;
     f32 dz;
+
+    // Up onto a ledge: his own path, timed by Link's climb
+    if (this->actionFunc == BossGanon_Player_LedgeClimb) {
+        BossGanon_Player_PlaceLedgeClimb(this, play);
+        return;
+    }
 
     // Climbing: a little further from the wall than Link, he's much bigger
     if (this->actionFunc == BossGanon_Player_Climb) {
@@ -7179,6 +7261,7 @@ void BossGanon_Player_Land(BossGanon* this, PlayState* play) {
         case 2:
             if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
                 BossGanon_Player_SetupFloat(this, play);
+                sGdfFastGroundTimer = 16; // through the 10-frame blend into his idle
             }
             break;
     }
@@ -7985,6 +8068,91 @@ static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight) {
         BossGanon_Pg_Mul(thighNew, shinNew, local, true);
         BossGanon_Pg_ToRot(local, &joints[1 + sh]);
     }
+}
+
+// The opening in Link's house: instead of lying in Link's bed, Ganondorf leans against the wall beside it, arms crossed
+// and head bowed, brooding, for as long as the scene's cutscene runs. The arms were posed offline with IK on his
+// skeleton (each forearm across his chest, the fist tucked by the other arm's biceps).
+#define GDF_BROOD_LEAN_DEG 9.0f  // leaning back against the wall
+#define GDF_BROOD_NOD_DEG 20.0f  // head bowed
+#define GDF_BROOD_SPOT_X 74.0f   // beside the bed (the bed is against the back wall, x -35 to 35)
+#define GDF_BROOD_SPOT_Z 104.0f
+
+static const Vec3s sGdfBroodArms[8] = {
+    { -7405, -16897, -9782 }, { 216, -3305, -14623 }, { 877, -5668, -15566 },  { -914, -765, -2736 }, // left 2-5
+    { 8017, 21399, -8564 },   { 30700, 25088, 19765 }, { 589, 4570, -15445 }, { 2258, -798, -1675 }, // right 6-9
+};
+
+void BossGanon_Player_Brood(BossGanon* this, PlayState* play);
+
+static s32 BossGanon_Player_ShouldBrood(PlayState* play) {
+    return (play->sceneNum == SCENE_LINKS_HOUSE) && (play->csCtx.state != CS_STATE_IDLE);
+}
+
+static void BossGanon_Player_SetupBrood(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+    Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, 0.0f);
+    this->actionFunc = BossGanon_Player_Brood;
+    this->handLightBallScale = 0.0f;
+    this->playerBtnHeld = 0;
+    this->playerWalkWeight = 0.0f;
+    this->playerSprintWeight = 0.0f;
+}
+
+void BossGanon_Player_Brood(BossGanon* this, PlayState* play) {
+    Vec3s* joints = this->skelAnime.jointTable;
+    GdfMat3 rootRot;
+    GdfMat3 torso;
+    GdfMat3 body;
+    GdfMat3 neck;
+    GdfMat3 rot;
+    GdfMat3 tmp;
+    s32 i;
+
+    SkelAnime_Update(&this->skelAnime);
+    this->legSwayEnabled = false;
+
+    for (i = 0; i < 8; i++) {
+        joints[1 + 2 + i] = sGdfBroodArms[i];
+    }
+
+    // Head bowed: the neck (limb 10, under the torso) turns forward about his sideways axis
+    BossGanon_Pg_FromRot(&joints[1 + 0], rootRot);
+    BossGanon_Pg_FromRot(&joints[1 + 1], tmp);
+    BossGanon_Pg_Mul(rootRot, tmp, body, false);
+    BossGanon_Pg_FromRot(&joints[1 + 10], tmp);
+    BossGanon_Pg_Mul(body, tmp, neck, false);
+    BossGanon_Pg_RotX(GDF_BROOD_NOD_DEG, rot);
+    BossGanon_Pg_Mul(rot, neck, tmp, false);
+    BossGanon_Pg_Mul(body, tmp, neck, true);
+    BossGanon_Pg_ToRot(neck, &joints[1 + 10]);
+
+    // Leaning back on the wall: the whole body tips back about his hips, feet a little forward
+    BossGanon_Pg_RotX(-GDF_BROOD_LEAN_DEG, rot);
+    BossGanon_Pg_Mul(rot, rootRot, torso, false);
+    BossGanon_Pg_ToRot(torso, &joints[1 + 0]);
+}
+
+// Where he stands, facing into the room, his feet on the floor
+static void BossGanon_Player_PlaceBrood(BossGanon* this, PlayState* play) {
+    static Vec3f sCenter = { 0.0f, 0.0f, 0.0f };
+    CollisionPoly* poly;
+    Vec3f spot = { GDF_BROOD_SPOT_X, 100.0f, GDF_BROOD_SPOT_Z };
+    f32 floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &spot);
+
+    // His ankles stand GDF_ANKLE_HEIGHT above the floor (from the last draw, as UpdateGroundOffset does)
+    f32 ankleAboveRoot = MIN(this->unk_2EC[GDF_LEFT_FOOT_BODYPART].y, this->unk_2EC[GDF_RIGHT_FOOT_BODYPART].y) -
+                         this->actor.world.pos.y;
+
+    if ((ankleAboveRoot < -60.0f) || (ankleAboveRoot > 60.0f)) {
+        ankleAboveRoot = GDF_ANKLE_HEIGHT; // first frame here (stale): stand on the floor
+    }
+    spot.y = ((floorY > BGCHECK_Y_MIN) ? floorY : 0.0f) + GDF_ANKLE_HEIGHT - ankleAboveRoot;
+    this->actor.world.pos = spot;
+    this->actor.prevPos = spot;
+    this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&spot, &sCenter);
+    this->playerAimYaw = this->actor.yawTowardsPlayer;
+    this->actor.velocity.x = this->actor.velocity.y = this->actor.velocity.z = 0.0f;
 }
 
 // Blade (or spear) positions for the hitbox and the trail
@@ -9090,6 +9258,13 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
+    // Stepping or pulling himself up onto a ledge
+    if ((player->stateFlags1 & PLAYER_STATE1_CLIMBING_LEDGE) && !(player->stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER) &&
+        (this->actionFunc != BossGanon_Player_LedgeClimb) && (this->actionFunc != BossGanon_Player_Downed) &&
+        (this->actionFunc != BossGanon_Player_Ride) && this->playerGrounded && !this->playerHidden) {
+        BossGanon_Player_SetupLedgeClimb(this, play);
+    }
+
     // Climbing a ladder or a vine wall
     if ((player->stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER) && (this->actionFunc != BossGanon_Player_Climb) &&
         (this->actionFunc != BossGanon_Player_Downed) && !this->playerHidden) {
@@ -9191,6 +9366,16 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
+    // The opening in Link's house: brooding against the wall while the cutscene runs
+    if (BossGanon_Player_ShouldBrood(play) && !this->playerHidden) {
+        if (this->actionFunc != BossGanon_Player_Brood) {
+            BossGanon_Player_SetupBrood(this, play);
+            BossGanon_Player_Brood(this, play);
+        }
+    } else if (this->actionFunc == BossGanon_Player_Brood) {
+        BossGanon_Player_SetupFloat(this, play);
+    }
+
     // He kicks doors open
     BossGanon_Player_ApplyDoorKick(this, play);
 
@@ -9240,7 +9425,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     // After the action, so the block's own intangibility doesn't count as getting hurt
     this->playerPrevInvincibilityTimer = player->invincibilityTimer;
 
-    if (this->playerGrounded && (this->actionFunc != BossGanon_Player_Climb)) {
+    if (this->playerGrounded && (this->actionFunc != BossGanon_Player_Climb) &&
+        (this->actionFunc != BossGanon_Player_LedgeClimb)) {
         BossGanon_Player_UpdateGroundOffset(this, play);
     }
     BossGanon_Player_UpdateSwordHit(this, play);
@@ -9282,6 +9468,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
     this->actor.world.rot.y = this->actor.shape.rot.y;
     this->playerAimYaw = this->actor.yawTowardsPlayer;
+    if (this->actionFunc == BossGanon_Player_Brood) {
+        BossGanon_Player_PlaceBrood(this, play);
+    }
 
     // Used for the leg sway
     this->actor.velocity.x = this->actor.world.pos.x - this->actor.prevPos.x;
@@ -10078,6 +10267,96 @@ void BossGanon_Player_Climb(BossGanon* this, PlayState* play) {
     for (i = 22; i <= 23; i++) {
         BossGanon_Player_SlerpRot(&joints[1 + i], &sKneeR[1 + sGdfBossToYoungLimb[i]], t * 0.8f, &joints[1 + i]);
     }
+}
+
+// Ledges: while Link steps or pulls himself up onto a ledge (Link is already up there, his animation just shows him
+// climbing), Ganondorf plants both fists on the ledge above him, hauls himself up with a knee coming up onto it, and
+// steps forward onto the top, timed by Link's climbing animation.
+static Vec3f sGdfLedgeStart;
+static Vec3f sGdfLedgeTop;
+
+static f32 BossGanon_Player_LedgeProgress(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 end = player->skelAnime.endFrame;
+
+    return (end > 0.0f) ? CLAMP(player->skelAnime.curFrame / end, 0.0f, 1.0f) : 1.0f;
+}
+
+void BossGanon_Player_SetupLedgeClimb(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    BossGanon_Player_ReleaseOrganCam(this, play);
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+    Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -4.0f);
+    this->actionFunc = BossGanon_Player_LedgeClimb;
+    this->playerWalkWeight = 0.0f;
+    this->playerSprintWeight = 0.0f;
+    this->playerStandLegsWeight = 0.0f;
+
+    sGdfLedgeStart = this->actor.world.pos;
+    sGdfLedgeTop = player->actor.world.pos;
+    sGdfLedgeTop.y += this->playerGroundOffset;
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DAMAGE1));
+}
+
+void BossGanon_Player_LedgeClimb(BossGanon* this, PlayState* play) {
+    static Vec3s sKneeR[GDF_YOUNG_WALK_JOINTS];
+    static u8 sKneeRead = false;
+    Player* player = GET_PLAYER(play);
+    Vec3s* joints = this->skelAnime.jointTable;
+    Vec3s armL[3];
+    Vec3s armR[3];
+    f32 t = BossGanon_Player_LedgeProgress(play);
+    f32 reach;
+    f32 weight;
+    f32 knee;
+    s32 i;
+
+    if (!(player->stateFlags1 & PLAYER_STATE1_CLIMBING_LEDGE) || this->playerHidden) {
+        BossGanon_Player_SetupFloat(this, play);
+        return;
+    }
+    if (!sKneeRead) {
+        SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, 20, GDF_YOUNG_WALK_JOINTS, sKneeR);
+        sKneeRead = true;
+    }
+
+    SkelAnime_Update(&this->skelAnime);
+    this->legSwayEnabled = false;
+    sCape->backPush = -2.0f;
+    sCape->backSwayMagnitude = 0.25f;
+    sCape->sideSwayMagnitude = -1.0f;
+    sCape->minDist = 0.0f;
+
+    // Fists up on the ledge first, then pushing down on it as he rises, then back to his sides on top
+    reach = 1.0f - BossGanon_Player_SmoothStep((t - 0.35f) / 0.35f);
+    weight = 1.0f - BossGanon_Player_SmoothStep((t - 0.8f) / 0.2f);
+    for (i = 0; i < 3; i++) {
+        BossGanon_Player_SlerpRot((Vec3s*)&sGdfClimbPoses[1][i], (Vec3s*)&sGdfClimbPoses[0][i], reach, &armL[i]);
+        BossGanon_Player_SlerpRot((Vec3s*)&sGdfClimbPoses[3][i], (Vec3s*)&sGdfClimbPoses[2][i], reach, &armR[i]);
+    }
+    BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, armL, weight);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, armR, weight);
+
+    // The right knee comes up onto the ledge while he hauls himself up
+    knee = BossGanon_Player_RunBump(t, 0.55f, 0.35f);
+    for (i = 22; i <= 23; i++) {
+        BossGanon_Player_SlerpRot(&joints[1 + i], &sKneeR[1 + sGdfBossToYoungLimb[i]], knee, &joints[1 + i]);
+    }
+
+    // Leaning into the wall as he pulls
+    BossGanon_Player_TwistLean(this, 0.0f, 0x1800 * BossGanon_Player_RunBump(t, 0.45f, 0.45f));
+}
+
+// His path up: rising through the middle of the climb, forward onto the top in the second half
+static void BossGanon_Player_PlaceLedgeClimb(BossGanon* this, PlayState* play) {
+    f32 t = BossGanon_Player_LedgeProgress(play);
+    f32 up = BossGanon_Player_SmoothStep((t - 0.1f) / 0.6f);
+    f32 forward = BossGanon_Player_SmoothStep((t - 0.4f) / 0.5f);
+
+    this->actor.world.pos.x = sGdfLedgeStart.x + (sGdfLedgeTop.x - sGdfLedgeStart.x) * forward;
+    this->actor.world.pos.y = sGdfLedgeStart.y + (sGdfLedgeTop.y - sGdfLedgeStart.y) * up;
+    this->actor.world.pos.z = sGdfLedgeStart.z + (sGdfLedgeTop.z - sGdfLedgeStart.z) * forward;
 }
 
 // Both fists up over his head with the item between them, like Link holding up what he found

@@ -73,6 +73,9 @@ u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId);
 // His own HUD: purple diamonds for hearts and a magic meter wreathed in flames
 s32 PlayAsGanondorf_UseGanondorfHud(void);
 
+// L is his levitation, so it doesn't toggle the minimap (always shown)
+s32 PlayAsGanondorf_OwnsLButton(void);
+
 #ifdef __cplusplus
 }
 #endif
