@@ -9444,9 +9444,19 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
-    // The opening in Link's house: brooding against the wall while the cutscene runs
+    // His taunt (D-pad Up) works in cutscenes and conversations too, where his other moves don't
+    if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_DUP) && !this->playerHidden &&
+        !GanondorfSongs_IsOcarinaOut() &&
+        ((player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
+         (play->csCtx.state != CS_STATE_IDLE)) &&
+        ((this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_SwordIdle) ||
+         (this->actionFunc == BossGanon_Player_Brood))) {
+        BossGanon_Player_SetupLaugh(this, play);
+    }
+
+    // The opening in Link's house: brooding against the wall while the cutscene runs (a taunt can interrupt it)
     if (BossGanon_Player_ShouldBrood(play) && !this->playerHidden) {
-        if (this->actionFunc != BossGanon_Player_Brood) {
+        if ((this->actionFunc != BossGanon_Player_Brood) && (this->actionFunc != BossGanon_Player_Laugh)) {
             BossGanon_Player_SetupBrood(this, play);
             BossGanon_Player_Brood(this, play);
         }
@@ -9548,7 +9558,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
     this->actor.world.rot.y = this->actor.shape.rot.y;
     this->playerAimYaw = this->actor.yawTowardsPlayer;
-    if (this->actionFunc == BossGanon_Player_Brood) {
+    if ((this->actionFunc == BossGanon_Player_Brood) ||
+        ((this->actionFunc == BossGanon_Player_Laugh) && BossGanon_Player_ShouldBrood(play))) {
         BossGanon_Player_PlaceBrood(this, play);
     }
 

@@ -76,6 +76,9 @@ s32 PlayAsGanondorf_UseGanondorfHud(void);
 // L is his levitation, so it doesn't toggle the minimap (always shown)
 s32 PlayAsGanondorf_OwnsLButton(void);
 
+// A makes him sprint where Link would attack, jump or put away (the A button then reads "Run")
+s32 PlayAsGanondorf_ARuns(void);
+
 #ifdef __cplusplus
 }
 #endif

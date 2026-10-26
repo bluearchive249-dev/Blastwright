@@ -707,6 +707,11 @@ extern "C" s32 PlayAsGanondorf_ShouldKickDoors(void) {
            ShouldHideLink(gPlayState, GET_PLAYER(gPlayState));
 }
 
+extern "C" s32 PlayAsGanondorf_ARuns(void) {
+    return (gPlayState != NULL) && CVarGetInteger(CVAR_PLAY_AS_GDF("Sprint"), 1) && !sLevitating &&
+           ShouldHideLink(gPlayState, GET_PLAYER(gPlayState)) && (FindPlayerGanon(gPlayState) == NULL);
+}
+
 extern "C" s32 PlayAsGanondorf_OwnsLButton(void) {
     return IsEnabled();
 }
