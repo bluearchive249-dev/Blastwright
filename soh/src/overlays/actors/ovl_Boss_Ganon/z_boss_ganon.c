@@ -94,6 +94,7 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Player_DrawSword(struct BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF* base);
 static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play);
+static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight);
 static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight);
 static u8 sGdfPgCapture = false;
@@ -9456,6 +9457,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     // He kicks doors open
     BossGanon_Player_ApplyDoorKick(this, play);
     BossGanon_Player_ApplyChestKick(this, play);
+    BossGanon_Player_ApplyDoorDuck(this, play);
 
     // Into and out of a crawlspace: a puff of dark smoke as he turns into the flame and back
     {
@@ -10435,6 +10437,56 @@ static void BossGanon_Player_PlaceLedgeClimb(BossGanon* this, PlayState* play) {
     this->actor.world.pos.x = sGdfLedgeStart.x + (sGdfLedgeTop.x - sGdfLedgeStart.x) * forward;
     this->actor.world.pos.y = sGdfLedgeStart.y + (sGdfLedgeTop.y - sGdfLedgeStart.y) * up;
     this->actor.world.pos.z = sGdfLedgeStart.z + (sGdfLedgeTop.z - sGdfLedgeStart.z) * forward;
+}
+
+// Through a doorway he's kicked open: he's too tall for the frame, so he grabs it with his right hand, ducks his head
+// under it and pulls himself through. Weighted by how close he is to the doorway's plane.
+#define GDF_DOOR_DUCK_LEAN 0x2400 // about 50 degrees
+
+static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play) {
+    Actor* actor;
+    f32 w = 0.0f;
+
+    if (!PlayAsGanondorf_ShouldKickDoors() || this->playerHidden || !this->playerGrounded ||
+        (this->actionFunc == BossGanon_Player_Brood) || (this->actionFunc == BossGanon_Player_LedgeClimb)) {
+        return;
+    }
+    for (actor = play->actorCtx.actorLists[ACTORCAT_DOOR].head; actor != NULL; actor = actor->next) {
+        f32 dx;
+        f32 dz;
+        f32 across;
+        f32 along;
+
+        if ((actor->id != ACTOR_EN_DOOR) || (((EnDoor*)actor)->gdfKickState == 0)) {
+            continue;
+        }
+        dx = this->actor.world.pos.x - actor->world.pos.x;
+        dz = this->actor.world.pos.z - actor->world.pos.z;
+        across = (dx * Math_SinS(actor->shape.rot.y)) + (dz * Math_CosS(actor->shape.rot.y)); // through the doorway
+        along = (dx * Math_CosS(actor->shape.rot.y)) - (dz * Math_SinS(actor->shape.rot.y));  // sideways in it
+        if (fabsf(along) > 90.0f) {
+            continue;
+        }
+        w = MAX(w, 1.0f - CLAMP((fabsf(across) - 10.0f) / 55.0f, 0.0f, 1.0f));
+    }
+    // Not while the kick itself is still going (it ends at door frame 42, see ApplyDoorKick)
+    {
+        Player* player = GET_PLAYER(play);
+        EnDoor* door = (EnDoor*)player->doorActor;
+
+        if ((door != NULL) && (door->actor.id == ACTOR_EN_DOOR) && (door->actor.update != NULL) &&
+            door->playerIsOpening) {
+            f32 frame = door->skelAnime.curFrame;
+
+            w *= CLAMP((frame - 36.0f) / 10.0f, 0.0f, 1.0f);
+        }
+    }
+    if (w <= 0.0f) {
+        return;
+    }
+    w = w * w * (3.0f - 2.0f * w);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfClimbPoses[2], w);
+    BossGanon_Player_TwistLean(this, 0.0f, GDF_DOOR_DUCK_LEAN * w);
 }
 
 // Both fists up over his head with the item between them, like Link holding up what he found
