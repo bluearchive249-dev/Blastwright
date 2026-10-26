@@ -24,6 +24,7 @@
 //    allowed outdoors and in dungeons; anywhere else he turns back into Ganondorf.
 
 #include <libultraship/bridge/consolevariablebridge.h>
+#include <SDL2/SDL.h>
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
@@ -537,6 +538,22 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
     SetLinkShadowHidden(player, ShouldHideLinkModel(play, player));
 }
 
+// Z is his levitation's "sink", so on a controller, clicking the right stick (R3) does Z-targeting instead: needed for
+// locking on, and for the Poe minion's notes on an enemy (target it, then C-Up). Read straight from the controllers,
+// as R3 isn't one of the N64 buttons.
+static bool IsRightStickClicked() {
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        if (!SDL_IsGameController(i)) {
+            continue;
+        }
+        SDL_GameController* controller = SDL_GameControllerFromInstanceID(SDL_JoystickGetDeviceInstanceID(i));
+        if ((controller != nullptr) && SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Input* input) {
     sSprinting = false;
     if (!ShouldHideLink(play, player)) {
@@ -581,6 +598,22 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
     input->cur.button &= ~blocked;
     input->press.button &= ~blocked;
     input->rel.button &= ~blocked;
+
+    // R3: Z-targeting (not while levitating, where Z sinks him)
+    {
+        static bool sWasTargetHeld = false;
+        bool held = CVarGetInteger(CVAR_PLAY_AS_GDF("R3Targeting"), 1) && !sLevitating && IsRightStickClicked();
+
+        if (held) {
+            input->cur.button |= BTN_Z;
+            if (!sWasTargetHeld) {
+                input->press.button |= BTN_Z;
+            }
+        } else if (sWasTargetHeld) {
+            input->rel.button |= BTN_Z;
+        }
+        sWasTargetHeld = held;
+    }
 
     // Ganondorf stays put while he attacks, and levitation does its own movement
     if (busy || sLevitating) {

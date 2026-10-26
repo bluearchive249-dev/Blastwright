@@ -2322,6 +2322,14 @@ void SohMenu::AddMenuEnhancements() {
             "Navi is a small purple-red Poe, one of Ganondorf's minions. Her lantern glows in Navi's colors, she "
             "cackles instead of \"Hey!\", and her advice and remarks are those of a fawning servant of the King of "
             "Evil (the same hints, in her own words)."));
+    AddWidget(path, "Z-Targeting on R3", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.R3Targeting"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Z makes him sink while levitating, so on a controller, click the right stick (R3) to Z-target: lock on "
+            "to enemies and people, and hear the Poe's notes on an enemy (target it, then press C-Up)."));
     AddWidget(path, "Ganondorf HUD", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanondorfHud"))
         .PreFunc([](WidgetInfo& info) {
