@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "message_data_static.h"
 #include "vt.h"
 
@@ -1646,6 +1647,20 @@ bool Message_DecodeName(PlayState* play, s16* decodedBufPosPtr, s32* charTexIdxP
     MessageContext* msgCtx = &play->msgCtx;
     Font* font = &play->msgCtx.font;
     u8 emptyChar = (gSaveContext.ship.filenameLanguage == NAME_LANGUAGE_PAL) ? 0x3E : 0xDF;
+
+    // SoH: "Play as Ganondorf", everyone calls him by his name, whatever the file is named (names are 8 letters at
+    // most, one short of his). Not in Japanese text, which uses its own font.
+    if (PlayAsGanondorf_UseGanondorfName() && !(gSaveContext.language == LANGUAGE_JPN && !sDisplayNextMessageAsEnglish)) {
+        static const char sGdfName[] = "Ganondorf";
+
+        for (i = 0; sGdfName[i] != '\0'; i++) {
+            Font_LoadChar(font, sGdfName[i] - ' ', *charTexIdxPtr);
+            *charTexIdxPtr += FONT_CHAR_TEX_SIZE;
+            msgCtx->msgBufDecoded[(*decodedBufPosPtr)++] = sGdfName[i];
+        }
+        (*decodedBufPosPtr)--;
+        return true;
+    }
 
     for (playerNameLen = ARRAY_COUNT(gSaveContext.playerName); playerNameLen > 0; playerNameLen--) {
         if (gSaveContext.playerName[playerNameLen - 1] != emptyChar) {

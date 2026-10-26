@@ -79,6 +79,9 @@ s32 PlayAsGanondorf_OwnsLButton(void);
 // A makes him sprint where Link would attack, jump or put away (the A button then reads "Run")
 s32 PlayAsGanondorf_ARuns(void);
 
+// Characters call him "Ganondorf" in dialogue, whatever the file is named
+s32 PlayAsGanondorf_UseGanondorfName(void);
+
 #ifdef __cplusplus
 }
 #endif

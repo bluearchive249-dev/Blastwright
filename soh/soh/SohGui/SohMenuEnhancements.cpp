@@ -2331,6 +2331,14 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Z makes him sink while levitating, so on a controller, click the right stick (R3) to Z-target: lock on "
             "to enemies and people, and hear the Poe's notes on an enemy (target it, then press C-Up)."));
+    AddWidget(path, "Called Ganondorf in Dialogue", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CallMeGanondorf"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Everyone calls him Ganondorf, whatever the file is named (file names stop at 8 letters, one short of "
+            "his)."));
     AddWidget(path, "Ganondorf HUD", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanondorfHud"))
         .PreFunc([](WidgetInfo& info) {
