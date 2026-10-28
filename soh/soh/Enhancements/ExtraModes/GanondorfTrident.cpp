@@ -185,9 +185,11 @@ bool ReadFile() {
             gSPClearGeometryMode(p++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_CULL_BOTH | G_FOG);
         });
         Emit(t.dl, [&](Gfx*& p) { gSPSetGeometryMode(p++, G_ZBUFFER | G_SHADE | G_LIGHTING | G_SHADING_SMOOTH); });
+        // A tile load: a block load stops at 4096 texels (the N64's texture memory), far less than the texture
         Emit(t.dl, [&](Gfx*& p) {
-            gDPLoadTextureBlock(p++, tex, G_IM_FMT_RGBA, G_IM_SIZ_32b, w, h, 0, G_TX_NOMIRROR | G_TX_WRAP,
-                                G_TX_NOMIRROR | G_TX_WRAP, maskS, maskT, G_TX_NOLOD, G_TX_NOLOD);
+            gDPLoadTextureTile(p++, tex, G_IM_FMT_RGBA, G_IM_SIZ_32b, w, h, 0, 0, w - 1, h - 1, 0,
+                               G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, maskS, maskT, G_TX_NOLOD,
+                               G_TX_NOLOD);
         });
 
         for (auto& batch : batches) {
