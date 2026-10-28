@@ -149,10 +149,20 @@ bool ReadFile() {
                 v.n.ob[2] = (s16)u16At();
                 v.n.tc[0] = (s16)u16At();
                 v.n.tc[1] = (s16)u16At();
-                v.n.n[0] = (s8)u8At();
-                v.n.n[1] = (s8)u8At();
-                v.n.n[2] = (s8)u8At();
-                v.n.a = u8At();
+                f32 nx = (s8)u8At() / 127.0f;
+                f32 ny = (s8)u8At() / 127.0f;
+                f32 nz = (s8)u8At() / 127.0f;
+                u8 alpha = u8At();
+                // Its own light, baked in: the scene's lights (dim and coloured at dusk and indoors) tinted the
+                // pale silver and lavender of some tridents sand-brown. A key light from above and one side.
+                f32 len = sqrtf(nx * nx + ny * ny + nz * nz);
+                f32 lit = 0.0f;
+                if (len > 0.0f) {
+                    lit = (nx * 0.35f + ny * 0.85f + nz * 0.4f) / len;
+                }
+                u8 shade = (u8)(255.0f * CLAMP(0.62f + 0.38f * fabsf(lit), 0.0f, 1.0f));
+                v.v.cn[0] = v.v.cn[1] = v.v.cn[2] = shade;
+                v.v.cn[3] = alpha;
                 t.vertices.push_back(v);
             }
             for (u8 i = 0; i < triCount * 3; i++) {
@@ -176,7 +186,7 @@ bool ReadFile() {
         s32 maskT = Log2(h);
 
         Emit(t.dl, [&](Gfx*& p) { gDPPipeSync(p++); });
-        // Textured and lit; texels with little alpha are cut out (the feathers)
+        // Textured and shaded (its own baked light); texels with little alpha are cut out (the feathers)
         Emit(t.dl, [&](Gfx*& p) {
             gDPSetCombineLERP(p++, TEXEL0, 0, SHADE, 0, 0, 0, 0, TEXEL0, TEXEL0, 0, SHADE, 0, 0, 0, 0, TEXEL0);
         });
@@ -185,7 +195,8 @@ bool ReadFile() {
         Emit(t.dl, [&](Gfx*& p) {
             gSPClearGeometryMode(p++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_CULL_BOTH | G_FOG);
         });
-        Emit(t.dl, [&](Gfx*& p) { gSPSetGeometryMode(p++, G_ZBUFFER | G_SHADE | G_LIGHTING | G_SHADING_SMOOTH); });
+        Emit(t.dl, [&](Gfx*& p) { gSPClearGeometryMode(p++, G_LIGHTING); });
+        Emit(t.dl, [&](Gfx*& p) { gSPSetGeometryMode(p++, G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH); });
         // A tile load: a block load stops at 4096 texels (the N64's texture memory), far less than the texture
         Emit(t.dl, [&](Gfx*& p) {
             gDPLoadTextureTile(p++, tex, G_IM_FMT_RGBA, G_IM_SIZ_16b, w, h, 0, 0, w - 1, h - 1, 0,
