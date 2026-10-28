@@ -6276,7 +6276,6 @@ static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play) {
 
     if (!BossGanon_Player_CanRoam(this, play)) {
         sGdfRoaming = false;
-    sGdfTridentState = GDF_TRIDENT_IN_HAND;
         sGdfRoamSpeed = 0.0f;
         return;
     }
@@ -11398,6 +11397,7 @@ void BossGanon_Reset(void) {
     sGdfWanted = false; // SoH: the manhunt ends with a reset
     sGdfPlayerHeadValid = false;
     sGdfRoaming = false;
+    sGdfTridentState = GDF_TRIDENT_IN_HAND;
     sGdfLastScene = -1;
     sSeed1 = 0;
     sSeed2 = 0;
