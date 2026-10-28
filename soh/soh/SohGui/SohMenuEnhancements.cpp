@@ -50,6 +50,13 @@ static std::map<int32_t, const char*> bunnyHoodEffectMap = {
     { BUNNY_HOOD_FAST_AND_JUMP, "Faster + Longer Jump" },
 };
 
+static const std::map<int32_t, const char*> ganondorfWeapons = {
+    { 0, "Sword" },
+    { 1, "Burning Trident" },
+    { 2, "King of Evil Trident" },
+    { 3, "Thief's Trident" },
+    { 4, "Trident of Demise" },
+};
 static const std::map<int32_t, const char*> ganondorfDPadLeftModes = {
     { 0, "Insta-Kill Dark Aura" },
     { 1, "Sword Stance" },
@@ -2412,6 +2419,17 @@ void SohMenu::AddMenuEnhancements() {
             "Move with the stick while holding it, on the ground or in the air. Enemies caught in it die (bosses "
             "only take normal hits).\n"
             " - Sword Stance: his sword moveset."));
+    AddWidget(path, "Weapon", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Weapon"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"), 0) != 1;
+        })
+        .Options(ComboboxOptions().ComboMap(ganondorfWeapons).DefaultIndex(0).Tooltip(
+            "What he wields in his sword stance (D-Pad Left). The tridents use a spear's moveset: B, B and a stab to "
+            "finish the combo. He carries a trident at his side when it's put away. The tridents need "
+            "gdf_tridents.bin next to the game; without it he keeps the sword."));
     AddWidget(path, "Sword Size: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordSize"))
         .PreFunc([](WidgetInfo& info) {
@@ -2420,7 +2438,7 @@ void SohMenu::AddMenuEnhancements() {
                             CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"), 0) != 1;
         })
         .Options(FloatSliderOptions().Min(0.8f).Max(2.0f).DefaultValue(1.4f).Format("%.2fx").Tooltip(
-            "Size of his sword and sheath. 1.4 is a greatsword for his size; the hitbox follows the blade."));
+            "Size of his sword and sheath (or trident). 1.4 is a greatsword for his size; the hitbox follows the blade."));
     AddWidget(path, "Ganon Form (D-Pad Right)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonForm"))
         .PreFunc([](WidgetInfo& info) {

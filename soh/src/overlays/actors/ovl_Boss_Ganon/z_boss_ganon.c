@@ -11,6 +11,7 @@
 #include "assets/objects/object_gndd/object_gndd.h"
 #include "assets/objects/object_gnd/object_gnd.h" // SoH: Phantom Ganon skin for "Play as Ganondorf"
 #include "soh/Enhancements/ExtraModes/GanondorfSword.h"
+#include "soh/Enhancements/ExtraModes/GanondorfTrident.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
 #include "soh/Enhancements/ExtraModes/GanondorfKills.h"
@@ -5810,6 +5811,8 @@ void BossGanon_Player_SetupDowned(BossGanon* this, PlayState* play);
 void BossGanon_Player_Downed(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play);
 static void BossGanon_Player_KeepFloatRoot(BossGanon* this);
+static s32 BossGanon_Player_UsesSpear(void);
+static s32 BossGanon_Player_HasTrident(void);
 static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play);
 void BossGanon_Player_Brood(BossGanon* this, PlayState* play);
 void BossGanon_Player_Laugh(BossGanon* this, PlayState* play);
@@ -6740,6 +6743,7 @@ static const Vec3s sGdfSwordPoses[GDF_POSE_MAX][3] = {
 #define GDF_GRIP_X 650.0f
 #define GDF_GRIP_Y 0.0f
 #define GDF_GRIP_Z -100.0f
+#define GDF_TRIDENT_GRIP_Z -500.0f // the trident model's grip, in the sword frame
 #define GDF_SWORD_SCALE 1.4f // a greatsword: about 62 units of blade on a 100 unit tall Ganondorf
 #define GDF_SWORD_GRIP_Z -500.0f   // where he holds the sword (sword frame)
 #define GDF_SHEATH_GRIP_Z 350.0f   // where he holds the sheath, just under its mouth
@@ -7067,7 +7071,7 @@ static void BossGanon_Player_ApplyStanceArms(BossGanon* this) {
 
     // Phantom Ganon has no sheath: his left arm stays free
     Math_ApproachF(&this->playerSheathArmWeight,
-                   ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_IsPhantom()) ? 1.0f : 0.0f, 1.0f, 0.2f);
+                   ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_UsesSpear()) ? 1.0f : 0.0f, 1.0f, 0.2f);
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
                               this->playerSheathArmWeight);
 
@@ -7344,7 +7348,7 @@ void BossGanon_Player_SetupLand(BossGanon* this, PlayState* play, f32 height) {
 void BossGanon_Player_Land(BossGanon* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
 
-    if ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_IsPhantom()) {
+    if ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_UsesSpear()) {
         BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD], 1.0f);
     }
     sCape->minDist = 0.0f;
@@ -7631,7 +7635,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     }
 
     // Left arm keeps the sheath, right arm follows the attack, and his whole body moves with it
-    Math_ApproachF(&this->playerSheathArmWeight, BossGanon_Player_IsPhantom() ? 0.0f : 1.0f, 1.0f, 0.2f);
+    Math_ApproachF(&this->playerSheathArmWeight, BossGanon_Player_UsesSpear() ? 0.0f : 1.0f, 1.0f, 0.2f);
     BossGanon_Player_ApplyAttackBody(this, this->playerSwordTimer);
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
                               this->playerSheathArmWeight);
@@ -7699,7 +7703,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
         BossGanon_Player_CanStartAttack(this, play)) {
         // Phantom Ganon finishes the combo with a stab of the spear instead of the overhead slam
         BossGanon_Player_SetupSwordAttack(this, play,
-                                          (BossGanon_Player_IsPhantom() && (atk->next == GDF_SWORD_ATK_COMBO3))
+                                          (BossGanon_Player_UsesSpear() && (atk->next == GDF_SWORD_ATK_COMBO3))
                                               ? GDF_SWORD_ATK_THRUST
                                               : atk->next);
         return;
@@ -7795,6 +7799,15 @@ static const Vec3s sGdfPgSpearRot = { 16286, -16384, 16286 };
 
 s32 BossGanon_Player_IsPhantom(void) {
     return CVarGetInteger(CVAR_PLAY_AS_GDF("PhantomGanon"), 0) != 0;
+}
+
+// A trident in his hands (the weapon menu): the spear's moveset (the combo ends in a stab) and no sheath
+static s32 BossGanon_Player_HasTrident(void) {
+    return !BossGanon_Player_IsPhantom() && (GanondorfTrident_GetSelected() != 0);
+}
+
+static s32 BossGanon_Player_UsesSpear(void) {
+    return BossGanon_Player_IsPhantom() || BossGanon_Player_HasTrident();
 }
 
 typedef f32 GdfMat3[3][3];
@@ -8394,6 +8407,38 @@ static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play) {
     if ((sPlayerSwordState == GDF_SWORD_OFF) || !this->playerHandMtxValid) {
         this->playerBladeValid = false;
         return;
+    }
+
+    // A trident: held at his side in his left hand while sheathed, in his right hand drawn
+    if (BossGanon_Player_HasTrident()) {
+        f32 headZ;
+        f32 tipZ;
+        Gfx* tridentDL = GanondorfTrident_GetDL(GanondorfTrident_GetSelected() - 1, &headZ, &tipZ);
+
+        if (tridentDL != NULL) {
+            Vec3f headLocal = { 0.0f, 0.0f, headZ };
+            Vec3f tipLocal = { 0.0f, 0.0f, tipZ };
+
+            OPEN_DISPS(play->state.gfxCtx);
+            Matrix_Push();
+            if (sPlayerSwordState == GDF_SWORD_SHEATHED) {
+                BossGanon_Player_SwordFrame(&this->playerLeftHandMtx, GDF_TRIDENT_GRIP_Z);
+                this->playerBladeValid = false;
+            } else {
+                Vec3f base;
+                Vec3f tip;
+
+                BossGanon_Player_SwordFrame(&this->playerRightHandMtx, GDF_TRIDENT_GRIP_Z);
+                Matrix_MultVec3f(&headLocal, &base);
+                Matrix_MultVec3f(&tipLocal, &tip);
+                BossGanon_Player_SetBlade(this, &base, &tip);
+            }
+            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_OPA_DISP++, tridentDL);
+            Matrix_Pop();
+            CLOSE_DISPS(play->state.gfxCtx);
+            return;
+        }
     }
     swordDL = GanondorfSword_GetSwordDL();
     sheathDL = GanondorfSword_GetSheathDL();
