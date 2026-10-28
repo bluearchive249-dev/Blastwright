@@ -22,6 +22,7 @@
 #include "overlays/actors/ovl_En_Heishi1/z_en_heishi1.h" // SoH: guards hunting him after a murder
 #include "overlays/actors/ovl_En_Door/z_en_door.h" // SoH: he kicks doors open
 #include "overlays/actors/ovl_En_Box/z_en_box.h"   // SoH: ...and chests
+#include "overlays/actors/ovl_En_GeldB/z_en_geldb.h" // SoH: his Gerudo bodyguards
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h" // SoH: shocks on enemies in his dark aura
 #include "objects/gameplay_keep/gameplay_keep.h" // SoH: the torch flame for his crawlspace form
 #include "overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
@@ -96,6 +97,7 @@ static void BossGanon_Player_DrawSword(struct BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF* base);
 static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
+static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight);
 static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight);
 static u8 sGdfPgCapture = false;
@@ -5727,8 +5729,9 @@ static void BossGanon_Player_SlayNpcs(BossGanon* this, PlayState* play) {
         while (npc != NULL) {
             Actor* next = npc->next;
 
-            // Not the one he's carrying (Ruto), and nothing already gone
-            if ((npc->update != NULL) && (npc != player->heldActor) && (npc->init == NULL)) {
+            // Not the one he's carrying (Ruto), not his own bodyguards, and nothing already gone
+            if ((npc->update != NULL) && (npc != player->heldActor) && (npc->init == NULL) &&
+                !((npc->id == ACTOR_EN_GELDB) && EN_GELDB_IS_ALLY(npc->params))) {
                 for (i = 0; i < sGdfAtCount; i++) {
                     if (BossGanon_Player_NpcInVolume(npc, &sGdfAtVolumes[i])) {
                         BossGanon_Player_SlayNpc(play, npc);
@@ -9667,6 +9670,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     BossGanon_Player_ApplyDoorKick(this, play);
     BossGanon_Player_ApplyChestKick(this, play);
     BossGanon_Player_ApplyDoorDuck(this, play);
+    BossGanon_Player_UpdateBodyguards(this, play);
 
     // Into and out of a crawlspace: a puff of dark smoke as he turns into the flame and back
     {
@@ -10677,6 +10681,58 @@ static void BossGanon_Player_PlaceLedgeClimb(BossGanon* this, PlayState* play) {
     this->actor.world.pos.x = sGdfLedgeStart.x + (sGdfLedgeTop.x - sGdfLedgeStart.x) * forward;
     this->actor.world.pos.y = sGdfLedgeStart.y + (sGdfLedgeTop.y - sGdfLedgeStart.y) * up;
     this->actor.world.pos.z = sGdfLedgeStart.z + (sGdfLedgeTop.z - sGdfLedgeStart.z) * forward;
+}
+
+// His Gerudo bodyguards (option "Gerudo Bodyguards"): three Gerudo fighters, in green, blue and red, who follow him and
+// fight the enemies around him (their behavior is in z_en_geldb.c). They drop in near him when the option is turned
+// on and in every new area; turning it off sends them away.
+static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    u8 want = CVarGetInteger(CVAR_PLAY_AS_GDF("Bodyguards"), 0) && !this->playerHidden &&
+              (gSaveContext.gameMode == GAMEMODE_NORMAL) && (play->csCtx.state == CS_STATE_IDLE) &&
+              (play->transitionTrigger == TRANS_TRIGGER_OFF);
+    Actor* found[3] = { NULL, NULL, NULL };
+    Actor* actor;
+    s32 i;
+
+    // In the NPC list once they're set up, in the enemy list until then
+    for (i = 0; i < 2; i++) {
+        for (actor = play->actorCtx.actorLists[(i == 0) ? ACTORCAT_NPC : ACTORCAT_ENEMY].head; actor != NULL;
+             actor = actor->next) {
+            if ((actor->id == ACTOR_EN_GELDB) && EN_GELDB_IS_ALLY(actor->params)) {
+                found[actor->params & 3] = actor;
+            }
+        }
+    }
+    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("Bodyguards"), 0)) {
+        for (i = 0; i < 3; i++) {
+            if (found[i] != NULL) {
+                Vec3f zero = { 0.0f, 0.0f, 0.0f };
+                Vec3f pos = found[i]->world.pos;
+
+                pos.y += 30.0f;
+                EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 100, 0, 255, 255, 255, 255, 200, 0, 0, 1, 9, true);
+                Actor_Kill(found[i]);
+            }
+        }
+        return;
+    }
+    if (!want) {
+        return;
+    }
+    if (Object_GetIndex(&play->objectCtx, OBJECT_GELDB) < 0) {
+        Object_Spawn(&play->objectCtx, OBJECT_GELDB);
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        if (found[i] == NULL) {
+            s16 yaw = player->actor.shape.rot.y + 0x8000 + (i - 1) * 0x2400;
+
+            Actor_Spawn(&play->actorCtx, play, ACTOR_EN_GELDB, player->actor.world.pos.x + Math_SinS(yaw) * 95.0f,
+                        player->actor.world.pos.y, player->actor.world.pos.z + Math_CosS(yaw) * 95.0f, 0,
+                        player->actor.shape.rot.y, 0, EN_GELDB_PARAMS_ALLY + i);
+        }
+    }
 }
 
 // Through a doorway he's kicked open: he's too tall for the frame, so he grabs it with his right hand, ducks his head

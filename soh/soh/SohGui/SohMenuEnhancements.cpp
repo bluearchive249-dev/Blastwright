@@ -2338,6 +2338,15 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Z makes him sink while levitating, so on a controller, click the right stick (R3) to Z-target: lock on "
             "to enemies and people, and hear the Poe's notes on an enemy (target it, then press C-Up)."));
+    AddWidget(path, "Gerudo Bodyguards", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Bodyguards"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Three Gerudo fighters, in green, blue and red, drop in at his side and follow him everywhere. When an "
+            "enemy comes near they run in and cut it down with their own slashes and spinning slashes. Enemies can "
+            "knock them back but can't kill them. Turn it off to dismiss them."));
     AddWidget(path, "Walk Around in Cutscenes", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.RoamInCutscenes"))
         .PreFunc([](WidgetInfo& info) {

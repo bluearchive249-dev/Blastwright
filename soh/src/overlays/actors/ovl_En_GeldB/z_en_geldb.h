@@ -67,6 +67,14 @@ typedef struct EnGeldB {
     /* 0x04C4 */ Vec3f rightFootPos;
     /* 0x04D0 */ Vec3f leftFootPos;
     /* 0x04DC */ Vec3s headRot;
+    /* SoH */ u8 allyVariant;   // Ganondorf's bodyguards: 0 green, 1 blue, 2 red (allies only)
+    /* SoH */ s16 allyCooldown;
+    /* SoH */ s16 allyAttack;     // 0 none, 1 slash, 2 spin
+    /* SoH */ struct Actor* allyFoe;
 } EnGeldB; // size = 0x04E4
+
+// SoH: "Play as Ganondorf", his Gerudo bodyguards: params EN_GELDB_PARAMS_ALLY + variant (0-2)
+#define EN_GELDB_PARAMS_ALLY 0x80
+#define EN_GELDB_IS_ALLY(params) (((params) & 0xFC) == EN_GELDB_PARAMS_ALLY)
 
 #endif

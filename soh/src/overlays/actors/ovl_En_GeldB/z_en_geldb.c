@@ -259,6 +259,24 @@ void EnGeldB_Init(Actor* thisx, PlayState* play) {
     if ((this->keyFlag != 0) && Flags_GetCollectible(play, this->keyFlag >> 8)) {
         Actor_Kill(thisx);
     }
+
+    // SoH: "Play as Ganondorf", one of his bodyguards: on his side, not targetable, kept through room changes
+    if (EN_GELDB_IS_ALLY(thisx->params)) {
+        this->allyVariant = thisx->params & 3;
+        this->keyFlag = 0;
+        thisx->room = -1;
+        thisx->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+        thisx->naviEnemyId = 0xFF; // none
+        this->bodyCollider.base.acFlags = AC_ON | AC_TYPE_ENEMY; // hurt by enemies, not by him
+        this->swordCollider.base.atFlags = AT_ON | AT_TYPE_PLAYER; // her blades hit enemies, not him
+        this->swordCollider.info.toucher.dmgFlags = DMG_SLASH_MASTER;
+        this->swordCollider.info.toucher.damage = 2;
+        Animation_MorphToLoop(&this->skelAnime, &gGerudoRedNeutralAnim, 0.0f);
+        // Drops in from above (the fighters' entrance), visible
+        this->invisible = false;
+        this->action = GELDB_READY;
+        Actor_ChangeCategory(play, &play->actorCtx, thisx, ACTORCAT_NPC);
+    }
 }
 
 void EnGeldB_Destroy(Actor* thisx, PlayState* play) {
@@ -1401,9 +1419,183 @@ void EnGeldB_CollisionCheck(EnGeldB* this, PlayState* play) {
     }
 }
 
+// SoH: "Play as Ganondorf", his bodyguards. They keep close to him in a fan behind him, and when an enemy comes near,
+// the nearest one runs in and cuts it down with her own slash and spinning slash. Enemies can knock them back but
+// not kill them.
+#define GELDB_ALLY_SIGHT 400.0f   // how far she spots enemies
+#define GELDB_ALLY_LEASH 650.0f   // how far from him she'll chase
+#define GELDB_ALLY_REACH 70.0f    // close enough to strike
+
+static Actor* EnGeldB_AllyFindFoe(EnGeldB* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Actor* best = NULL;
+    f32 bestDist = GELDB_ALLY_SIGHT;
+    Actor* actor;
+
+    for (actor = play->actorCtx.actorLists[ACTORCAT_ENEMY].head; actor != NULL; actor = actor->next) {
+        f32 d;
+
+        if ((actor->update == NULL) || (actor->colChkInfo.health == 0) ||
+            !(actor->flags & ACTOR_FLAG_ATTENTION_ENABLED) ||
+            (fabsf(actor->world.pos.y - this->actor.world.pos.y) > 150.0f) ||
+            (Actor_WorldDistXZToActor(actor, &player->actor) > GELDB_ALLY_LEASH)) {
+            continue;
+        }
+        d = Actor_WorldDistXZToActor(&this->actor, actor);
+        if (d < bestDist) {
+            bestDist = d;
+            best = actor;
+        }
+    }
+    return best;
+}
+
+static void EnGeldB_AllyMoveTo(EnGeldB* this, Vec3f* goal, f32 maxSpeed) {
+    f32 dist = Math_Vec3f_DistXZ(&this->actor.world.pos, goal);
+    f32 speed = CLAMP(dist * 0.12f, 0.0f, maxSpeed);
+
+    if (dist > 12.0f) {
+        Math_SmoothStepToS(&this->actor.world.rot.y, Math_Vec3f_Yaw(&this->actor.world.pos, goal), 3, 0x1800, 0x100);
+        this->actor.shape.rot.y = this->actor.world.rot.y;
+    } else {
+        speed = 0.0f;
+    }
+    Math_ApproachF(&this->actor.speedXZ, speed, 1.0f, 1.0f);
+}
+
+static void EnGeldB_AllyAnimate(EnGeldB* this) {
+    if (this->allyAttack != 0) {
+        return;
+    }
+    if (this->actor.speedXZ > 0.5f) {
+        if (this->skelAnime.animation != (void*)&gGerudoRedWalkAnim) {
+            Animation_MorphToLoop(&this->skelAnime, &gGerudoRedWalkAnim, -4.0f);
+        }
+        this->skelAnime.playSpeed = CLAMP(this->actor.speedXZ * 0.35f, 0.6f, 2.4f);
+    } else if (this->skelAnime.animation != (void*)&gGerudoRedNeutralAnim) {
+        Animation_MorphToLoop(&this->skelAnime, &gGerudoRedNeutralAnim, -4.0f);
+    }
+}
+
+static void EnGeldB_UpdateAlly(EnGeldB* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Actor* foe;
+    Vec3f goal;
+    s32 animDone;
+
+    // Hit by an enemy: knocked back a little, unhurt
+    if (this->bodyCollider.base.acFlags & AC_HIT) {
+        this->bodyCollider.base.acFlags &= ~AC_HIT;
+        this->actor.colChkInfo.health = 20;
+        Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, 8);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GERUDOFT_DAMAGE);
+        this->actor.speedXZ = -6.0f;
+    }
+
+    // Too far behind (a warp, a long fall, him flying off): back at his side
+    if ((Actor_WorldDistXZToActor(&this->actor, &player->actor) > 900.0f) ||
+        (fabsf(this->actor.world.pos.y - player->actor.world.pos.y) > 300.0f)) {
+        this->actor.world.pos = player->actor.world.pos;
+        this->actor.world.pos.x -= Math_SinS(player->actor.shape.rot.y + (this->allyVariant - 1) * 0x2000) * 90.0f;
+        this->actor.world.pos.z -= Math_CosS(player->actor.shape.rot.y + (this->allyVariant - 1) * 0x2000) * 90.0f;
+        this->actor.prevPos = this->actor.world.pos;
+        this->allyFoe = NULL;
+        this->allyAttack = 0;
+    }
+
+    animDone = SkelAnime_Update(&this->skelAnime);
+    if (this->allyCooldown > 0) {
+        this->allyCooldown--;
+    }
+
+    if (this->allyAttack != 0) {
+        // Striking: the blades are live through the swing
+        s32 frame = (s32)this->skelAnime.curFrame;
+
+        this->actor.speedXZ = 0.0f;
+        if (this->allyAttack == 1) {
+            this->meleeWeaponState = ((frame >= 1) && (frame <= 6)) ? 1 : -1;
+        } else {
+            this->meleeWeaponState = ((frame >= 2) && (frame <= 14)) ? 1 : -1;
+        }
+        if (animDone) {
+            this->allyAttack = 0;
+            this->meleeWeaponState = -1;
+            this->allyCooldown = 12;
+        }
+    } else {
+        foe = this->allyFoe;
+        if ((foe == NULL) || (foe->update == NULL) || (foe->colChkInfo.health == 0) ||
+            (Actor_WorldDistXZToActor(foe, &player->actor) > GELDB_ALLY_LEASH)) {
+            foe = this->allyFoe = EnGeldB_AllyFindFoe(this, play);
+        }
+
+        if (foe != NULL) {
+            f32 dist = Actor_WorldDistXZToActor(&this->actor, foe);
+
+            if ((dist < GELDB_ALLY_REACH) && (this->allyCooldown == 0)) {
+                // Strike: mostly her slash, now and then the spinning slash
+                this->actor.world.rot.y = this->actor.shape.rot.y = Actor_WorldYawTowardActor(&this->actor, foe);
+                this->actor.speedXZ = 0.0f;
+                this->swordCollider.base.atFlags &= ~(AT_HIT | AT_BOUNCED);
+                if (Rand_ZeroOne() < 0.3f) {
+                    this->allyAttack = 2;
+                    this->action = GELDB_SPIN_ATTACK;
+                    Animation_PlayOnce(&this->skelAnime, &gGerudoRedSpinAttackAnim);
+                } else {
+                    this->allyAttack = 1;
+                    this->action = GELDB_SLASH;
+                    Animation_PlayOnce(&this->skelAnime, &gGerudoRedSlashAnim);
+                }
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GERUDOFT_ATTACK);
+            } else {
+                goal = foe->world.pos;
+                EnGeldB_AllyMoveTo(this, &goal, 9.0f);
+            }
+        } else {
+            // A fan behind him: left, behind and right
+            s16 yaw = player->actor.shape.rot.y + 0x8000 + (this->allyVariant - 1) * 0x2400;
+
+            goal = player->actor.world.pos;
+            goal.x += Math_SinS(yaw) * 95.0f;
+            goal.z += Math_CosS(yaw) * 95.0f;
+            EnGeldB_AllyMoveTo(this, &goal, 8.0f);
+            if (this->actor.speedXZ <= 0.5f) {
+                Math_SmoothStepToS(&this->actor.shape.rot.y, player->actor.shape.rot.y, 4, 0x800, 0x80);
+                this->actor.world.rot.y = this->actor.shape.rot.y;
+            }
+        }
+    }
+    EnGeldB_AllyAnimate(this);
+
+    Actor_MoveXZGravity(&this->actor);
+    Actor_UpdateBgCheckInfo(play, &this->actor, 15.0f, 30.0f, 60.0f, 0x1D);
+    this->actor.focus.pos = this->actor.world.pos;
+    this->actor.focus.pos.y += 40.0f;
+
+    Collider_UpdateCylinder(&this->actor, &this->bodyCollider);
+    CollisionCheck_SetOC(play, &play->colChkCtx, &this->bodyCollider.base);
+    CollisionCheck_SetAC(play, &play->colChkCtx, &this->bodyCollider.base);
+    if (this->meleeWeaponState > 0) {
+        CollisionCheck_SetAT(play, &play->colChkCtx, &this->swordCollider.base);
+    }
+    if (this->blinkState == 0) {
+        if ((Rand_ZeroOne() < 0.1f) && ((play->gameplayFrames % 4) == 0)) {
+            this->blinkState++;
+        }
+    } else {
+        this->blinkState = (this->blinkState + 1) & 3;
+    }
+}
+
 void EnGeldB_Update(Actor* thisx, PlayState* play) {
     s32 pad;
     EnGeldB* this = (EnGeldB*)thisx;
+
+    if (EN_GELDB_IS_ALLY(thisx->params)) {
+        EnGeldB_UpdateAlly(this, play);
+        return;
+    }
 
     EnGeldB_CollisionCheck(this, play);
     if (this->actor.colChkInfo.damageEffect != GELDB_DMG_UNK_6) {
@@ -1450,6 +1642,13 @@ s32 EnGeldB_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f*
         gDPPipeSync(POLY_OPA_DISP++);
         gDPSetEnvColor(POLY_OPA_DISP++, 140, 170, 230, 255);
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, 255);
+    } else if (EN_GELDB_IS_ALLY(this->actor.params)) {
+        // SoH: "Play as Ganondorf", his bodyguards in green, blue and red
+        static const u8 sAllyColors[3][3] = { { 20, 100, 35 }, { 25, 55, 150 }, { 140, 0, 0 } };
+
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPSetEnvColor(POLY_OPA_DISP++, sAllyColors[this->allyVariant][0], sAllyColors[this->allyVariant][1],
+                       sAllyColors[this->allyVariant][2], 255);
     } else {
         gDPPipeSync(POLY_OPA_DISP++);
         gDPSetEnvColor(POLY_OPA_DISP++, 140, 0, 0, 255);
