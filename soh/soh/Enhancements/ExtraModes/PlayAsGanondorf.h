@@ -82,6 +82,9 @@ s32 PlayAsGanondorf_ARuns(void);
 // Characters call him "Ganondorf" in dialogue, whatever the file is named
 s32 PlayAsGanondorf_UseGanondorfName(void);
 
+// His actors (Ganondorf, his cape, Ganon) keep updating when the world pauses for chests, dialogue and so on
+s32 PlayAsGanondorf_IgnoresFreeze(Actor* actor);
+
 #ifdef __cplusplus
 }
 #endif

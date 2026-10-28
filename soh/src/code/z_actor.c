@@ -2668,7 +2668,10 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                 actor = actor->next;
             } else if ((unkFlag && !(actor->flags & unkFlag)) ||
                        (!unkFlag && unkCondition && (sp74 != actor) && (actor != player->naviActor) &&
-                        (actor != player->heldActor) && (&player->actor != actor->parent))) {
+                        (actor != player->heldActor) && (&player->actor != actor->parent) &&
+                        // SoH: "Play as Ganondorf", he (and his cape) keeps moving while the world holds still,
+                        // as Link does
+                        !PlayAsGanondorf_IgnoresFreeze(actor))) {
                 CollisionCheck_ResetDamage(&actor->colChkInfo);
                 actor = actor->next;
             } else if (actor->update == NULL) {

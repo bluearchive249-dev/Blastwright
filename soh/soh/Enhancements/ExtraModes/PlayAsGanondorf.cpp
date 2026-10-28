@@ -707,6 +707,24 @@ extern "C" s32 PlayAsGanondorf_ShouldKickDoors(void) {
            ShouldHideLink(gPlayState, GET_PLAYER(gPlayState));
 }
 
+extern "C" s32 PlayAsGanondorf_IgnoresFreeze(Actor* actor) {
+    if (!IsEnabled() || (actor == nullptr)) {
+        return false;
+    }
+    switch (actor->id) {
+        case ACTOR_BOSS_GANON:
+            return actor->params == GDF_PARAMS_PLAYER;
+        case ACTOR_BOSS_GANON2:
+            return actor->params == GANON2_PARAMS_PLAYER;
+        case ACTOR_EN_GANON_MANT:
+            return (actor->parent != nullptr) &&
+                   (((actor->parent->id == ACTOR_BOSS_GANON) && (actor->parent->params == GDF_PARAMS_PLAYER)) ||
+                    ((actor->parent->id == ACTOR_BOSS_GANON2) && (actor->parent->params == GANON2_PARAMS_PLAYER)));
+        default:
+            return false;
+    }
+}
+
 extern "C" s32 PlayAsGanondorf_UseGanondorfName(void) {
     return IsEnabled() && CVarGetInteger(CVAR_PLAY_AS_GDF("CallMeGanondorf"), 1);
 }

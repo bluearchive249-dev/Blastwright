@@ -8406,7 +8406,9 @@ void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
     sPlayerCapeDraw = sCape->actor.draw;
 
     // Ganondorf goes in front of his cape in the update and draw order, like in the vanilla init.
-    // MISC also isn't affected by things that freeze or look for bosses.
+    // MISC also isn't affected by things that freeze or look for bosses: his cape goes there too (first, so it stays
+    // behind him in the list), or it stopped moving whenever the game freezes bosses (chests, some conversations).
+    Actor_ChangeCategory(play, &play->actorCtx, &sCape->actor, ACTORCAT_MISC);
     Actor_ChangeCategory(play, &play->actorCtx, thisx, ACTORCAT_MISC);
 
     this->playerFloorY = player->actor.floorHeight;
