@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/Enhancements/ExtraModes/GanondorfStart.h"
 #include "soh/Enhancements/game-interactor/vanilla-behavior/GIVanillaBehavior.h"
 #include "vt.h"
 
@@ -143,6 +144,10 @@ void Sram_OpenSave() {
             } else {
                 gSaveContext.entranceIndex = ENTR_LINKS_HOUSE_CHILD_SPAWN;
             }
+            // SoH: "Play as Ganondorf", a file started at the Gerudo Fortress continues there instead of Link's house
+            if (gSaveContext.entranceIndex == ENTR_LINKS_HOUSE_CHILD_SPAWN) {
+                gSaveContext.entranceIndex = GanondorfStart_GetContinueEntrance(gSaveContext.entranceIndex);
+            }
             break;
     }
 
@@ -271,6 +276,12 @@ void Sram_InitSave(FileChooseContext* fileChooseCtx) {
 
     if (IS_SPEEDRUN) {
         Speedrun_InitSaveFile(fileChooseCtx->speedrunIndex);
+    }
+
+    // SoH: "Play as Ganondorf", experiment: start at the Gerudo Fortress (plain files only)
+    if ((gSaveContext.ship.quest.id == QUEST_NORMAL || gSaveContext.ship.quest.id == QUEST_MASTER) && !IS_SPEEDRUN &&
+        (gSaveContext.cutsceneIndex == 0xFFF1)) {
+        GanondorfStart_InitNewSave();
     }
 
     Save_SaveFile();

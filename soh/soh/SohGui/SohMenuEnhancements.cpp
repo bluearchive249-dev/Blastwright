@@ -2331,6 +2331,15 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Z makes him sink while levitating, so on a controller, click the right stick (R3) to Z-target: lock on "
             "to enemies and people, and hear the Poe's notes on an enemy (target it, then press C-Up)."));
+    AddWidget(path, "Start in the Gerudo Fortress (Experimental)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoStart"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "New files start at the Gerudo Fortress, his home, instead of Link's house (no Deku Tree opening): a "
+            "narration and his Poe's greeting welcome him back, and the Gerudo serve their King instead of chasing "
+            "him. The file keeps starting there when you continue it. Applies to files made while it's on."));
     AddWidget(path, "Organ on L3", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.L3Organ"))
         .PreFunc([](WidgetInfo& info) {
