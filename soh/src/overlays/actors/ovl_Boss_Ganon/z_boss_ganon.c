@@ -7104,7 +7104,9 @@ static void BossGanon_Player_ApplyStanceArms(BossGanon* this) {
         Vec3s rest = sGdfSwordPoses[GDF_POSE_REST][i];
 
         BossGanon_Player_SlerpRot(&back, &fwd, phase, &swing[i]);
-        BossGanon_Player_SlerpRot(&rest, &swing[i], this->playerWalkWeight, &pose[i]);
+        // A trident is held still at his side while he walks (a swinging arm put the shaft through his legs)
+        BossGanon_Player_SlerpRot(&rest, &swing[i], BossGanon_Player_HasTrident() ? 0.0f : this->playerWalkWeight,
+                                  &pose[i]);
     }
     BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, pose, this->playerSwordArmWeight);
 
@@ -8461,9 +8463,33 @@ static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play) {
                     Matrix_Translate(0.0f, 0.0f, -(headZ + GDF_TRIDENT_TAIL_Z) * 0.5f, MTXMODE_APPLY);
                 }
                 this->playerBladeValid = false;
-            } else if (sPlayerSwordState == GDF_SWORD_SHEATHED) {
-                BossGanon_Player_SwordFrame(&this->playerLeftHandMtx, GDF_TRIDENT_GRIP_Z);
-                this->playerBladeValid = false;
+            } else if ((sPlayerSwordState == GDF_SWORD_SHEATHED) ||
+                       ((this->actionFunc == BossGanon_Player_SwordIdle) && (this->playerGuardWeight < 0.5f))) {
+                // At rest the trident's set by his body, not his wrist (his fists aren't modelled around a shaft):
+                // put away, carried upright at his left side like a staff, prongs up; drawn, in his right fist with
+                // the prongs leaning forward and down toward the ground
+                static Vec3f sGrip = { GDF_GRIP_X, GDF_GRIP_Y, GDF_GRIP_Z };
+                u8 carried = sPlayerSwordState == GDF_SWORD_SHEATHED;
+                f32 scale = this->actor.scale.x * CVarGetFloat(CVAR_PLAY_AS_GDF("SwordSize"), GDF_SWORD_SCALE);
+                Vec3f grip;
+
+                Matrix_Put(carried ? &this->playerLeftHandMtx : &this->playerRightHandMtx);
+                Matrix_MultVec3f(&sGrip, &grip);
+                Matrix_Translate(grip.x, grip.y, grip.z, MTXMODE_NEW);
+                Matrix_RotateY(BINANG_TO_RAD(this->actor.shape.rot.y), MTXMODE_APPLY);
+                Matrix_RotateX(carried ? DEG_TO_RAD(-78.0f) : DEG_TO_RAD(32.0f), MTXMODE_APPLY);
+                Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+                Matrix_Translate(0.0f, 0.0f, -GDF_TRIDENT_GRIP_Z, MTXMODE_APPLY);
+                if (carried) {
+                    this->playerBladeValid = false;
+                } else {
+                    Vec3f base;
+                    Vec3f tip;
+
+                    Matrix_MultVec3f(&headLocal, &base);
+                    Matrix_MultVec3f(&tipLocal, &tip);
+                    BossGanon_Player_SetBlade(this, &base, &tip);
+                }
             } else {
                 Vec3f base;
                 Vec3f tip;
