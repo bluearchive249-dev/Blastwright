@@ -11296,6 +11296,14 @@ static void BossGanon_Player_ReleaseOrganCam(BossGanon* this, PlayState* play) {
     }
 }
 
+// A cutscene is starting: give the camera back first, or the cutscene records the organ camera as the one to return
+// to, and that camera is gone by the time it does (a crash after songs that start cutscenes)
+void BossGanon_Player_ReleaseCameraForCutscene(PlayState* play) {
+    if ((sPlayerGanondorf != NULL) && (sPlayerGanondorf->playerOrganCam != 0)) {
+        BossGanon_Player_ReleaseOrganCam(sPlayerGanondorf, play);
+    }
+}
+
 // Organ space (the organ model's own coordinates) to the world
 static void BossGanon_Player_OrganToWorld(BossGanon* this, f32 x, f32 y, f32 z, Vec3f* out) {
     f32 s = Math_SinS(this->playerOrganYaw);
@@ -11313,7 +11321,8 @@ static void BossGanon_Player_UpdateOrganCam(BossGanon* this, PlayState* play) {
 
     // As his ocarina the game's own ocarina close-up would sit inside his legs (it's made for Link's height), so the
     // organ always gets its own camera then: the close-up, or with that off a wide shot from behind his right
-    if ((!closeUp && !this->playerOrganOcarina) || this->playerHidden) {
+    // A song can start a cutscene (the Door of Time, Darunia's dance): the cutscene owns the camera from then on
+    if ((!closeUp && !this->playerOrganOcarina) || this->playerHidden || (play->csCtx.state != CS_STATE_IDLE)) {
         BossGanon_Player_ReleaseOrganCam(this, play);
         return;
     }

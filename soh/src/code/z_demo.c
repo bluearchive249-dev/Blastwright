@@ -106,6 +106,7 @@ u16 D_8015FCC2;
 u16 D_8015FCC4;
 s16 D_8015FCC6;
 u8 D_8015FCC8;
+void BossGanon_Player_ReleaseCameraForCutscene(PlayState* play);
 s16 sQuakeIndex;
 u16 D_8015FCCC;      // only written to, never read
 char D_8015FCD0[20]; // unreferenced
@@ -2150,7 +2151,11 @@ void func_80068ECC(PlayState* play, CutsceneContext* csCtx) {
             D_8015FCC4 = 0xFFFF;
             csCtx->unk_1A = 0;
             csCtx->unk_1B = 0;
+            BossGanon_Player_ReleaseCameraForCutscene(play);
             D_8015FCC6 = play->activeCamera;
+            if (Play_GetCamera(play, D_8015FCC6) == NULL) {
+                D_8015FCC6 = CAM_ID_MAIN;
+            }
 
             if (D_8015FCC8 != 0) {
                 csCtx->unk_14 = Play_CreateSubCamera(play);
