@@ -1071,12 +1071,12 @@ static bool Update8(PlayState* play, s32 t) {
     f32 headY = sLinkPos.y + 105.0f;
 
     if (t < 15) {
-        Cam(play, V(385.0f, headY - 20.0f, -2395.0f), V(385.0f, headY - 30.0f, -2522.0f));
+        Cam(play, V(560.0f, headY - 10.0f, -2640.0f), V(385.0f, headY - 40.0f, -2522.0f));
     } else if (t < 52) {
         // Over his shoulder: the royal seal, the letter's words hidden from us
         Cam(play, V(285.0f, headY + 40.0f, -2500.0f), V(372.0f, headY - 25.0f, -2522.0f), 50.0f);
     } else if (t < 60) {
-        Cam(play, V(500.0f, headY - 30.0f, -2440.0f), V(400.0f, headY - 45.0f, -2525.0f));
+        Cam(play, V(545.0f, headY - 23.0f, -2625.0f), V(425.0f, headY - 55.0f, -2525.0f));
     } else {
         // Following him toward the gates
         Vec3f behind = V(sLinkPos.x - Math_SinS(sLinkYaw) * 190.0f, headY + 30.0f, sLinkPos.z - Math_CosS(sLinkYaw) * 190.0f);
