@@ -88,7 +88,7 @@ enum {
 struct IntroLine {
     u16 id;
     const char* text;
-    u8 box; // 0: dialogue box at the bottom, 1: his voice over (no box), 2: no box, closes by itself
+    u8 box; // 0: dialogue box at the bottom, 1: his voice over (no box), 2: no box, at the top (the script goes on)
 };
 
 // Ganondorf's lines in red, the Gerudo's in yellow
@@ -150,10 +150,6 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
             msg.SetTextBoxPosition((line.box == 1) ? TEXTBOX_POS_MIDDLE : TEXTBOX_POS_TOP);
         }
         msg.AutoFormat();
-        if (line.box == 2) {
-            // Closes by itself after 3 seconds (the fade code before the end)
-            msg.Replace("\x02", std::string("\x0E\x3C\x02", 3));
-        }
         *loadFromMessageTable = false;
         msg.LoadIntoFont();
         return;
