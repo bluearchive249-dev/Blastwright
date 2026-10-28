@@ -85,6 +85,9 @@ s32 PlayAsGanondorf_UseGanondorfName(void);
 // His actors (Ganondorf, his cape, Ganon) keep updating when the world pauses for chests, dialogue and so on
 s32 PlayAsGanondorf_IgnoresFreeze(Actor* actor);
 
+// L3 (left stick click) plays and stops the organ: true on the frame it's clicked
+s32 PlayAsGanondorf_OrganButtonPressed(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -6566,7 +6566,7 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
         BossGanon_Player_SetupChargeBigMagic(this, play);
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
         BossGanon_Player_SetupLaugh(this, play);
-    } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN) &&
+    } else if ((CHECK_BTN_ALL(input->press.button, BTN_DDOWN) || PlayAsGanondorf_OrganButtonPressed()) &&
                (GET_PLAYER(play)->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
         // The organ rises out of solid ground, so not while levitating
         BossGanon_Player_SetupOrgan(this, play);
@@ -10895,6 +10895,7 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
             BossGanon_Player_UpdateOrganCam(this, play);
             if (this->playerOrganOcarina ? !(GET_PLAYER(play)->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING)
                                          : (CHECK_BTN_ANY(input->press.button, BTN_DDOWN | BTN_B | BTN_A) ||
+                                            PlayAsGanondorf_OrganButtonPressed() ||
                                             !BossGanon_Player_CanStartAttack(this, play))) {
                 this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfStopPlayingOrganAnim);
                 Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfStopPlayingOrganAnim, -5.0f);

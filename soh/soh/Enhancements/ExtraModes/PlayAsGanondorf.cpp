@@ -541,17 +541,42 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
 // Z is his levitation's "sink", so on a controller, clicking the right stick (R3) does Z-targeting instead: needed for
 // locking on, and for the Poe minion's notes on an enemy (target it, then C-Up). Read straight from the controllers,
 // as R3 isn't one of the N64 buttons.
-static bool IsRightStickClicked() {
+static bool IsControllerButtonHeld(SDL_GameControllerButton button) {
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
         if (!SDL_IsGameController(i)) {
             continue;
         }
         SDL_GameController* controller = SDL_GameControllerFromInstanceID(SDL_JoystickGetDeviceInstanceID(i));
-        if ((controller != nullptr) && SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK)) {
+        if ((controller != nullptr) && SDL_GameControllerGetButton(controller, button)) {
             return true;
         }
     }
     return false;
+}
+
+static bool IsRightStickClicked() {
+    return IsControllerButtonHeld(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
+}
+
+// The organ: clicking the left stick (L3) on a controller plays it (and stops), as well as D-pad Down. True on the
+// frame it's clicked; the same answer for every caller within a frame.
+extern "C" s32 PlayAsGanondorf_OrganButtonPressed(void) {
+    static u32 sLastFrame = 0xFFFFFFFF;
+    static bool sHeld = false;
+    static bool sPressed = false;
+
+    if (gPlayState == nullptr) {
+        return false;
+    }
+    if (gPlayState->gameplayFrames != sLastFrame) {
+        bool held = CVarGetInteger(CVAR_PLAY_AS_GDF("L3Organ"), 1) &&
+                    IsControllerButtonHeld(SDL_CONTROLLER_BUTTON_LEFTSTICK);
+
+        sPressed = held && !sHeld;
+        sHeld = held;
+        sLastFrame = gPlayState->gameplayFrames;
+    }
+    return sPressed;
 }
 
 extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Input* input) {

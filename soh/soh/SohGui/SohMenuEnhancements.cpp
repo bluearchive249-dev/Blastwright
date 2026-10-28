@@ -2331,6 +2331,14 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Z makes him sink while levitating, so on a controller, click the right stick (R3) to Z-target: lock on "
             "to enemies and people, and hear the Poe's notes on an enemy (target it, then press C-Up)."));
+    AddWidget(path, "Organ on L3", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.L3Organ"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "On a controller, click the left stick (L3) to raise the organ and play it, and again to stop (D-pad Down "
+            "works too)."));
     AddWidget(path, "Called Ganondorf in Dialogue", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CallMeGanondorf"))
         .PreFunc([](WidgetInfo& info) {

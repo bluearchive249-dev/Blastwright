@@ -3216,7 +3216,12 @@ void BossGanon2_Reset(void) {
 #define GANON2_ANIM_GUARD_IDLE 3
 #define GANON2_ANIM_GUARD_WALK 4
 
-#define GANON2_TRANSFORM_FRAMES 60
+// Kept short so he's into the fight quickly: Ganondorf's convulsing at 1.5x speed for 36 frames, then Ganon's uncurl at
+// 1.6x speed, handing over control once he's up (frame 110 of 260; the rest is the final battle's flailing and roar)
+#define GANON2_TRANSFORM_FRAMES 36
+#define GANON2_TRANSFORM_SPEED 1.5f
+#define GANON2_EMERGE_SPEED 1.6f
+#define GANON2_EMERGE_CONTROL_FRAME 110.0f
 #define GANON2_CHARGE_FRAMES 45
 #define GANON2_CHARGE_SPEED 24.0f
 #define GANON2_SHOCKWAVE_MAX_RADIUS 420.0f
@@ -3355,6 +3360,7 @@ static void BossGanon2_Player_Init(BossGanon2* this, PlayState* play) {
     } else {
         SkelAnime_InitFlex(play, &this->skelAnime, &gGanondorfSkel, NULL, NULL, NULL, 0);
         Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfTransformStartAnim, 0.0f);
+        this->skelAnime.playSpeed = GANON2_TRANSFORM_SPEED;
         this->unk_194 = Animation_GetLastFrame(&gGanondorfTransformStartAnim);
         this->unk_337 = 0;
         this->unk_224 = 0.0f;
@@ -3378,27 +3384,29 @@ static void BossGanon2_Player_Transform(BossGanon2* this, PlayState* play) {
 
     SkelAnime_Update(&this->skelAnime);
 
-    if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+    if ((this->unk_194 < 1000.0f) && (this->skelAnime.curFrame >= this->unk_194)) {
         Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfTransformEndAnim, 0.0f);
+        this->skelAnime.playSpeed = GANON2_TRANSFORM_SPEED;
         this->unk_194 = 1000.0f;
     }
 
     // Light bursting out of his body
-    if (this->playerTimer >= 10) {
-        Math_ApproachF(&this->unk_30C, (this->playerTimer < 40) ? 15.0f : 7.0f, 1.0f, 1.0f);
+    if (this->playerTimer >= 6) {
+        Math_ApproachF(&this->unk_30C, (this->playerTimer < 24) ? 15.0f : 7.0f, 1.0f, 1.5f);
     }
-    if (this->playerTimer == 30) {
+    if (this->playerTimer == 18) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_BIGMASIC);
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_THROW_BIG);
     }
-    if ((this->playerTimer % 12) == 0) {
+    if ((this->playerTimer % 8) == 0) {
         Actor_RequestQuakeAndRumble(&this->actor, play, 2, 8);
     }
 
     if (this->playerTimer >= GANON2_TRANSFORM_FRAMES) {
         BossGanon2_Player_BecomeGanon(this, play);
         Animation_MorphToPlayOnce(&this->skelAnime, &gGanonUncurlAndFlailAnim, 0.0f);
-        this->unk_194 = Animation_GetLastFrame(&gGanonUncurlAndFlailAnim);
+        this->skelAnime.playSpeed = GANON2_EMERGE_SPEED;
+        this->unk_194 = GANON2_EMERGE_CONTROL_FRAME;
         this->unk_30C = 15.0f;
         this->actionFunc = BossGanon2_Player_Emerge;
         this->playerTimer = 0;
@@ -3448,14 +3456,14 @@ static void BossGanon2_Player_Emerge(BossGanon2* this, PlayState* play) {
     BossGanon2_Player_KeepAboveFloor(this, play, false);
     Math_ApproachZeroF(&this->unk_30C, 1.0f, 0.3f);
     // His swords grow in his hands
-    if (this->playerTimer > 15) {
-        Math_ApproachF(&this->unk_224, 1.0f, 1.0f, 0.05f);
+    if (this->playerTimer > 10) {
+        Math_ApproachF(&this->unk_224, 1.0f, 1.0f, 0.07f);
     }
-    if (this->playerTimer == 20) {
+    if (this->playerTimer == 14) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR);
     }
 
-    if (Animation_OnFrame(&this->skelAnime, this->unk_194)) {
+    if (this->skelAnime.curFrame >= this->unk_194) {
         this->unk_224 = 1.0f;
         BossGanon2_Player_SetupMove(this, play);
     }
