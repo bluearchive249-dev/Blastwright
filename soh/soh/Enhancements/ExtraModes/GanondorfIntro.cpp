@@ -837,12 +837,12 @@ static bool Update5(PlayState* play, s32 t) {
         cs->goldLight = 0.0f;
         cs->triforcePos = CamForward(eye, at, 300.0f);
         cs->triforceAlpha = 255;
-        cs->triforceYaw = 0;
+        cs->triforceYaw = 0x4000; // face on to the camera (it looks west) to begin with
         Sfx(NA_SE_EV_TRIFORCE);
     }
     if (t >= 84) {
         cs->triforceScale = 3.0f + 3.0f * Smooth(t, 84, 140);
-        cs->triforceYaw += 0x180;
+        cs->triforceYaw += 0x100;
     }
     return t >= 140;
 }
@@ -1293,7 +1293,7 @@ static const Shot sShots[] = {
     { ENTR_GERUDOS_FORTRESS_EAST_EXIT, 0xBC00, TR_WHITE, Setup6, Update6 },
     { ENTR_GERUDOS_FORTRESS_EAST_EXIT, 0xE000, TR_BLACK, Setup7, Update7 },
     { -1, 0xE000, TR_BLACK, Setup8, Update8 },
-    { ENTR_GERUDOS_FORTRESS_EAST_EXIT, 0xE000, TR_BLACK, Setup9, Update9 },
+    { -1, 0xE000, TR_BLACK, Setup9, Update9 },
     { ENTR_HYRULE_FIELD_PAST_BRIDGE_SPAWN, 0xE400, TR_BLACK, Setup10, Update10 },
     { ENTR_KOKIRI_FOREST_OUTSIDE_DEKU_TREE, 0xE400, TR_BLACK, Setup11, Update11 },
     { ENTR_LINKS_HOUSE_CHILD_SPAWN, 0xE400, TR_BLACK, Setup12, Update12 },
@@ -1351,6 +1351,7 @@ static void RestoreLink(PlayState* play) {
         return;
     }
     player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_DRAW;
+    player->actor.shape.shadowAlpha = 255;
     Player_SetCsAction(play, NULL, PLAYER_CSACTION_7);
     if ((player->naviActor != NULL) && (sNaviDraw != NULL)) {
         player->naviActor->draw = sNaviDraw;
@@ -1367,7 +1368,6 @@ static void Finish(PlayState* play) {
     sActive = false;
     sPhase = PH_END_LOADING;
     play->envCtx.lightningMode = LIGHTNING_MODE_OFF;
-    play->envCtx.fillScreen = false;
     gEnGeldBExtraCue = GELDB_EXTRA_STAND;
     gEnGeldBExtraLookOn = false;
     if (sDekuFlagSaved && !sDekuMetBefore) {
@@ -1446,8 +1446,12 @@ static void HoldScene(PlayState* play) {
     }
     if (gGdfIntroCs.hideAll) {
         player->stateFlags2 |= PLAYER_STATE2_DISABLE_DRAW;
+        player->actor.shape.shadowAlpha = 0; // no shadow left on the floor where he isn't
     } else {
         player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_DRAW;
+        if (gGdfIntroCs.showLink) {
+            player->actor.shape.shadowAlpha = 255;
+        }
     }
     // The Poe stays out of it
     if (player->naviActor != NULL) {
@@ -1507,8 +1511,9 @@ static void OnPlayerUpdate() {
 
     // After the intro: the Poe greets her master
     if (!sActive) {
-        if ((sGreetTimer > 0) && (play->transitionTrigger == TRANS_TRIGGER_OFF) &&
-            (play->msgCtx.msgMode == MSGMODE_NONE) && (--sGreetTimer == 0)) {
+        if ((sGreetTimer > 0) && (play->sceneNum == SCENE_HYRULE_FIELD) &&
+            (play->transitionTrigger == TRANS_TRIGGER_OFF) && (play->msgCtx.msgMode == MSGMODE_NONE) &&
+            (--sGreetTimer == 0)) {
             Message_StartTextbox(play, GDF_TEXT_POE_GREETING, NULL);
             sGreetTimer = -1;
         }

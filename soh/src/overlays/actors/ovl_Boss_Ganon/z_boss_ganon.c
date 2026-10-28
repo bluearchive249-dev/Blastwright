@@ -10701,6 +10701,8 @@ static void BossGanon_Player_ApplyIntroCs(BossGanon* this, PlayState* play) {
         return;
     }
     sGdfCsWasActive = true;
+    // Link is held up in the air while Ganondorf rides; that's no jump to land heavily from afterwards
+    this->playerWasAirborne = false;
     // Drawn even when the camera looks away from him (the props are his)
     this->actor.flags |= ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED;
 
