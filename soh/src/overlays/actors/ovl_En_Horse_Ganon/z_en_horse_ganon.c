@@ -106,7 +106,9 @@ static InitChainEntry sInitChain[] = {
     ICHAIN_F32(uncullZoneScale, 1200, ICHAIN_STOP),
 };
 
-static EnHorseGanonActionFunc sActionFuncs[] = { func_80A68AF0, func_80A68DB0 };
+void EnHorseGanon_Driven(EnHorseGanon* this, PlayState* play);
+
+static EnHorseGanonActionFunc sActionFuncs[] = { func_80A68AF0, func_80A68DB0, EnHorseGanon_Driven };
 
 void func_80A68660(unk_D_80A69248* data, s32 index, Vec3f* vec) {
     vec->x = data[index].unk_0.x;
@@ -269,6 +271,46 @@ void func_80A68DB0(EnHorseGanon* this, PlayState* play) {
     }
 }
 
+// SoH: "Play as Ganondorf", driven by the Gerudo intro: its gait follows the speed it's given
+void EnHorseGanon_Driven(EnHorseGanon* this, PlayState* play) {
+    s32 anim = (this->actor.speedXZ <= 0.5f) ? 0 : (this->actor.speedXZ <= 3.0f) ? 2 : (this->actor.speedXZ <= 6.0f) ? 3 : 4;
+    f32 rate = (anim == 0) ? 1.0f : (anim == 2) ? (this->actor.speedXZ / 3.0f) : (anim == 3) ? (this->actor.speedXZ / 5.0f)
+                                                                                           : (this->actor.speedXZ / 7.0f);
+
+    if (anim != this->currentAnimation) {
+        this->currentAnimation = anim;
+        Animation_Change(&this->skin.skelAnime, sAnimations[anim], splaySpeeds[anim] * rate * 1.5f, 0.0f,
+                         Animation_GetLastFrame(sAnimations[anim]), ANIMMODE_LOOP, -6.0f);
+    }
+    this->skin.skelAnime.playSpeed = splaySpeeds[anim] * rate * 1.5f;
+    SkelAnime_Update(&this->skin.skelAnime);
+    if (anim == 2) {
+        func_80A68870(this);
+    } else if ((anim >= 3) && ((play->gameplayFrames % 6) == 0)) {
+        Audio_PlaySfxGeneral(NA_SE_EV_HORSE_RUN, &this->actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,
+                             &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    }
+}
+
+void EnHorseGanon_SetDriven(Actor* horse) {
+    EnHorseGanon* this = (EnHorseGanon*)horse;
+
+    if ((horse != NULL) && (horse->id == ACTOR_EN_HORSE_GANON)) {
+        this->action = EN_HORSE_GANON_ACTION_DRIVEN;
+        this->currentAnimation = -1;
+    }
+}
+
+s32 EnHorseGanon_GetSeat(Actor* horse, Vec3f* seat) {
+    EnHorseGanon* this = (EnHorseGanon*)horse;
+
+    if ((horse == NULL) || (horse->id != ACTOR_EN_HORSE_GANON) || (horse->update == NULL) || !this->gdfSeatValid) {
+        return false;
+    }
+    *seat = this->gdfSeatPos;
+    return true;
+}
+
 void func_80A68E14(EnHorseGanon* this, PlayState* play) {
     s32 pad;
     CollisionPoly* col;
@@ -322,6 +364,14 @@ void EnHorseGanon_PostDraw(Actor* thisx, PlayState* play, Skin* skin) {
 
     //! @bug see relevant comment in `EnHorse_SkinCallback1`
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->colliderHead.base);
+
+    // SoH: "Play as Ganondorf", his saddle (as on Epona drawn as this horse, z_en_horse.c)
+    {
+        Vec3f seatOffset = { 690.0f, -1920.0f, 0.0f };
+
+        Skin_GetLimbPos(skin, 36, &seatOffset, &this->gdfSeatPos);
+        this->gdfSeatValid = true;
+    }
 }
 
 void EnHorseGanon_Draw(Actor* thisx, PlayState* play) {

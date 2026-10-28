@@ -15,6 +15,9 @@
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
 #include "soh/Enhancements/ExtraModes/GanondorfKills.h"
+#include "soh/Enhancements/ExtraModes/GanondorfIntro.h"
+#include "textures/icon_item_field_static/icon_item_field_static.h" // SoH: the map on the intro's war table
+#include "overlays/actors/ovl_En_Horse_Ganon/z_en_horse_ganon.h" // SoH: the Gerudo intro's horse
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "assets/scenes/dungeons/ganon_boss/ganon_boss_scene.h"
 #include "overlays/ovl_En_Ganon_Organ/ovl_En_Ganon_Organ.h" // SoH: his organ, for "Play as Ganondorf"
@@ -98,6 +101,8 @@ static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF*
 static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
+static void BossGanon_Player_ApplyIntroCs(BossGanon* this, PlayState* play);
+void BossGanon_Player_DrawIntroProps(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight);
 static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight);
 static u8 sGdfPgCapture = false;
@@ -4182,6 +4187,7 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     if (GDF_IS_PLAYER(this) && this->playerHidden) {
         BossGanon_Player_DrawCrawlFlame(this, play);
         BossGanon_DrawEffects(play);
+        BossGanon_Player_DrawIntroProps(this, play);
         return;
     }
 
@@ -4257,6 +4263,9 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     BossGanon_DrawBigMagicCharge(this, play);
     BossGanon_DrawTriforce(this, play);
     BossGanon_DrawDarkVortex(this, play);
+    if (GDF_IS_PLAYER(this)) {
+        BossGanon_Player_DrawIntroProps(this, play);
+    }
 
     BossGanon_GenShadowTexture(shadowTex, this, play);
     BossGanon_DrawShadowTexture(shadowTex, this, play);
@@ -5731,7 +5740,7 @@ static void BossGanon_Player_SlayNpcs(BossGanon* this, PlayState* play) {
 
             // Not the one he's carrying (Ruto), not his own bodyguards, and nothing already gone
             if ((npc->update != NULL) && (npc != player->heldActor) && (npc->init == NULL) &&
-                !((npc->id == ACTOR_EN_GELDB) && EN_GELDB_IS_ALLY(npc->params))) {
+                !((npc->id == ACTOR_EN_GELDB) && EN_GELDB_IS_FRIEND(npc->params))) {
                 for (i = 0; i < sGdfAtCount; i++) {
                     if (BossGanon_Player_NpcInVolume(npc, &sGdfAtVolumes[i])) {
                         BossGanon_Player_SlayNpc(play, npc);
@@ -6244,7 +6253,8 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
 static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
-    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("RoamInCutscenes"), 1) || !this->playerGrounded || this->playerHidden) {
+    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("RoamInCutscenes"), 1) || !this->playerGrounded || this->playerHidden ||
+        gGdfIntroCs.active) {
         return false;
     }
     if (!(player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) &&
@@ -6596,6 +6606,11 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
 // Also used by Ganon (Boss_Ganon2): moments when Link has to be shown instead of whichever form is out
 s32 BossGanon_Player_ShouldHideAnyForm(PlayState* play) {
     Player* player = GET_PLAYER(play);
+
+    // The Gerudo intro: shots without him, and the boy in his vision
+    if (gGdfIntroCs.active && (gGdfIntroCs.hideAll || gGdfIntroCs.showLink)) {
+        return true;
+    }
 
     // First person
     if ((player->unk_6AD == 1) || (player->unk_6AD == 2)) {
@@ -9623,8 +9638,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
     }
 
-    // On his horse
-    if ((player->stateFlags1 & PLAYER_STATE1_ON_HORSE) && (this->actionFunc != BossGanon_Player_Ride) &&
+    // On his horse (or the Gerudo intro's)
+    if (((player->stateFlags1 & PLAYER_STATE1_ON_HORSE) || (gGdfIntroCs.active && (gGdfIntroCs.horse != NULL))) &&
+        (this->actionFunc != BossGanon_Player_Ride) &&
         (this->actionFunc != BossGanon_Player_Downed)) {
         Vec3f seat;
 
@@ -9701,9 +9717,12 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
+    // The Gerudo intro's direction: his arm pose, head and hand
+    BossGanon_Player_ApplyIntroCs(this, play);
+
     // His taunt (D-pad Up) works in cutscenes and conversations too, where his other moves don't
     if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_DUP) && !this->playerHidden &&
-        !GanondorfSongs_IsOcarinaOut() &&
+        !GanondorfSongs_IsOcarinaOut() && !gGdfIntroCs.active &&
         ((player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
          (play->csCtx.state != CS_STATE_IDLE)) &&
         ((this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_SwordIdle) ||
@@ -10521,6 +10540,11 @@ static s32 BossGanon_Player_GetSeat(PlayState* play, Vec3f* seat) {
     Player* player = GET_PLAYER(play);
     Actor* horse = player->rideActor;
 
+    // The Gerudo intro: the black horse the director gave him (not Link's, Link is a child there)
+    if (gGdfIntroCs.active && (gGdfIntroCs.horse != NULL)) {
+        return EnHorseGanon_GetSeat(gGdfIntroCs.horse, seat);
+    }
+
     if (!(player->stateFlags1 & PLAYER_STATE1_ON_HORSE) || (horse == NULL) || (horse->id != ACTOR_EN_HORSE)) {
         return false;
     }
@@ -10537,7 +10561,7 @@ void BossGanon_Player_Ride(BossGanon* this, PlayState* play) {
     static Vec3s sRide[GDF_YOUNG_WALK_JOINTS];
     Player* player = GET_PLAYER(play);
     Vec3s* joints = this->skelAnime.jointTable;
-    Actor* horse = player->rideActor;
+    Actor* horse = (gGdfIntroCs.active && (gGdfIntroCs.horse != NULL)) ? gGdfIntroCs.horse : player->rideActor;
     Vec3f seat;
     f32 speed = (horse != NULL) ? fabsf(horse->speedXZ) : 0.0f;
     s32 frameA;
@@ -10600,6 +10624,334 @@ static const Vec3s sGdfItemPoses[2][3] = {
     { { 11691, 27520, -16011 }, { 3178, -1419, -16117 }, { 7921, -1511, -7597 } }, // left arm
     { { -28634, 15814, 19375 }, { 1338, 7492, -14082 }, { 8790, -4294, -8015 } }, // right arm
 };
+
+// ---- The Gerudo intro (GanondorfIntro.cpp directs it through gGdfIntroCs) ----
+
+// Arm poses solved offline with inverse kinematics on his skeleton (upper arm, forearm, hand)
+static const Vec3s sGdfCsWindowL[3] = { { -1225, 619, -9207 }, { 3703, -7871, -12831 }, { 5115, -4799, -3935 } };
+static const Vec3s sGdfCsWindowR[3] = { { 21967, -31085, 19073 }, { -145, 2419, -16692 }, { 1837, -11818, -4437 } };
+static const Vec3s sGdfCsTableR[3] = { { -31060, 32618, 18376 }, { 3977, 5726, -13603 }, { 15116, 628, -4743 } };
+static const Vec3s sGdfCsLetterL[3] = { { -3540, 3760, -14628 }, { -2706, -7551, -23530 }, { -9620, -5459, 706 } };
+static const Vec3s sGdfCsLetterR[3] = { { 32065, 25853, 20258 }, { -1346, 6368, -14674 }, { -1887, -2409, -4343 } };
+static const Vec3s sGdfCsHandR[3] = { { -31675, 23256, 20189 }, { 1623, 6272, -13481 }, { 11884, -1114, -10070 } };
+
+static f32 sGdfCsPoseWeight = 0.0f;
+static u8 sGdfCsPoseCur = GDF_CSPOSE_NONE;
+static f32 sGdfCsHeadYaw = 0.0f;
+static f32 sGdfCsHeadPitch = 0.0f;
+static u8 sGdfCsWasActive = false;
+static f32 sGdfCsGlow = 0.0f;
+
+static void BossGanon_Pg_RotY(f32 deg, GdfMat3 out) {
+    f32 a = deg * (M_PI / 180.0f);
+
+    out[0][0] = cosf(a);  out[0][1] = 0.0f; out[0][2] = sinf(a);
+    out[1][0] = 0.0f;     out[1][1] = 1.0f; out[1][2] = 0.0f;
+    out[2][0] = -sinf(a); out[2][1] = 0.0f; out[2][2] = cosf(a);
+}
+
+static void BossGanon_Player_ApplyCsPose(BossGanon* this, u8 pose, f32 w) {
+    Vec3s* joints = this->skelAnime.jointTable;
+    s32 i;
+
+    switch (pose) {
+        case GDF_CSPOSE_WINDOW:
+            BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfCsWindowL, w);
+            BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfCsWindowR, w);
+            break;
+        case GDF_CSPOSE_TABLE:
+            BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfCsTableR, w);
+            break;
+        case GDF_CSPOSE_RAISE:
+            BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfClimbPoses[2], w);
+            break;
+        case GDF_CSPOSE_LETTER:
+            BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfCsLetterL, w);
+            BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfCsLetterR, w);
+            break;
+        case GDF_CSPOSE_HAND:
+            BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfCsHandR, w);
+            break;
+        case GDF_CSPOSE_CROSSED:
+            for (i = 0; i < 8; i++) {
+                Vec3s target = sGdfBroodArms[i];
+
+                BossGanon_Player_SlerpRot(&joints[1 + 2 + i], &target, w, &joints[1 + 2 + i]);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+// After his own animation: the director's arm pose, where he looks, his open hand, the glow in it
+static void BossGanon_Player_ApplyIntroCs(BossGanon* this, PlayState* play) {
+    GdfIntroCs* cs = &gGdfIntroCs;
+    Vec3s* joints = this->skelAnime.jointTable;
+
+    if (!cs->active) {
+        if (sGdfCsWasActive) {
+            sGdfCsWasActive = false;
+            this->useOpenHand = false;
+            sGdfCsPoseWeight = 0.0f;
+            sGdfCsPoseCur = GDF_CSPOSE_NONE;
+            sGdfCsHeadYaw = sGdfCsHeadPitch = 0.0f;
+            sGdfCsGlow = 0.0f;
+        }
+        return;
+    }
+    sGdfCsWasActive = true;
+    // Drawn even when the camera looks away from him (the props are his)
+    this->actor.flags |= ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+
+    // A new pose: the old one lets go first, then the new one comes in
+    if (cs->pose != sGdfCsPoseCur) {
+        Math_ApproachZeroF(&sGdfCsPoseWeight, 1.0f, 0.1f);
+        if (sGdfCsPoseWeight <= 0.0f) {
+            sGdfCsPoseCur = cs->pose;
+        }
+    } else {
+        Math_ApproachF(&sGdfCsPoseWeight, (sGdfCsPoseCur != GDF_CSPOSE_NONE) ? 1.0f : 0.0f, 1.0f, 0.07f);
+    }
+    if (sGdfCsPoseWeight > 0.0f) {
+        BossGanon_Player_ApplyCsPose(this, sGdfCsPoseCur, BossGanon_Player_SmoothStep(sGdfCsPoseWeight));
+    }
+
+    // He turns his head slowly
+    Math_ApproachF(&sGdfCsHeadYaw, cs->headYaw, 0.08f, 2.0f);
+    Math_ApproachF(&sGdfCsHeadPitch, cs->headPitch, 0.08f, 2.0f);
+    if ((fabsf(sGdfCsHeadYaw) > 0.1f) || (fabsf(sGdfCsHeadPitch) > 0.1f)) {
+        GdfMat3 rootRot;
+        GdfMat3 body;
+        GdfMat3 neck;
+        GdfMat3 rot;
+        GdfMat3 rotY;
+        GdfMat3 rotX;
+        GdfMat3 tmp;
+
+        BossGanon_Pg_FromRot(&joints[1 + 0], rootRot);
+        BossGanon_Pg_FromRot(&joints[1 + 1], tmp);
+        BossGanon_Pg_Mul(rootRot, tmp, body, false);
+        BossGanon_Pg_FromRot(&joints[1 + 10], tmp);
+        BossGanon_Pg_Mul(body, tmp, neck, false);
+        BossGanon_Pg_RotY(sGdfCsHeadYaw, rotY);
+        BossGanon_Pg_RotX(sGdfCsHeadPitch, rotX);
+        BossGanon_Pg_Mul(rotY, rotX, rot, false);
+        BossGanon_Pg_Mul(rot, neck, tmp, false);
+        BossGanon_Pg_Mul(body, tmp, neck, true);
+        BossGanon_Pg_ToRot(neck, &joints[1 + 10]);
+    }
+
+    this->useOpenHand = cs->openHand;
+    Math_ApproachF(&sGdfCsGlow, cs->handGlow, 0.3f, 0.4f);
+
+    if (cs->laugh) {
+        cs->laugh = false;
+        if ((this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_SwordIdle) ||
+            (this->actionFunc == BossGanon_Player_Brood)) {
+            BossGanon_Player_SetupLaugh(this, play);
+        }
+    }
+}
+
+// A glowing billboard (his light ball's look) at pos
+static void BossGanon_Player_DrawCsGlow(PlayState* play, Vec3f* pos, f32 scale, u8 r, u8 g, u8 b, u8 envR, u8 envG,
+                                        u8 envB, u8 alpha, s16 spin) {
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, r, g, b, alpha);
+    gDPSetEnvColor(POLY_XLU_DISP++, envR, envG, envB, 0);
+    gSPDisplayList(POLY_XLU_DISP++, gGanondorfLightBallMaterialDL);
+    Matrix_Translate(pos->x, pos->y, pos->z, MTXMODE_NEW);
+    Matrix_ReplaceRotation(&play->billboardMtxF);
+    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+    Matrix_RotateZ(BINANG_TO_RAD(spin), MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, gGanondorfSquareDL);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// One face of a box, as two triangles, in the colour given
+static void BossGanon_Player_CsQuad(Gfx** gfxP, Vtx* v, s16 x0, s16 y0, s16 z0, s16 x1, s16 y1, s16 z1, s16 x2,
+                                    s16 y2, s16 z2, s16 x3, s16 y3, s16 z3) {
+    Gfx* gfx = *gfxP;
+    s16 p[4][3] = { { x0, y0, z0 }, { x1, y1, z1 }, { x2, y2, z2 }, { x3, y3, z3 } };
+    s32 i;
+
+    for (i = 0; i < 4; i++) {
+        v[i].v.ob[0] = p[i][0];
+        v[i].v.ob[1] = p[i][1];
+        v[i].v.ob[2] = p[i][2];
+        v[i].v.flag = 0;
+        v[i].v.tc[0] = v[i].v.tc[1] = 0;
+        v[i].v.cn[0] = v[i].v.cn[1] = v[i].v.cn[2] = v[i].v.cn[3] = 255;
+    }
+    gSPVertex(gfx++, v, 4, 0);
+    gSP2Triangles(gfx++, 0, 1, 2, 0, 0, 2, 3, 0);
+    *gfxP = gfx;
+}
+
+// A box from (x0,y0,z0) to (x1,y1,z1): its top, the four sides (shaded darker) and no bottom
+static void BossGanon_Player_CsBox(PlayState* play, s16 x0, s16 y0, s16 z0, s16 x1, s16 y1, s16 z1, u8 r, u8 g,
+                                   u8 b) {
+    Vtx* v = Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * 20);
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, 255);
+    BossGanon_Player_CsQuad(&POLY_OPA_DISP, &v[0], x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r * 7 / 10, g * 7 / 10, b * 7 / 10, 255);
+    BossGanon_Player_CsQuad(&POLY_OPA_DISP, &v[4], x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1);
+    BossGanon_Player_CsQuad(&POLY_OPA_DISP, &v[8], x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r * 55 / 100, g * 55 / 100, b * 55 / 100, 255);
+    BossGanon_Player_CsQuad(&POLY_OPA_DISP, &v[12], x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0);
+    BossGanon_Player_CsQuad(&POLY_OPA_DISP, &v[16], x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// The war table: a stone table with the map of Hyrule on it (the pause screen's world map), and his black stone
+static void BossGanon_Player_DrawCsTable(PlayState* play) {
+    GdfIntroCs* cs = &gGdfIntroCs;
+    s16 hw = GDF_TABLE_W / 2.0f;
+    s16 hd = GDF_TABLE_D / 2.0f;
+    s16 top = GDF_TABLE_H;
+    Vtx* v;
+    s32 k;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Translate(cs->tablePos.x, cs->tablePos.y - GDF_TABLE_H, cs->tablePos.z, MTXMODE_NEW);
+    Matrix_RotateY(BINANG_TO_RAD((s16)(cs->tableYaw + 0x8000)), MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+
+    // The stone: a slab on a thick pedestal
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_LIGHTING | G_CULL_BOTH | G_FOG);
+    BossGanon_Player_CsBox(play, -hw - 6, top - 9, -hd - 6, hw + 6, top, hd + 6, 150, 118, 84);
+    BossGanon_Player_CsBox(play, -hw + 18, 0, -hd + 14, hw - 18, top - 9, hd - 14, 120, 92, 64);
+
+    // The map, in 15 strips of 9 texel rows (as the pause screen draws it)
+    v = Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * 4 * 15);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIDECALA_PRIM, G_CC_MODULATEIDECALA_PRIM);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 245, 225, 255);
+    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    gDPLoadTLUT_pal256(POLY_OPA_DISP++, gWorldMapImageTLUT);
+    gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_RGBA16);
+    for (k = 0; k < 15; k++) {
+        s32 row0 = k * 9;
+        s32 rows = (k < 14) ? 9 : 2;
+        s16 z0 = -hd + (GDF_TABLE_D * row0) / 128.0f;
+        s16 z1 = -hd + (GDF_TABLE_D * (row0 + rows)) / 128.0f;
+        Vtx* q = &v[k * 4];
+        s32 i;
+
+        for (i = 0; i < 4; i++) {
+            q[i].v.ob[0] = ((i == 0) || (i == 3)) ? -hw : hw;
+            q[i].v.ob[1] = top + 1;
+            q[i].v.ob[2] = (i < 2) ? z0 : z1;
+            q[i].v.flag = 0;
+            q[i].v.tc[0] = (((i == 0) || (i == 3)) ? 0 : 216) << 5;
+            q[i].v.tc[1] = ((i < 2) ? 0 : rows) << 5;
+            q[i].v.cn[0] = q[i].v.cn[1] = q[i].v.cn[2] = q[i].v.cn[3] = 255;
+        }
+        gDPLoadMultiTile(POLY_OPA_DISP++, gWorldMapImageTex, 0, G_TX_RENDERTILE, G_IM_FMT_CI, G_IM_SIZ_8b, 216, 128, 0,
+                         row0, 216 - 1, row0 + rows - 1, 0, G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR,
+                         G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+        gDPSetTileSize(POLY_OPA_DISP++, G_TX_RENDERTILE, 0, 0, (216 - 1) << G_TEXTURE_IMAGE_FRAC,
+                       (rows - 1) << G_TEXTURE_IMAGE_FRAC);
+        gSPVertex(POLY_OPA_DISP++, q, 4, 0);
+        gSP2Triangles(POLY_OPA_DISP++, 0, 1, 2, 0, 0, 2, 3, 0);
+    }
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_NONE);
+    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF);
+
+    // His black stone, set down on the map
+    if (cs->stoneOn) {
+        s16 sx = -hw + (cs->stoneU / 216.0f) * GDF_TABLE_W;
+        s16 sz = -hd + (cs->stoneV / 128.0f) * GDF_TABLE_D;
+        s16 sy = top + 1 + cs->stoneDrop;
+
+        gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+        BossGanon_Player_CsBox(play, sx - 3, sy, sz - 3, sx + 3, sy + 5, sz + 3, 40, 30, 50);
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+void BossGanon_Player_DrawIntroProps(BossGanon* this, PlayState* play) {
+    GdfIntroCs* cs = &gGdfIntroCs;
+
+    if (!cs->active) {
+        return;
+    }
+
+    if (cs->tableOn) {
+        BossGanon_Player_DrawCsTable(play);
+    }
+
+    // The glow in his right hand (the vision touches him)
+    if ((sGdfCsGlow > 0.01f) && !this->playerHidden) {
+        BossGanon_Player_DrawCsGlow(play, &this->unk_260, sGdfCsGlow, 255, 255, 255, 60, 255, 90,
+                                    ((this->unk_1A2 % 2) != 0) ? 150 : 110, this->unk_1A2 * 0x500);
+    }
+
+    // The king's letter, held before his chest
+    if (cs->letterOn && !this->playerHidden) {
+        Vec3f mid;
+
+        mid.x = (this->unk_2EC[5].x + this->unk_2EC[8].x) * 0.5f;
+        mid.y = (this->unk_2EC[5].y + this->unk_2EC[8].y) * 0.5f + 4.0f;
+        mid.z = (this->unk_2EC[5].z + this->unk_2EC[8].z) * 0.5f;
+        Matrix_Translate(mid.x, mid.y, mid.z, MTXMODE_NEW);
+        Matrix_RotateY(BINANG_TO_RAD(this->actor.shape.rot.y), MTXMODE_APPLY);
+        Matrix_RotateX(-0.9f, MTXMODE_APPLY);
+        Matrix_Scale(0.3f, 0.3f, 0.3f, MTXMODE_APPLY);
+        GetItem_Draw(play, GID_LETTER_ZELDA);
+    }
+
+    // The boy's ocarina, glowing blue
+    if (cs->ocarinaOn) {
+        Matrix_Translate(cs->ocarinaPos.x, cs->ocarinaPos.y, cs->ocarinaPos.z, MTXMODE_NEW);
+        Matrix_RotateY(BINANG_TO_RAD((s16)(play->gameplayFrames * 300)), MTXMODE_APPLY);
+        Matrix_Scale(0.2f, 0.2f, 0.2f, MTXMODE_APPLY);
+        GetItem_Draw(play, GID_OCARINA_TIME);
+        BossGanon_Player_DrawCsGlow(play, &cs->ocarinaPos, 2.2f, 200, 230, 255, 40, 90, 255,
+                                    ((play->gameplayFrames % 2) != 0) ? 140 : 100, play->gameplayFrames * 0x300);
+    }
+
+    // The vision: a black void, a golden light in it, and the three triangles turning in the dark
+    if (cs->voidAlpha > 0) {
+        Environment_FillScreen(play->state.gfxCtx, 0, 0, 0, cs->voidAlpha, FILL_SCREEN_XLU);
+    }
+    if (cs->goldLight > 0.0f) {
+        BossGanon_Player_DrawCsGlow(play, &cs->goldPos, cs->goldLight, 255, 255, 200, 255, 190, 40, 255,
+                                    play->gameplayFrames * 0x120);
+        BossGanon_Player_DrawCsGlow(play, &cs->goldPos, cs->goldLight * 0.55f, 255, 255, 255, 255, 230, 120, 255,
+                                    play->gameplayFrames * -0x200);
+    }
+    if ((cs->triforceScale > 0.0f) && (cs->triforceAlpha > 0)) {
+        OPEN_DISPS(play->state.gfxCtx);
+
+        gDPPipeSync(POLY_XLU_DISP++);
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 170, cs->triforceAlpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 255, 200, 0, 128);
+        Matrix_Translate(cs->triforcePos.x, cs->triforcePos.y, cs->triforcePos.z, MTXMODE_NEW);
+        Matrix_RotateY(BINANG_TO_RAD(cs->triforceYaw), MTXMODE_APPLY);
+        Matrix_Scale(cs->triforceScale, cs->triforceScale, 1.0f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfTriforceDL));
+
+        CLOSE_DISPS(play->state.gfxCtx);
+    }
+}
 
 // Hand over hand: each arm reaches up while the other pulls, the knee on the same side lifts with the reaching arm.
 // The cycle follows how far Link actually climbs.
@@ -10749,7 +11101,7 @@ static void BossGanon_Player_PlaceLedgeClimb(BossGanon* this, PlayState* play) {
 // on and in every new area; turning it off sends them away.
 static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
-    u8 want = CVarGetInteger(CVAR_PLAY_AS_GDF("Bodyguards"), 0) && !this->playerHidden &&
+    u8 want = CVarGetInteger(CVAR_PLAY_AS_GDF("Bodyguards"), 0) && !this->playerHidden && !gGdfIntroCs.active &&
               (gSaveContext.gameMode == GAMEMODE_NORMAL) && (play->csCtx.state == CS_STATE_IDLE) &&
               (play->transitionTrigger == TRANS_TRIGGER_OFF);
     Actor* found[3] = { NULL, NULL, NULL };
@@ -10765,7 +11117,7 @@ static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play) 
             }
         }
     }
-    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("Bodyguards"), 0)) {
+    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("Bodyguards"), 0) || gGdfIntroCs.active) {
         for (i = 0; i < 3; i++) {
             if (found[i] != NULL) {
                 Vec3f zero = { 0.0f, 0.0f, 0.0f };

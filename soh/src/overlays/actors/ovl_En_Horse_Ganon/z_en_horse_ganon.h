@@ -22,6 +22,14 @@ typedef struct EnHorseGanon {
     /* 0x01FC */ ColliderCylinder colliderBody;
     /* 0x0248 */ ColliderJntSph colliderHead;
     /* 0x0268 */ ColliderJntSphElement headElements[1];
-} EnHorseGanon; // size = 0x02A8
+    /* SoH */ Vec3f gdfSeatPos; // "Play as Ganondorf": his saddle, for the Gerudo intro (from the last draw)
+    /* SoH */ u8 gdfSeatValid;
+} EnHorseGanon;
+
+// SoH: "Play as Ganondorf", the Gerudo intro rides this horse. Driven: it keeps the speed and heading it's given
+// (speedXZ, world.rot.y) and walks, trots or gallops to match.
+#define EN_HORSE_GANON_ACTION_DRIVEN 2
+s32 EnHorseGanon_GetSeat(Actor* horse, Vec3f* seat);
+void EnHorseGanon_SetDriven(Actor* horse);
 
 #endif

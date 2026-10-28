@@ -76,5 +76,25 @@ typedef struct EnGeldB {
 // SoH: "Play as Ganondorf", his Gerudo bodyguards: params EN_GELDB_PARAMS_ALLY + variant (0-2)
 #define EN_GELDB_PARAMS_ALLY 0x80
 #define EN_GELDB_IS_ALLY(params) (((params) & 0xFC) == EN_GELDB_PARAMS_ALLY)
+// ...and the Gerudo in his intro (EN_GELDB_PARAMS_EXTRA + colour 0-2): they stand, kneel or cheer on cue
+#define EN_GELDB_PARAMS_EXTRA 0x90
+#define EN_GELDB_IS_EXTRA(params) (((params) & 0xFC) == EN_GELDB_PARAMS_EXTRA)
+#define EN_GELDB_IS_FRIEND(params) (EN_GELDB_IS_ALLY(params) || EN_GELDB_IS_EXTRA(params))
+
+typedef enum {
+    GELDB_EXTRA_STAND,
+    GELDB_EXTRA_KNEEL, // her guard crouch, held
+    GELDB_EXTRA_CHEER  // hopping, swords up
+} EnGeldBExtraCue;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern s32 gEnGeldBExtraCue;
+extern u8 gEnGeldBExtraLookOn; // the extras turn to face gEnGeldBExtraLook
+extern Vec3f gEnGeldBExtraLook;
+#ifdef __cplusplus
+}
+#endif
 
 #endif

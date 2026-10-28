@@ -261,7 +261,7 @@ void EnGeldB_Init(Actor* thisx, PlayState* play) {
     }
 
     // SoH: "Play as Ganondorf", one of his bodyguards: on his side, not targetable, kept through room changes
-    if (EN_GELDB_IS_ALLY(thisx->params)) {
+    if (EN_GELDB_IS_FRIEND(thisx->params)) {
         this->allyVariant = thisx->params & 3;
         this->keyFlag = 0;
         thisx->room = -1;
@@ -1588,10 +1588,76 @@ static void EnGeldB_UpdateAlly(EnGeldB* this, PlayState* play) {
     }
 }
 
+s32 gEnGeldBExtraCue = GELDB_EXTRA_STAND;
+u8 gEnGeldBExtraLookOn = false;
+Vec3f gEnGeldBExtraLook = { 0.0f, 0.0f, 0.0f };
+
+// SoH: "Play as Ganondorf", a Gerudo in his intro: no fighting, she stands, kneels or cheers on the director's cue,
+// walks when it moves her, and turns to face where it says
+static void EnGeldB_UpdateExtra(EnGeldB* this, PlayState* play) {
+    AnimationHeader* want;
+    u8 loop = true;
+
+    if (gEnGeldBExtraLookOn && (this->actor.speedXZ <= 0.5f)) {
+        Math_SmoothStepToS(&this->actor.shape.rot.y, Math_Vec3f_Yaw(&this->actor.world.pos, &gEnGeldBExtraLook), 4,
+                           0x800, 0x80);
+        this->actor.world.rot.y = this->actor.shape.rot.y;
+    }
+
+    if (this->actor.speedXZ > 0.5f) {
+        want = &gGerudoRedWalkAnim;
+    } else if (gEnGeldBExtraCue == GELDB_EXTRA_KNEEL) {
+        want = &gGerudoRedBlockAnim;
+        loop = false;
+    } else if (gEnGeldBExtraCue == GELDB_EXTRA_CHEER) {
+        want = &gGerudoRedJumpAnim;
+    } else {
+        want = &gGerudoRedNeutralAnim;
+    }
+    if (this->skelAnime.animation != (void*)want) {
+        if (loop) {
+            Animation_MorphToLoop(&this->skelAnime, want, -6.0f);
+            if (want == &gGerudoRedJumpAnim) {
+                // Not all in step
+                this->skelAnime.curFrame = Rand_ZeroFloat(Animation_GetLastFrame(want));
+            }
+        } else {
+            Animation_MorphToPlayOnce(&this->skelAnime, want, -6.0f);
+        }
+    }
+    if (this->actor.speedXZ > 0.5f) {
+        this->skelAnime.playSpeed = CLAMP(this->actor.speedXZ * 0.35f, 0.6f, 2.4f);
+    } else {
+        this->skelAnime.playSpeed = 1.0f;
+    }
+    SkelAnime_Update(&this->skelAnime);
+
+    Actor_MoveXZGravity(&this->actor);
+    Actor_UpdateBgCheckInfo(play, &this->actor, 15.0f, 30.0f, 60.0f, 0x1D);
+    this->actor.focus.pos = this->actor.world.pos;
+    this->actor.focus.pos.y += 40.0f;
+    Collider_UpdateCylinder(&this->actor, &this->bodyCollider);
+    // Not while she's set in a saddle (no gravity): her horse would push her off
+    if (this->actor.gravity != 0.0f) {
+        CollisionCheck_SetOC(play, &play->colChkCtx, &this->bodyCollider.base);
+    }
+    if (this->blinkState == 0) {
+        if ((Rand_ZeroOne() < 0.1f) && ((play->gameplayFrames % 4) == 0)) {
+            this->blinkState++;
+        }
+    } else {
+        this->blinkState = (this->blinkState + 1) & 3;
+    }
+}
+
 void EnGeldB_Update(Actor* thisx, PlayState* play) {
     s32 pad;
     EnGeldB* this = (EnGeldB*)thisx;
 
+    if (EN_GELDB_IS_EXTRA(thisx->params)) {
+        EnGeldB_UpdateExtra(this, play);
+        return;
+    }
     if (EN_GELDB_IS_ALLY(thisx->params)) {
         EnGeldB_UpdateAlly(this, play);
         return;
@@ -1642,7 +1708,7 @@ s32 EnGeldB_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f*
         gDPPipeSync(POLY_OPA_DISP++);
         gDPSetEnvColor(POLY_OPA_DISP++, 140, 170, 230, 255);
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, 255);
-    } else if (EN_GELDB_IS_ALLY(this->actor.params)) {
+    } else if (EN_GELDB_IS_FRIEND(this->actor.params)) {
         // SoH: "Play as Ganondorf", his bodyguards in green, blue and red
         static const u8 sAllyColors[3][3] = { { 20, 100, 35 }, { 25, 55, 150 }, { 140, 0, 0 } };
 

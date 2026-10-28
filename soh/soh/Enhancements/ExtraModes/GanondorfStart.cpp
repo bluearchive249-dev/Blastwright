@@ -24,6 +24,7 @@ extern PlayState* gPlayState;
 }
 
 #include "GanondorfStart.h"
+#include "GanondorfIntro.h"
 
 #define GDF_START_TEXT_NARRATION 0x7E00
 #define GDF_START_TEXT_POE 0x7E01
@@ -125,11 +126,16 @@ static void OnPlayerUpdate() {
         return;
     }
     sFramesInScene++;
-    if ((play->sceneNum != SCENE_GERUDOS_FORTRESS) || (sFramesInScene < 30) ||
+    if ((play->sceneNum != SCENE_GERUDOS_FORTRESS) || (sFramesInScene < (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoIntro"), 1) ? 1 : 30)) ||
         (play->transitionTrigger != TRANS_TRIGGER_OFF) || (play->msgCtx.msgMode != MSGMODE_NONE)) {
         return;
     }
     sIntroShown = true;
+    // His own intro cutscene (it ends with the Poe's greeting), or the short narration
+    if (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoIntro"), 1)) {
+        GanondorfIntro_Start(true);
+        return;
+    }
     Message_StartTextbox(play, GDF_START_TEXT_NARRATION, NULL);
 }
 

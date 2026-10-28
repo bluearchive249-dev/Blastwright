@@ -22,6 +22,7 @@ extern "C" {
 extern PlayState* gPlayState;
 }
 #include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
+#include "soh/Enhancements/ExtraModes/GanondorfIntro.h"
 
 #define CVAR_INT_SHIP_INIT(cvar, val) \
     CVarSetInteger(cvar, val);        \
@@ -2365,6 +2366,25 @@ void SohMenu::AddMenuEnhancements() {
             "New files start at the Gerudo Fortress, his home, instead of Link's house (no Deku Tree opening): a "
             "narration and his Poe's greeting welcome him back, and the Gerudo serve their King instead of chasing "
             "him. The file keeps starting there when you continue it. Applies to files made while it's on."));
+    AddWidget(path, "Gerudo Intro Cutscene", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoIntro"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0) ||
+                            (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoStart"), 0) == 0);
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "A new Gerudo file opens with his own intro instead of the narration: the fortress at dusk, the King of "
+            "the Gerudo at his window and his war table, a vision he can't explain, the oath of his warriors by "
+            "torchlight, the king's letter, and the ride out toward Hyrule. Press START to skip it. Play then begins "
+            "at dawn outside the castle town."));
+    AddWidget(path, "Play the Gerudo Intro", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.options->disabled = (gPlayState == NULL) || GanondorfIntro_IsActive();
+        })
+        .Options(ButtonOptions().Tooltip("Watch the Gerudo intro now (START skips it). Afterwards you're back where "
+                                         "you were.").Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo& info) { GanondorfIntro_Start(false); });
     AddWidget(path, "Organ on L3", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.L3Organ"))
         .PreFunc([](WidgetInfo& info) {
