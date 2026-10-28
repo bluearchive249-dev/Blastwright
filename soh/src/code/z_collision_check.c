@@ -3,6 +3,7 @@
 #include "overlays/effects/ovl_Effect_Ss_HitMark/z_eff_ss_hitmark.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include <assert.h>
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -3062,6 +3063,10 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
         if (damage < 0) {
             damage = 0;
         }
+        // SoH: "Play as Ganondorf", between the Master Sword's 2 and the Biggoron Sword's 4 (Ganon: 4)
+        if (piercing) {
+            damage = (collider->ac->id == ACTOR_BOSS_GANON2) ? 4.0f : CLAMP(damage, 3.0f, 4.0f);
+        }
     } else {
         s32 i = -1;
         u32 flags = info->acHitInfo->toucher.dmgFlags;
@@ -3080,6 +3085,22 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
 
         damage = tbl->table[i] & 0xF;
         collider->actor->colChkInfo.damageEffect = tbl->table[i] >> 4 & 0xF;
+
+        // SoH: "Play as Ganondorf", his hits land between what the Master Sword and the Biggoron Sword would do to
+        // this target: Ganondorf halfway between the two, Ganon as hard as the Biggoron Sword. Targets that swords
+        // can't hurt keep the best of his other types.
+        if (piercing) {
+            s32 master = tbl->table[9] & 0xF;  // DMG_SLASH_MASTER
+            s32 giant = tbl->table[10] & 0xF;  // DMG_SLASH_GIANT
+
+            if ((master > 0) || (giant > 0)) {
+                s32 low = MAX(master, 1);
+                s32 high = MAX(giant, low);
+                s32 his = (collider->ac->id == ACTOR_BOSS_GANON2) ? high : (low + high + 1) / 2;
+
+                damage = his;
+            }
+        }
     }
     // Even targets that are immune to every type he carries take at least 1
     if (piercing && (damage < 1.0f)) {
@@ -3703,7 +3724,11 @@ s32 CollisionCheck_CylSideVsLineSeg(f32 radius, f32 height, f32 offset, Vec3f* a
 u8 CollisionCheck_GetSwordDamage(s32 dmgFlags, PlayState* play) {
     u8 damage = 0;
 
-    if (dmgFlags & 0x00400100) {
+    // SoH: "Play as Ganondorf", his attacks carry every type, which read as the Kokiri Sword (1) here. Bosses take
+    // what the Master Sword (2) and the Biggoron Sword (4) would do: Ganondorf 3, Ganon 4.
+    if (((u32)dmgFlags & DMG_GANONDORF_PLAYER) == DMG_GANONDORF_PLAYER) {
+        damage = PlayAsGanondorf_IsGanonOut(play) ? 4 : 3;
+    } else if (dmgFlags & 0x00400100) {
         damage = 1;
     } else if (dmgFlags & 0x03000242) {
         damage = 2;

@@ -558,7 +558,7 @@ static bool IsRightStickClicked() {
     return IsControllerButtonHeld(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
 }
 
-// The organ: clicking the left stick (L3) on a controller plays it (and stops), as well as D-pad Down. True on the
+// The organ: clicking the left stick (L3) on a controller plays it (and stops it). True on the
 // frame it's clicked; the same answer for every caller within a frame.
 extern "C" s32 PlayAsGanondorf_OrganButtonPressed(void) {
     static u32 sLastFrame = 0xFFFFFFFF;
@@ -592,9 +592,9 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
     BossGanon2* ganon = FindPlayerGanon(play);
     bool busy = (ganon != NULL) ? BossGanon2_Player_IsBusy(&ganon->actor) : BossGanon_Player_IsBusy(&dorf->actor);
 
-    // B = sword, R = shield, Z = targeting, L = levitate. D-pad Up/Down are the laugh and the organ, D-pad Right
-    // the transformation.
-    u16 blocked = BTN_B | BTN_R | BTN_Z | BTN_L | BTN_DUP | BTN_DDOWN;
+    // B = sword, R = shield, Z = targeting, L = levitate. D-pad Up is the laugh, D-pad Right the transformation
+    // (the organ is on L3, D-pad Down is free).
+    u16 blocked = BTN_B | BTN_R | BTN_Z | BTN_L | BTN_DUP;
 
     if (IsGanonFormEnabled()) {
         blocked |= BTN_DRIGHT;

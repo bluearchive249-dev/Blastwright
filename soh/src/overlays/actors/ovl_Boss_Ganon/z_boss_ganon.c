@@ -6566,7 +6566,7 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
         BossGanon_Player_SetupChargeBigMagic(this, play);
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
         BossGanon_Player_SetupLaugh(this, play);
-    } else if ((CHECK_BTN_ALL(input->press.button, BTN_DDOWN) || PlayAsGanondorf_OrganButtonPressed()) &&
+    } else if (PlayAsGanondorf_OrganButtonPressed() &&
                (GET_PLAYER(play)->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
         // The organ rises out of solid ground, so not while levitating
         BossGanon_Player_SetupOrgan(this, play);
@@ -10633,7 +10633,7 @@ void BossGanon_Player_Laugh(BossGanon* this, PlayState* play) {
 }
 
 // ------------------------------------------------------------------------------------------------
-// SoH: "Play as Ganondorf", D-pad Down: his organ rises out of the ground and he plays Ganondorf's Theme
+// SoH: "Play as Ganondorf", L3: his organ rises out of the ground and he plays Ganondorf's Theme
 // ------------------------------------------------------------------------------------------------
 
 // In his intro Ganondorf sits at (0, 112, -333) facing +z, and the organ is drawn at the room origin.
@@ -10891,10 +10891,10 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
             }
             break;
 
-        case 1: // playing, until D-pad Down, B or A (as his ocarina: until Link puts it away)
+        case 1: // playing, until L3, B or A (as his ocarina: until Link puts it away)
             BossGanon_Player_UpdateOrganCam(this, play);
             if (this->playerOrganOcarina ? !(GET_PLAYER(play)->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING)
-                                         : (CHECK_BTN_ANY(input->press.button, BTN_DDOWN | BTN_B | BTN_A) ||
+                                         : (CHECK_BTN_ANY(input->press.button, BTN_B | BTN_A) ||
                                             PlayAsGanondorf_OrganButtonPressed() ||
                                             !BossGanon_Player_CanStartAttack(this, play))) {
                 this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfStopPlayingOrganAnim);

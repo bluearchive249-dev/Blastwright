@@ -2117,7 +2117,7 @@ void SohMenu::AddMenuEnhancements() {
             " - R + B: Pound the floor.\n"
             " - C-Left / C-Down / C-Right: Light ball / Pound / Big Magic.\n"
             " - L / Z: Levitate up / down. Let go to hover, move with the stick.\n"
-            " - D-Pad Up: Laugh. D-Pad Down: Play the organ.\n"
+            " - D-Pad Up: Laugh. L3 (left stick click): Play the organ.\n"
             " - A still opens doors, talks, climbs and grabs.\n"
             " - Attacks aim at the enemy or eye/crystal switch, sun switch or unlit torch he's facing.\n\n"
             "His attacks count as every damage type and go through every defense, so they also break rocks and "
@@ -2337,8 +2337,7 @@ void SohMenu::AddMenuEnhancements() {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "On a controller, click the left stick (L3) to raise the organ and play it, and again to stop (D-pad Down "
-            "works too)."));
+            "On a controller, click the left stick (L3) to raise the organ and play it, and again to stop."));
     AddWidget(path, "Called Ganondorf in Dialogue", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CallMeGanondorf"))
         .PreFunc([](WidgetInfo& info) {
