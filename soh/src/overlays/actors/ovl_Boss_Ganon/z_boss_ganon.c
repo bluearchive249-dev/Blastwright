@@ -3559,6 +3559,11 @@ static s16 sGdfFastGroundTimer = 0;   // frames left where the ground offset fol
 static f32 sGdfMeshLowY = 0.0f;       // world height of his lowest point, last draw
 static f32 sGdfMeshLowYNext = 1.0e9f; // being gathered during this draw
 static u8 sGdfMeshLowValid = false;
+// Walking about on his own during a cutscene (BossGanon_Player_UpdateRoam)
+static u8 sGdfRoaming = false;
+static f32 sGdfRoamSpeed = 0.0f;
+static s16 sGdfRoamYaw = 0;
+static f32 sGdfRoamFloorY = 0.0f;
 
 // SoH: "Play as Ganondorf", his head (limb 18) from his last draw: Link's head, hat and focus while Link is hidden
 static Vec3f sGdfPlayerHeadPos;
@@ -5805,6 +5810,8 @@ void BossGanon_Player_SetupDowned(BossGanon* this, PlayState* play);
 void BossGanon_Player_Downed(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play);
 static void BossGanon_Player_KeepFloatRoot(BossGanon* this);
+static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play);
+void BossGanon_Player_Brood(BossGanon* this, PlayState* play);
 void BossGanon_Player_Laugh(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupOrgan(BossGanon* this, PlayState* play);
 void BossGanon_Player_Organ(BossGanon* this, PlayState* play);
@@ -6206,12 +6213,107 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
     BossGanon_Player_BlendArm(this, 3, arm, speed);
 }
 
+// Cutscenes and conversations: Link is held by the scene, but Ganondorf can walk about on his own with the stick
+// (camera-relative, like Link). He stays wherever he walked to until the scene is over, then he's back with Link. Not
+// through doors, chests, items, ladders, ledges or on horseback, where his own animations follow Link.
+#define GDF_ROAM_MAX_SPEED 5.0f
+#define GDF_ROAM_RADIUS 30.0f
+
+static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    if (!CVarGetInteger(CVAR_PLAY_AS_GDF("RoamInCutscenes"), 1) || !this->playerGrounded || this->playerHidden) {
+        return false;
+    }
+    if (!(player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) &&
+        (play->csCtx.state == CS_STATE_IDLE)) {
+        return false;
+    }
+    if ((player->doorActor != NULL) ||
+        (player->stateFlags1 & (PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_ON_HORSE |
+                                PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_DEAD))) {
+        return false;
+    }
+    return (this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_Brood) ||
+           (this->actionFunc == BossGanon_Player_Laugh);
+}
+
+static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play) {
+    f32 mag;
+    s16 angle;
+    s16 yaw;
+    f32 speed;
+    Vec3f next;
+    Vec3f from;
+    Vec3f to;
+    Vec3f hit;
+    Vec3f probe;
+    CollisionPoly* poly;
+    s32 bgId;
+    f32 floorY;
+
+    if (!BossGanon_Player_CanRoam(this, play)) {
+        sGdfRoaming = false;
+        sGdfRoamSpeed = 0.0f;
+        return;
+    }
+    func_80077D10(&mag, &angle, &play->state.input[0]);
+    if (mag < 8.0f) {
+        mag = 0.0f;
+    }
+    if (!sGdfRoaming && (mag <= 0.0f)) {
+        return;
+    }
+    if (!sGdfRoaming) {
+        sGdfRoaming = true;
+        sGdfRoamYaw = this->actor.shape.rot.y;
+        sGdfRoamFloorY = this->playerFloorY;
+    }
+    speed = (mag / 60.0f) * GDF_ROAM_MAX_SPEED;
+    Math_ApproachF(&sGdfRoamSpeed, (this->actionFunc == BossGanon_Player_Laugh) ? 0.0f : speed, 1.0f, 0.6f);
+    if (mag <= 0.0f) {
+        return;
+    }
+    yaw = Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + angle;
+    sGdfRoamYaw = yaw;
+    if (sGdfRoamSpeed <= 0.0f) {
+        return;
+    }
+
+    next = this->actor.world.pos;
+    next.x += Math_SinS(yaw) * sGdfRoamSpeed;
+    next.z += Math_CosS(yaw) * sGdfRoamSpeed;
+
+    // Walls: look ahead by his radius at waist height
+    from = this->actor.world.pos;
+    from.y += 40.0f;
+    to = next;
+    to.x += Math_SinS(yaw) * GDF_ROAM_RADIUS;
+    to.z += Math_CosS(yaw) * GDF_ROAM_RADIUS;
+    to.y = from.y;
+    if (BgCheck_EntityLineTest1(&play->colCtx, &from, &to, &hit, &poly, true, false, false, true, &bgId)) {
+        return;
+    }
+    // Floor: walk up and down slopes and steps, but not off a ledge
+    probe = next;
+    probe.y += 50.0f;
+    floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &probe);
+    if ((floorY <= BGCHECK_Y_MIN) || (floorY < sGdfRoamFloorY - 40.0f) || (floorY > sGdfRoamFloorY + 30.0f)) {
+        return;
+    }
+    sGdfRoamFloorY = floorY;
+    this->playerFloorY = floorY;
+    this->actor.world.pos.x = next.x;
+    this->actor.world.pos.z = next.z; // his height follows the floor through the ground offset (Update)
+}
+
 // Standing and walking, while not levitating: the walk cycle follows Link's speed
 static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
-    f32 speed = fabsf(player->linearVelocity);
+    // Walking about on his own in a cutscene: his own speed, not Link's
+    f32 speed = sGdfRoaming ? sGdfRoamSpeed : fabsf(player->linearVelocity);
     f32 rate;
-    u8 moving = (speed > 0.5f) && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
+    u8 moving = (speed > 0.5f) && (sGdfRoaming || (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND));
 
     Math_ApproachF(&this->playerWalkWeight, moving ? 1.0f : 0.0f, 1.0f, 0.15f);
     // Sprinting (holding A): a faster cycle, longer strides and a forward lean
@@ -9306,6 +9408,11 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     } else {
         this->playerFloorY = player->actor.world.pos.y;
     }
+    // Walking about on his own in a cutscene: the floor under him instead
+    BossGanon_Player_UpdateRoam(this, play);
+    if (sGdfRoaming) {
+        this->playerFloorY = sGdfRoamFloorY;
+    }
     // The cape's hem rests on the floor under Link. Raising that floor gradually keeps the hem from jittering on
     // slopes and stairs; lowering it is instant, so the cape never gets pushed up when he drops off a ledge.
     {
@@ -9458,7 +9565,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     // The opening in Link's house: brooding against the wall while the cutscene runs (a taunt can interrupt it)
-    if (BossGanon_Player_ShouldBrood(play) && !this->playerHidden) {
+    if (BossGanon_Player_ShouldBrood(play) && !this->playerHidden && !sGdfRoaming) {
         if ((this->actionFunc != BossGanon_Player_Brood) && (this->actionFunc != BossGanon_Player_Laugh)) {
             BossGanon_Player_SetupBrood(this, play);
             BossGanon_Player_Brood(this, play);
@@ -9547,7 +9654,12 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Math_ApproachZeroF(&this->playerAuraAlpha, 1.0f, 20.0f);
         Math_ApproachZeroF(&this->playerAuraScale, 1.0f, 0.02f);
     }
-    BossGanon_Player_Follow(this, play, controlY);
+    if (sGdfRoaming) {
+        // Where he walked to, standing on the floor there (the ground offset is relative to Link's height)
+        this->actor.world.pos.y = player->actor.world.pos.y + this->playerGroundOffset;
+    } else {
+        BossGanon_Player_Follow(this, play, controlY);
+    }
 
     if ((this->actionFunc == BossGanon_Player_SwordAttack) && (this->playerSwordAttack == GDF_SWORD_ATK_SPIN) &&
         (this->playerSpinYaw != 0)) {
@@ -9559,10 +9671,14 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         // Between attacks his aim is wherever Link faces, so an attack that doesn't aim itself goes straight ahead
         this->actor.yawTowardsPlayer = player->actor.shape.rot.y;
     }
+    if (sGdfRoaming) {
+        Math_ApproachS(&this->actor.shape.rot.y, sGdfRoamYaw, 3, 0x1800);
+        this->actor.yawTowardsPlayer = this->actor.shape.rot.y;
+    }
     this->actor.world.rot.y = this->actor.shape.rot.y;
     this->playerAimYaw = this->actor.yawTowardsPlayer;
     if ((this->actionFunc == BossGanon_Player_Brood) ||
-        ((this->actionFunc == BossGanon_Player_Laugh) && BossGanon_Player_ShouldBrood(play))) {
+        ((this->actionFunc == BossGanon_Player_Laugh) && BossGanon_Player_ShouldBrood(play) && !sGdfRoaming)) {
         BossGanon_Player_PlaceBrood(this, play);
     }
 
@@ -10971,6 +11087,7 @@ BOSS_GANON_CONTEXT_ENTRY(BossGanon_PlayerBigMagic_Update)
 void BossGanon_Reset(void) {
     sGdfWanted = false; // SoH: the manhunt ends with a reset
     sGdfPlayerHeadValid = false;
+    sGdfRoaming = false;
     sGdfLastScene = -1;
     sSeed1 = 0;
     sSeed2 = 0;
