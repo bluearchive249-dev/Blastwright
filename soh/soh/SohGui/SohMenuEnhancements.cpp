@@ -2428,7 +2428,8 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(ComboboxOptions().ComboMap(ganondorfWeapons).DefaultIndex(0).Tooltip(
             "What he wields in his sword stance (D-Pad Left). The tridents use a spear's moveset: B, B and a stab to "
-            "finish the combo. He carries a trident at his side when it's put away. The tridents need "
+            "finish the combo. Hold C-Right to spin the trident over his head, let go to hurl it: it homes in on the "
+            "nearest enemy in front of him (or the one he's targeting) and flies back to his hand. He carries a trident at his side when it's put away. The tridents need "
             "gdf_tridents.bin next to the game; without it he keeps the sword."));
     AddWidget(path, "Sword Size: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordSize"))

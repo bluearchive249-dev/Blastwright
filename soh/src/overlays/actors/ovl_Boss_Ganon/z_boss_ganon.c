@@ -3565,6 +3565,18 @@ static u8 sGdfRoaming = false;
 static f32 sGdfRoamSpeed = 0.0f;
 static s16 sGdfRoamYaw = 0;
 static f32 sGdfRoamFloorY = 0.0f;
+// The trident throw (BossGanon_Player_TridentSpin / TridentThrow)
+#define GDF_TRIDENT_IN_HAND 0
+#define GDF_TRIDENT_OVERHEAD 1
+#define GDF_TRIDENT_OUT 2
+#define GDF_TRIDENT_RETURNING 3
+static u8 sGdfTridentState = GDF_TRIDENT_IN_HAND;
+static Vec3f sGdfTridentPos;
+static Vec3f sGdfTridentVel;
+static s16 sGdfTridentSpin = 0;
+static Actor* sGdfTridentTarget = NULL;
+static s16 sGdfTridentTimer = 0;
+static f32 sGdfTridentTravel = 0.0f;
 
 // SoH: "Play as Ganondorf", his head (limb 18) from his last draw: Link's head, hat and focus while Link is hidden
 static Vec3f sGdfPlayerHeadPos;
@@ -5813,6 +5825,9 @@ void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play);
 static void BossGanon_Player_KeepFloatRoot(BossGanon* this);
 static s32 BossGanon_Player_UsesSpear(void);
 static s32 BossGanon_Player_HasTrident(void);
+void BossGanon_Player_SetupTridentSpin(BossGanon* this, PlayState* play);
+void BossGanon_Player_TridentSpin(BossGanon* this, PlayState* play);
+void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play);
 void BossGanon_Player_Brood(BossGanon* this, PlayState* play);
 void BossGanon_Player_Laugh(BossGanon* this, PlayState* play);
@@ -5917,7 +5932,8 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
            (this->actionFunc == BossGanon_Player_ChargeBigMagic) || (this->actionFunc == BossGanon_Player_Pound) ||
            (this->actionFunc == BossGanon_Player_Block) || (this->actionFunc == BossGanon_Player_Laugh) ||
            (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
-           (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land);
+           (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land) ||
+           (this->actionFunc == BossGanon_Player_TridentSpin) || (this->actionFunc == BossGanon_Player_TridentThrow);
     // Not the dark aura: he moves freely while holding it
 }
 
@@ -6257,6 +6273,7 @@ static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play) {
 
     if (!BossGanon_Player_CanRoam(this, play)) {
         sGdfRoaming = false;
+    sGdfTridentState = GDF_TRIDENT_IN_HAND;
         sGdfRoamSpeed = 0.0f;
         return;
     }
@@ -6744,6 +6761,7 @@ static const Vec3s sGdfSwordPoses[GDF_POSE_MAX][3] = {
 #define GDF_GRIP_Y 0.0f
 #define GDF_GRIP_Z -100.0f
 #define GDF_TRIDENT_GRIP_Z -500.0f // the trident model's grip, in the sword frame
+#define GDF_TRIDENT_TAIL_Z -2700.0f // about where its butt end is
 #define GDF_SWORD_SCALE 1.4f // a greatsword: about 62 units of blade on a 100 unit tall Ganondorf
 #define GDF_SWORD_GRIP_Z -500.0f   // where he holds the sword (sword frame)
 #define GDF_SHEATH_GRIP_Z 350.0f   // where he holds the sheath, just under its mouth
@@ -7594,7 +7612,11 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
     } else if (CHECK_BTN_ALL(input->press.button, BTN_CDOWN)) {
         BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_SLAM);
     } else if (CHECK_BTN_ALL(input->press.button, BTN_CRIGHT)) {
-        BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_WAVE);
+        if (BossGanon_Player_HasTrident()) {
+            BossGanon_Player_SetupTridentSpin(this, play); // spun overhead, thrown on release
+        } else {
+            BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_WAVE);
+        }
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
         BossGanon_Player_SetupLaugh(this, play);
     }
@@ -8421,7 +8443,23 @@ static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play) {
 
             OPEN_DISPS(play->state.gfxCtx);
             Matrix_Push();
-            if (sPlayerSwordState == GDF_SWORD_SHEATHED) {
+            if (sGdfTridentState != GDF_TRIDENT_IN_HAND) {
+                // Spun flat over his head (about his hand), or flying spinning about its middle
+                f32 scale = this->actor.scale.x * CVarGetFloat(CVAR_PLAY_AS_GDF("SwordSize"), GDF_SWORD_SCALE);
+
+                if (sGdfTridentState == GDF_TRIDENT_OVERHEAD) {
+                    Matrix_Translate(this->unk_2EC[8].x, this->unk_2EC[8].y + 6.0f, this->unk_2EC[8].z, MTXMODE_NEW);
+                    Matrix_RotateY(BINANG_TO_RAD(sGdfTridentSpin), MTXMODE_APPLY);
+                    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+                    Matrix_Translate(0.0f, 0.0f, -GDF_TRIDENT_GRIP_Z, MTXMODE_APPLY);
+                } else {
+                    Matrix_Translate(sGdfTridentPos.x, sGdfTridentPos.y, sGdfTridentPos.z, MTXMODE_NEW);
+                    Matrix_RotateY(BINANG_TO_RAD(sGdfTridentSpin), MTXMODE_APPLY);
+                    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+                    Matrix_Translate(0.0f, 0.0f, -(headZ + GDF_TRIDENT_TAIL_Z) * 0.5f, MTXMODE_APPLY);
+                }
+                this->playerBladeValid = false;
+            } else if (sPlayerSwordState == GDF_SWORD_SHEATHED) {
                 BossGanon_Player_SwordFrame(&this->playerLeftHandMtx, GDF_TRIDENT_GRIP_Z);
                 this->playerBladeValid = false;
             } else {
@@ -9619,6 +9657,12 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         BossGanon_Player_SetupFloat(this, play);
     }
 
+    // Anything that interrupts the throw (getting hurt, cutscenes, ...) puts the trident back in his hand
+    if ((sGdfTridentState != GDF_TRIDENT_IN_HAND) && (this->actionFunc != BossGanon_Player_TridentSpin) &&
+        (this->actionFunc != BossGanon_Player_TridentThrow)) {
+        sGdfTridentState = GDF_TRIDENT_IN_HAND;
+    }
+
     // He kicks doors open
     BossGanon_Player_ApplyDoorKick(this, play);
     BossGanon_Player_ApplyChestKick(this, play);
@@ -10683,6 +10727,171 @@ static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play) {
     w = w * w * (3.0f - 2.0f * w);
     BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfClimbPoses[2], w);
     BossGanon_Player_TwistLean(this, 0.0f, GDF_DOOR_DUCK_LEAN * w);
+}
+
+// The trident throw, from his last battle in A Link to the Past: he stands his ground spinning the trident flat over
+// his head (C-Right, held), then hurls it (let go): it flies spinning at the nearest enemy in front of him (or the one
+// he's targeting), homing in, hits everything in its way, and comes back to his hand.
+#define GDF_TRIDENT_THROW_SPEED 24.0f
+#define GDF_TRIDENT_RETURN_SPEED 28.0f
+#define GDF_TRIDENT_RANGE 900.0f
+#define GDF_TRIDENT_HIT_RADIUS 45.0f
+
+void BossGanon_Player_SetupTridentSpin(BossGanon* this, PlayState* play) {
+    if (this->playerGrounded) {
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -5.0f);
+    } else {
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfFloatAnim, -5.0f);
+    }
+    this->actionFunc = BossGanon_Player_TridentSpin;
+    sGdfTridentState = GDF_TRIDENT_OVERHEAD;
+    sGdfTridentTimer = 0;
+    this->playerWalkWeight = 0.0f;
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+}
+
+static void BossGanon_Player_TridentArms(BossGanon* this, f32 overhead) {
+    Vec3s arm[3];
+    s32 i;
+
+    // Overhead: the fist high above his head; thrown: reaching forward at chest height
+    for (i = 0; i < 3; i++) {
+        BossGanon_Player_SlerpRot((Vec3s*)&sGdfClimbPoses[3][i], (Vec3s*)&sGdfClimbPoses[2][i], overhead, &arm[i]);
+    }
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, arm, 1.0f);
+}
+
+void BossGanon_Player_TridentSpin(BossGanon* this, PlayState* play) {
+    Input* input = &play->state.input[0];
+    Player* player = GET_PLAYER(play);
+    Vec3f from;
+    Actor* target;
+
+    SkelAnime_Update(&this->skelAnime);
+    BossGanon_Player_KeepFloatRoot(this);
+    BossGanon_Player_TridentArms(this, 1.0f);
+    this->actor.yawTowardsPlayer = this->actor.shape.rot.y; // he stands his ground
+
+    sGdfTridentTimer++;
+    // Spinning up: faster and faster
+    sGdfTridentSpin += (s16)(0x0C00 + MIN(sGdfTridentTimer, 12) * 0x0180);
+    if ((sGdfTridentTimer % 5) == 0) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_SWING_HARD);
+    }
+    sCape->backPush = -3.0f;
+    sCape->backSwayMagnitude = 1.0f;
+    sCape->sideSwayMagnitude = -3.0f;
+
+    if (CHECK_BTN_ALL(input->cur.button, BTN_CRIGHT) || (sGdfTridentTimer < 10)) {
+        return;
+    }
+
+    // Let go: the throw, at what he's targeting or the nearest enemy in front of him
+    from = this->actor.world.pos;
+    target = ((player->focusActor != NULL) && (player->focusActor != &player->actor)) ? player->focusActor
+                                                                                       : BossGanon_Player_FindTarget(
+                                                                                             play, &from,
+                                                                                             this->actor.shape.rot.y,
+                                                                                             GDF_TRIDENT_RANGE, 0x3000,
+                                                                                             true);
+    sGdfTridentTarget = target;
+    sGdfTridentPos = this->unk_2EC[8];
+    sGdfTridentPos.y += 6.0f;
+    sGdfTridentVel.x = Math_SinS(this->actor.shape.rot.y) * GDF_TRIDENT_THROW_SPEED;
+    sGdfTridentVel.y = 0.0f;
+    sGdfTridentVel.z = Math_CosS(this->actor.shape.rot.y) * GDF_TRIDENT_THROW_SPEED;
+    sGdfTridentTravel = 0.0f;
+    sGdfTridentTimer = 0;
+    sGdfTridentState = GDF_TRIDENT_OUT;
+    this->actionFunc = BossGanon_Player_TridentThrow;
+    Audio_PlayActorSound2(&this->actor, NA_SE_IT_BOOMERANG_THROW);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+}
+
+void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play) {
+    Vec3f prev = sGdfTridentPos;
+    Vec3f aim;
+    Vec3f hit;
+    CollisionPoly* poly;
+    s32 bgId;
+    f32 dist;
+
+    SkelAnime_Update(&this->skelAnime);
+    BossGanon_Player_KeepFloatRoot(this);
+    BossGanon_Player_TridentArms(this, 0.0f);
+
+    sGdfTridentTimer++;
+    sGdfTridentSpin += 0x2400;
+    if ((sGdfTridentTimer % 6) == 0) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_BOOMERANG_FLY);
+    }
+
+    if (sGdfTridentState == GDF_TRIDENT_OUT) {
+        // Homing: turn toward the target as it flies
+        if ((sGdfTridentTarget != NULL) && (sGdfTridentTarget->update != NULL)) {
+            aim.x = sGdfTridentTarget->focus.pos.x - sGdfTridentPos.x;
+            aim.y = sGdfTridentTarget->focus.pos.y - sGdfTridentPos.y;
+            aim.z = sGdfTridentTarget->focus.pos.z - sGdfTridentPos.z;
+            dist = sqrtf(SQ(aim.x) + SQ(aim.y) + SQ(aim.z));
+            if (dist > 1.0f) {
+                sGdfTridentVel.x += ((aim.x / dist) * GDF_TRIDENT_THROW_SPEED - sGdfTridentVel.x) * 0.3f;
+                sGdfTridentVel.y += ((aim.y / dist) * GDF_TRIDENT_THROW_SPEED - sGdfTridentVel.y) * 0.3f;
+                sGdfTridentVel.z += ((aim.z / dist) * GDF_TRIDENT_THROW_SPEED - sGdfTridentVel.z) * 0.3f;
+            }
+            this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&this->actor.world.pos, &sGdfTridentPos);
+        } else {
+            sGdfTridentTarget = NULL;
+        }
+        sGdfTridentTravel += GDF_TRIDENT_THROW_SPEED;
+        if ((sGdfTridentTravel > GDF_TRIDENT_RANGE) || (sGdfTridentTimer > 50)) {
+            sGdfTridentState = GDF_TRIDENT_RETURNING;
+        }
+    } else {
+        // Back to his hand
+        aim.x = this->unk_2EC[8].x - sGdfTridentPos.x;
+        aim.y = this->unk_2EC[8].y - sGdfTridentPos.y;
+        aim.z = this->unk_2EC[8].z - sGdfTridentPos.z;
+        dist = sqrtf(SQ(aim.x) + SQ(aim.y) + SQ(aim.z));
+        if ((dist < 35.0f) || (sGdfTridentTimer > 120)) {
+            // Caught
+            sGdfTridentState = GDF_TRIDENT_IN_HAND;
+            Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PICKOUT);
+            BossGanon_Player_SetupSwordIdle(this, play);
+            return;
+        }
+        sGdfTridentVel.x = (aim.x / dist) * GDF_TRIDENT_RETURN_SPEED;
+        sGdfTridentVel.y = (aim.y / dist) * GDF_TRIDENT_RETURN_SPEED;
+        sGdfTridentVel.z = (aim.z / dist) * GDF_TRIDENT_RETURN_SPEED;
+        this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&this->actor.world.pos, &sGdfTridentPos);
+    }
+
+    sGdfTridentPos.x += sGdfTridentVel.x;
+    sGdfTridentPos.y += sGdfTridentVel.y;
+    sGdfTridentPos.z += sGdfTridentVel.z;
+
+    // Into a wall: it glances off and comes back
+    if ((sGdfTridentState == GDF_TRIDENT_OUT) &&
+        BgCheck_EntityLineTest1(&play->colCtx, &prev, &sGdfTridentPos, &hit, &poly, true, true, true, true, &bgId)) {
+        sGdfTridentPos = hit;
+        sGdfTridentState = GDF_TRIDENT_RETURNING;
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_SHIELD_REFLECT_SW);
+        EffectSsHitMark_SpawnFixedScale(play, 3, &hit); // the metal spark
+    }
+
+    // It hits everything it passes through, out and back
+    this->collider.dim.radius = (s16)GDF_TRIDENT_HIT_RADIUS;
+    this->collider.dim.height = (s16)(GDF_TRIDENT_HIT_RADIUS * 2.0f);
+    this->collider.dim.yShift = 0;
+    this->collider.dim.pos.x = (s16)sGdfTridentPos.x;
+    this->collider.dim.pos.y = (s16)(sGdfTridentPos.y - GDF_TRIDENT_HIT_RADIUS);
+    this->collider.dim.pos.z = (s16)sGdfTridentPos.z;
+    BossGanon_Player_SetAT(this, play);
+    if ((sGdfTridentState == GDF_TRIDENT_OUT) && (this->collider.base.atFlags & AT_HIT)) {
+        this->collider.base.atFlags &= ~AT_HIT;
+        sGdfTridentState = GDF_TRIDENT_RETURNING; // the first thing it strikes sends it back
+    }
 }
 
 // Both fists up over his head with the item between them, like Link holding up what he found
