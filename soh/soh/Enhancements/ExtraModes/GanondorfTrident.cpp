@@ -4,8 +4,9 @@
 // from the player's own model files, see the format below). Without the file the sword is used.
 //
 // gdf_tridents.bin (little endian):
-//   char[4] "GDFT", u16 version (1), u16 tridentCount
-//   trident: char name[32], s16 headBaseZ, s16 tipZ, u16 texWidth, u16 texHeight, texWidth * texHeight * RGBA8888,
+//   char[4] "GDFT", u16 version (2), u16 tridentCount
+//   trident: char name[32], s16 headBaseZ, s16 tipZ, u16 texWidth, u16 texHeight,
+//            texWidth * texHeight * RGBA5551 (big endian, like the game's own textures),
 //            u16 batchCount
 //   batch:   u8 vtxCount (<= 32), u8 triCount,
 //            vtxCount * { s16 x, y, z; s16 s, t (texels, 10.5 fixed); s8 nx, ny, nz; u8 alpha }, triCount * { u8 a, b, c }
@@ -105,7 +106,7 @@ bool ReadFile() {
         return false;
     }
     pos = 4;
-    if (u16At() != 1) {
+    if (u16At() != 2) {
         return false;
     }
     u16 count = u16At();
@@ -122,7 +123,7 @@ bool ReadFile() {
         t.tipZ = (s16)u16At();
         t.texWidth = u16At();
         t.texHeight = u16At();
-        size_t texBytes = (size_t)t.texWidth * t.texHeight * 4;
+        size_t texBytes = (size_t)t.texWidth * t.texHeight * 2;
         if ((t.texWidth == 0) || (t.texHeight == 0) || (t.texWidth > 256) || (t.texHeight > 256) || !need(texBytes + 2)) {
             return false;
         }
@@ -187,7 +188,7 @@ bool ReadFile() {
         Emit(t.dl, [&](Gfx*& p) { gSPSetGeometryMode(p++, G_ZBUFFER | G_SHADE | G_LIGHTING | G_SHADING_SMOOTH); });
         // A tile load: a block load stops at 4096 texels (the N64's texture memory), far less than the texture
         Emit(t.dl, [&](Gfx*& p) {
-            gDPLoadTextureTile(p++, tex, G_IM_FMT_RGBA, G_IM_SIZ_32b, w, h, 0, 0, w - 1, h - 1, 0,
+            gDPLoadTextureTile(p++, tex, G_IM_FMT_RGBA, G_IM_SIZ_16b, w, h, 0, 0, w - 1, h - 1, 0,
                                G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, maskS, maskT, G_TX_NOLOD,
                                G_TX_NOLOD);
         });
