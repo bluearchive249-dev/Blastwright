@@ -371,10 +371,18 @@ void EnDoor_Update(Actor* thisx, PlayState* play) {
 
     this->actionFunc(this, play);
 
-    // SoH: "Play as Ganondorf", the kicked door lies on the floor until he's gone, then it's back in its frame
+    // SoH: "Play as Ganondorf", the kicked door lies on the floor until he's gone, then it's back in its frame. It's
+    // also back as soon as the room on either side is unloaded (once he's through and the game drops the room he
+    // left): the empty doorway would show the void where that room was.
     if ((this->gdfKickState != 0) && (this->actionFunc != EnDoor_Open)) {
+        TransitionActorEntry* entry = &play->transiActorCtx.list[(u16)this->actor.params >> 0xA];
+        s8 a = entry->sides[0].room;
+        s8 b = entry->sides[1].room;
+        u8 aLoaded = (a == play->roomCtx.curRoom.num) || (a == play->roomCtx.prevRoom.num);
+        u8 bLoaded = (b == play->roomCtx.curRoom.num) || (b == play->roomCtx.prevRoom.num);
+
         EnDoor_GanondorfFly(this, play);
-        if ((this->gdfKickState == 2) && (this->actor.xzDistToPlayer > 350.0f)) {
+        if (((this->gdfKickState == 2) && (this->actor.xzDistToPlayer > 350.0f)) || !aLoaded || !bLoaded) {
             this->gdfKickState = 0;
         }
     }
