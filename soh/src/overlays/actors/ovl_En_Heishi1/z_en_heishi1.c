@@ -11,6 +11,17 @@
 #include "soh/Enhancements/savestate_serialize.h"
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h" // SoH: guards hunting the player Ganondorf
 
+// SoH: "Play as Ganondorf", the guards fear him (GanondorfGuards.cpp)
+s32 GanondorfGuards_Fear(void);
+void GanondorfGuards_Cower(PlayState* play, Actor* guard);
+void GanondorfGuards_Tremble(PlayState* play, Actor* guard);
+
+// SoH: frozen in fear of him, facing him and trembling
+static void EnHeishi1_Cower(EnHeishi1* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+    GanondorfGuards_Tremble(play, &this->actor);
+}
+
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 void EnHeishi1_Init(Actor* thisx, PlayState* play);
@@ -606,7 +617,13 @@ void EnHeishi1_Update(Actor* thisx, PlayState* play) {
                             if (!(player->actor.velocity.y > -3.9f)) {
                                 this->linkDetected = false;
                                 // this 60 unit height check is so the player doesnt get caught when on the upper path
-                                if (fabsf(player->actor.world.pos.y - this->actor.world.pos.y) < 60.0f) {
+                                if ((fabsf(player->actor.world.pos.y - this->actor.world.pos.y) < 60.0f) &&
+                                    GanondorfGuards_Fear()) {
+                                    // SoH: the King of Evil isn't caught: the guard freezes in fear
+                                    this->gdfCowed = true;
+                                    GanondorfGuards_Cower(play, &this->actor);
+                                    this->actionFunc = EnHeishi1_Cower;
+                                } else if (fabsf(player->actor.world.pos.y - this->actor.world.pos.y) < 60.0f) {
                                     Sfx_PlaySfxCentered(NA_SE_SY_FOUND);
                                     // "Discovered!"
                                     osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ 発見！ ☆☆☆☆☆ \n" VT_RST);

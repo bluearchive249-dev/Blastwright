@@ -2348,6 +2348,15 @@ void SohMenu::AddMenuEnhancements() {
             "Three Gerudo fighters, in green, blue and red, drop in at his side and follow him everywhere. When an "
             "enemy comes near they run in and cut it down with their own slashes and spinning slashes. Enemies can "
             "knock them back but can't kill them. Turn it off to dismiss them."));
+    AddWidget(path, "Guards Fear Him", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GuardsFear"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "The soldiers at Hyrule Castle don't catch the King of Evil and throw him out: a guard who spots him "
+            "freezes, trembles and keeps out of his way. The castle gate and town guards talk to him accordingly. "
+            "(After a murder in Castle Town the guard hunt still comes for him.)"));
     AddWidget(path, "Walk Around in Cutscenes", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.RoamInCutscenes"))
         .PreFunc([](WidgetInfo& info) {

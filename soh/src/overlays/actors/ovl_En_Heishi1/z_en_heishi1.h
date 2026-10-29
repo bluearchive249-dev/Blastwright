@@ -55,6 +55,7 @@ typedef struct EnHeishi1 {
     ColliderCylinder hunterSpear; // the stab
     s16 hunterTimer;
     u8 hunterStabbing;
+    u8 gdfCowed; // too afraid of him to do anything
 } EnHeishi1;
 
 #define EN_HEISHI1_TYPE_HUNTER 0x7F

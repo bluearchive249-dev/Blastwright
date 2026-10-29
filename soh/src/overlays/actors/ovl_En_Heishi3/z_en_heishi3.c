@@ -5,6 +5,11 @@
  */
 
 #include "z_en_heishi3.h"
+
+// SoH: "Play as Ganondorf", the guards fear him (GanondorfGuards.cpp)
+s32 GanondorfGuards_Fear(void);
+void GanondorfGuards_Cower(PlayState* play, Actor* guard);
+void GanondorfGuards_Tremble(PlayState* play, Actor* guard);
 #include "objects/object_sd/object_sd.h"
 #include "vt.h"
 
@@ -102,6 +107,23 @@ void EnHeishi3_SetupGuardType(EnHeishi3* this, PlayState* play) {
     }
 }
 
+// SoH: frozen in fear of him, facing him and trembling
+static void EnHeishi3_Cower(EnHeishi3* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+    GanondorfGuards_Tremble(play, &this->actor);
+}
+
+// SoH: the King of Evil isn't caught: the guard freezes in fear instead
+static s32 EnHeishi3_TryCower(EnHeishi3* this, PlayState* play) {
+    if (!GanondorfGuards_Fear()) {
+        return false;
+    }
+    this->gdfCowed = true;
+    GanondorfGuards_Cower(play, &this->actor);
+    this->actionFunc = EnHeishi3_Cower;
+    return true;
+}
+
 /**
  * Handles the guards standing on Hyrule Castle Grounds.
  **/
@@ -130,6 +152,9 @@ void EnHeishi3_StandSentinelInGrounds(EnHeishi3* this, PlayState* play) {
     }
     if ((this->actor.xzDistToPlayer < sightRange) &&
         (fabsf(player->actor.world.pos.y - this->actor.world.pos.y) < 100.0f) && (sPlayerCaught == 0)) {
+        if (EnHeishi3_TryCower(this, play)) {
+            return;
+        }
         sPlayerCaught = 1;
         Message_StartTextbox(play, 0x702D, &this->actor);
         Sfx_PlaySfxCentered(NA_SE_SY_FOUND);
@@ -157,6 +182,9 @@ void EnHeishi3_StandSentinelInCastle(EnHeishi3* this, PlayState* play) {
             if (player->actor.world.pos.x > -290.0f) {
                 return;
             }
+        }
+        if (EnHeishi3_TryCower(this, play)) {
+            return;
         }
         sPlayerCaught = 1;
         Message_StartTextbox(play, 0x702D, &this->actor);
