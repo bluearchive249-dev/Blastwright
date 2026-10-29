@@ -23,6 +23,7 @@ void EnHeishi3_Draw(Actor* thisx, PlayState* play);
 void EnHeishi3_SetupGuardType(EnHeishi3* this, PlayState* play);
 void EnHeishi3_StandSentinelInGrounds(EnHeishi3* this, PlayState* play);
 void EnHeishi3_StandSentinelInCastle(EnHeishi3* this, PlayState* play);
+void EnHeishi3_StandInCastleInterior(EnHeishi3* this, PlayState* play);
 void EnHeishi3_CatchStart(EnHeishi3* this, PlayState* play);
 void EnHeishi3_ResetAnimationToIdle(EnHeishi3* this, PlayState* play);
 void func_80A55D00(EnHeishi3* this, PlayState* play);
@@ -100,7 +101,10 @@ void EnHeishi3_SetupGuardType(EnHeishi3* this, PlayState* play) {
     f32 frameCount = Animation_GetLastFrame(&gEnHeishiIdleAnim);
 
     Animation_Change(&this->skelAnime, &gEnHeishiIdleAnim, 1.0f, 0.0f, (s16)frameCount, ANIMMODE_LOOP, -10.0f);
-    if (this->unk_278 == 0) {
+    if (play->sceneNum == SCENE_TESTROOM) {
+        // SoH: "Play as Ganondorf", a guard inside Hyrule Castle (the castle interior uses this scene slot)
+        this->actionFunc = EnHeishi3_StandInCastleInterior;
+    } else if (this->unk_278 == 0) {
         this->actionFunc = EnHeishi3_StandSentinelInGrounds;
     } else {
         this->actionFunc = EnHeishi3_StandSentinelInCastle;
@@ -122,6 +126,17 @@ static s32 EnHeishi3_TryCower(EnHeishi3* this, PlayState* play) {
     GanondorfGuards_Cower(play, &this->actor);
     this->actionFunc = EnHeishi3_Cower;
     return true;
+}
+
+// SoH: "Play as Ganondorf", a guard inside the castle: when he comes near, the guard freezes in fear
+void EnHeishi3_StandInCastleInterior(EnHeishi3* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+    if ((this->actor.xzDistToPlayer < 230.0f) && (fabsf(this->actor.yDistToPlayer) < 120.0f)) {
+        if (!EnHeishi3_TryCower(this, play)) {
+            // Without the fear option they just watch him go by
+            Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 5, 0x400, 0x40);
+        }
+    }
 }
 
 /**

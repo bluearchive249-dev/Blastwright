@@ -23,6 +23,8 @@ extern PlayState* gPlayState;
 }
 #include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
 #include "soh/Enhancements/ExtraModes/GanondorfIntro.h"
+extern "C" s32 GanondorfCastle_IsAvailable(void);
+extern "C" void GanondorfCastle_VisitInterior(void);
 
 #define CVAR_INT_SHIP_INIT(cvar, val) \
     CVarSetInteger(cvar, val);        \
@@ -2357,6 +2359,24 @@ void SohMenu::AddMenuEnhancements() {
             "The soldiers at Hyrule Castle don't catch the King of Evil and throw him out: a guard who spots him "
             "freezes, trembles and keeps out of his way. The castle gate and town guards talk to him accordingly. "
             "(After a murder in Castle Town the guard hunt still comes for him.)"));
+    AddWidget(path, "Hyrule Castle Interior", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CastleInterior"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Needs gdf_castle.o2r in the mods folder. On the castle grounds the castle's drawbridge works: it "
+            "lowers when he walks up to the gate, and the castle door leads inside: the entrance hall and its "
+            "gallery, the grand hall, the library, the barracks, the royal rooms upstairs, and the throne room, "
+            "whose window looks out on Zelda in the courtyard."));
+    AddWidget(path, "Visit the Castle Interior", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.options->disabled = (gPlayState == NULL) || !GanondorfCastle_IsAvailable();
+        })
+        .Options(ButtonOptions().Tooltip("Go straight inside Hyrule Castle (to try it out).")
+                     .Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo& info) { GanondorfCastle_VisitInterior(); });
     AddWidget(path, "Walk Around in Cutscenes", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.RoamInCutscenes"))
         .PreFunc([](WidgetInfo& info) {

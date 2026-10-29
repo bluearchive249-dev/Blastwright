@@ -57,6 +57,7 @@ void EnZl4_Draw(Actor* thisx, PlayState* play);
 
 void EnZl4_Cutscene(EnZl4* this, PlayState* play);
 void EnZl4_Idle(EnZl4* this, PlayState* play);
+void EnZl4_PeekOnly(EnZl4* this, PlayState* play);
 void EnZl4_TheEnd(EnZl4* this, PlayState* play);
 
 const ActorInit En_Zl4_InitVars = {
@@ -376,7 +377,11 @@ void EnZl4_Init(Actor* thisx, PlayState* play) {
     this->actor.textId = -1;
     this->eyeExpression = this->mouthExpression = ZL4_MOUTH_NEUTRAL;
 
-    if (gSaveContext.sceneLayer >= 4) {
+    if (play->sceneNum == SCENE_TESTROOM) {
+        // SoH: "Play as Ganondorf", seen from inside the castle: she only peers in at the window
+        Animation_ChangeByInfo(&this->skelAnime, sAnimationInfo, ZL4_ANIM_21);
+        this->actionFunc = EnZl4_PeekOnly;
+    } else if (gSaveContext.sceneLayer >= 4) {
         Animation_ChangeByInfo(&this->skelAnime, sAnimationInfo, ZL4_ANIM_0);
         this->actionFunc = EnZl4_TheEnd;
     } else if (Flags_GetEventChkInf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)) {
@@ -1200,6 +1205,11 @@ void EnZl4_Cutscene(EnZl4* this, PlayState* play) {
     if (EnZl4_InMovingAnim(this)) {
         EnZl4_SetMove(this, play);
     }
+}
+
+// SoH: "Play as Ganondorf", the castle interior: peering in at the throne room window, nothing more
+void EnZl4_PeekOnly(EnZl4* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
 }
 
 void EnZl4_Idle(EnZl4* this, PlayState* play) {
