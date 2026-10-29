@@ -219,10 +219,13 @@ static void OnPlayerUpdate() {
         player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = 0;
         return;
     }
-    // In through the castle gate, once the bridge is down
+    // In through the castle gate, once the bridge is down. The scene keeps a wall where the raised bridge stood
+    // (z 419), so he can't step into the gateway itself: walking into it at the foot of the bridge is enough.
     if ((sBridge != NULL) && (sBridge->angle == BRIDGE_LOWERED) && (play->transitionTrigger == TRANS_TRIGGER_OFF) &&
-        (player->actor.world.pos.z < sHinge.z + 12.0f) && (player->actor.world.pos.z > sHinge.z - 80.0f) &&
-        (fabsf(player->actor.world.pos.x - sHinge.x) < 95.0f) && (player->actor.world.pos.y > sHinge.y - 30.0f)) {
+        (play->msgCtx.msgMode == MSGMODE_NONE) && (player->actor.world.pos.z < sHinge.z + 70.0f) &&
+        (player->actor.world.pos.z > sHinge.z - 80.0f) && (fabsf(player->actor.world.pos.x - sHinge.x) < 95.0f) &&
+        (fabsf(player->actor.world.pos.y - sHinge.y) < 60.0f) &&
+        (ABS((s16)(player->actor.shape.rot.y - 0x8000)) < 0x3000)) {
         Warp(play, CASTLE_ENTRANCE);
     }
 }

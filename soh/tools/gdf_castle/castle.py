@@ -376,12 +376,17 @@ def build():
     return B
 
 
-def emit_dl(B, dl_path, vtx_path, files):
+def emit_dl(B, dl_path, vtx_path, files, obj=False):
     verts = []
     dl = G.DL(dl_path)
     for mat, faces in B.faces.items():
         for c in material_cmds(MAT[mat]):
             dl.raw(c)
+        if obj:
+            # Drawn by an actor (after an actor's setup, lights on): the shading is baked into the vertex colours,
+            # so lighting goes off, and the tint the scene gives this texture goes with it
+            dl.w(0xD9FDFFFF, 0x00000004)
+            dl.w(0xFA000000, OBJ_PRIM.get(mat, 0xFFFFFFFF))
         batch = []
         def flush():
             if not batch:
@@ -416,6 +421,9 @@ def emit_dl(B, dl_path, vtx_path, files):
     files[dl_path] = dl.data()
 
 
+OBJ_PRIM = {'bridge_edge': 0x4E1722FF}
+
+
 def build_drawbridge():
     """The working drawbridge (hinge at the origin, lying along +z when down) and the dark gateway behind it"""
     B = Builder()
@@ -443,8 +451,8 @@ def emit(B):
     dl_path = BASE + f'{SCENE}_room_0DL_castle'
 
     bridge, doorway = build_drawbridge()
-    emit_dl(bridge, 'objects/gdf_castle/gGdfDrawbridgeDL', 'objects/gdf_castle/gGdfDrawbridgeVtx', files)
-    emit_dl(doorway, 'objects/gdf_castle/gGdfDoorwayDL', 'objects/gdf_castle/gGdfDoorwayVtx', files)
+    emit_dl(bridge, 'objects/gdf_castle/gGdfDrawbridgeDL', 'objects/gdf_castle/gGdfDrawbridgeVtx', files, obj=True)
+    emit_dl(doorway, 'objects/gdf_castle/gGdfDoorwayDL', 'objects/gdf_castle/gGdfDoorwayVtx', files, obj=True)
     files['objects/gdf_castle/gGdfDrawbridgeCol'] = G.collision_file(bridge.col_verts, bridge.col_polys, SURFACES,
                                                                      cam_settings=(1,))
 
