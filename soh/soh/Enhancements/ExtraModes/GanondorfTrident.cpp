@@ -186,10 +186,16 @@ bool ReadFile() {
         s32 maskT = Log2(h);
 
         Emit(t.dl, [&](Gfx*& p) { gDPPipeSync(p++); });
+        // One cycle, no palette: he's drawn in two-cycle mode, where the second cycle's TEXEL0 is really the second
+        // tile, which still held whatever texture the scene loaded last (the moss and grass the tridents showed)
+        Emit(t.dl, [&](Gfx*& p) { gDPSetCycleType(p++, G_CYC_1CYCLE); });
+        Emit(t.dl, [&](Gfx*& p) { gDPSetTextureLUT(p++, G_TT_NONE); });
+        Emit(t.dl, [&](Gfx*& p) { gDPSetTextureLOD(p++, G_TL_TILE); });
         // Textured and shaded (its own baked light); texels with little alpha are cut out (the feathers)
         Emit(t.dl, [&](Gfx*& p) {
-            gDPSetCombineLERP(p++, TEXEL0, 0, SHADE, 0, 0, 0, 0, TEXEL0, TEXEL0, 0, SHADE, 0, 0, 0, 0, TEXEL0);
+            gDPSetCombineLERP(p++, TEXEL0, 0, SHADE, 0, 0, 0, 0, TEXEL0, COMBINED, 0, PRIMITIVE, 0, 0, 0, 0, COMBINED);
         });
+        Emit(t.dl, [&](Gfx*& p) { gDPSetPrimColor(p++, 0, 0, 255, 255, 255, 255); });
         Emit(t.dl, [&](Gfx*& p) { gDPSetRenderMode(p++, G_RM_AA_ZB_TEX_EDGE, G_RM_AA_ZB_TEX_EDGE2); });
         Emit(t.dl, [&](Gfx*& p) { gSPTexture(p++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON); });
         Emit(t.dl, [&](Gfx*& p) {
@@ -221,6 +227,8 @@ bool ReadFile() {
         }
         Emit(t.dl, [&](Gfx*& p) { gDPPipeSync(p++); });
         Emit(t.dl, [&](Gfx*& p) { gSPTexture(p++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF); });
+        // Back to two cycles, as the actor setups that come after expect
+        Emit(t.dl, [&](Gfx*& p) { gDPSetCycleType(p++, G_CYC_2CYCLE); });
         Emit(t.dl, [&](Gfx*& p) { gSPEndDisplayList(p++); });
         t.dl.shrink_to_fit();
     }
