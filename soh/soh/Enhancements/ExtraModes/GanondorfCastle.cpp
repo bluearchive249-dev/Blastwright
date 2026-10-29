@@ -10,6 +10,7 @@
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
+#include "soh/frame_interpolation.h" // gives the OPEN_DISPS macros C linkage for FrameInterpolation_*
 #include "soh/ActorDB.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/cvar_prefixes.h"
