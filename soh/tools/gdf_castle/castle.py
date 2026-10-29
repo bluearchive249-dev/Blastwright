@@ -4,7 +4,8 @@ own coordinates, so the throne room's east wall holds the courtyard window: the 
 called from oot.o2r) is outside, with Zelda's garden.
 
 Layout (floor y 20, x west negative):
-  Throne room   x -1500..-575  z -460..460   throne at the west end facing the window (east)
+  Throne room   x -1150..-575  z -460..460   floor y 84 (the courtyard's), throne on the south side; the window
+                in the east wall looks across the carpet where Ganondorf kneels
   Grand hall    x -1100..-820  z  460..1660  library door west, barracks door east
   Library       x -1700..-1100 z  700..1300
   Barracks      x  -820..-260  z 1000..1500
@@ -21,6 +22,7 @@ import o2rgen as G
 SCENE = 'testroom'
 BASE = f'scenes/shared/{SCENE}_scene/'
 FLOOR = 20
+THRONE_FLOOR = 84  # the courtyard's height: the room Zelda's window looks into
 
 # ---- Materials (textures from the Temple of Time and the courtyard) ----
 
@@ -246,41 +248,43 @@ def build():
     F = FLOOR
 
     # ---- Throne room ----
-    x0, x1, z0, z1, top = -1500, -575, -460, 460, 540
-    B.floor('marble_check', x0, x1, z0, z1)
+    # Laid out as the courtyard shows it through Zelda's window: its floor at the courtyard's own height (y 84, the
+    # little room set behind the window), the King's throne on the south side, so that from the window Ganondorf is
+    # seen in profile kneeling before him on the carpet (where the courtyard's cutscene kneels him, x -891 z 140),
+    # and the guards along the back (west) wall facing the window.
+    T = THRONE_FLOOR
+    x0, x1, z0, z1, top = -1150, -575, -460, 460, 540
+    B.floor('marble_check', x0, x1, z0, z1, y=T)
     B.ceiling('ceiling', x0, x1, z0, z1, top)
     # The window onto the courtyard (east wall), exactly where the courtyard's window tunnel ends
-    B.wall('brick_white', 'x', x1, z0, z1, F, top, -1, openings=[(-20, 20, 113, 198)])
-    B.wall('brick_white', 'x', x0, z0, z1, F, top, +1)
-    B.wall('brick_white', 'z', z0, x0, x1, F, top, +1)
-    B.wall('brick_white', 'z', z1, x0, x1, F, top, -1, openings=[(-1100, -820, F, F + 300)])
+    B.wall('brick_white', 'x', x1, z0, z1, T, top, -1, openings=[(-20, 20, 113, 198)])
+    B.wall('brick_white', 'x', x0, z0, z1, T, top, +1)
+    B.wall('brick_white', 'z', z0, x0, x1, T, top, +1)
+    B.wall('brick_white', 'z', z1, x0, x1, T, top, -1, openings=[(-1100, -820, T, T + 300)])
     # A stone band around the walls at the top
     for zz, f in ((z0 + 1, 1), (z1 - 1, -1)):
         B.wall('stone_band', 'z', zz, x0, x1, top - 40, top - 10, f, collide=False)
-    # Two rows of pillars
-    for xx in (-1350, -1150, -950, -750):
-        for zz in (-330, 330):
-            B.pillar(xx, zz, 30, F, top)
-    # The dais and the throne, facing the window
-    for i, (dx, dzs) in enumerate(((0, 230), (40, 200), (80, 170))):
-        B.box(('marble', 'stone_band'), x0, -1300 - dx, F, F + 15 * (i + 1), -dzs, dzs)
-    ty = F + 45
-    B.box(('carpet_red', 'stone_band'), -1470, -1410, ty, ty + 40, -40, 40)        # seat
-    B.box(('stone_band', 'marble2'), -1490, -1470, ty, ty + 200, -55, 55)          # back
-    B.box(('stone_band', 'stone_band'), -1495, -1465, ty + 200, ty + 230, -30, 30, collide=False)  # crest
-    B.box(('stone_band', 'marble2'), -1470, -1410, ty, ty + 70, -60, -40)           # arms
-    B.box(('stone_band', 'marble2'), -1470, -1410, ty, ty + 70, 40, 60)
-    # The red carpet from the dais to the window
-    B.quad('carpet_red', [(-1300, F + 1, 70), (-650, F + 1, 70), (-650, F + 1, -70), (-1300, F + 1, -70)],
-           uv=[(0, 64), (290, 64), (290, 0), (0, 0)])
-    # Stained glass panels along the north and south walls, lit from behind
-    for xx in (-1250, -1050, -850):
-        for zz, f in ((z0 + 2, 1), (z1 - 2, -1)):
-            if f > 0:
-                p = [(xx - 50, 200, zz), (xx + 50, 200, zz), (xx + 50, 420, zz), (xx - 50, 420, zz)]
-            else:
-                p = [(xx + 50, 200, zz), (xx - 50, 200, zz), (xx - 50, 420, zz), (xx + 50, 420, zz)]
-            B.quad('lattice', p, uv=[(0, 64), (32, 64), (32, 0), (0, 0)], light=False, color=(255, 250, 220))
+    # Two rows of pillars along the carpet, clear of the line of sight from the window
+    for xx, zs in ((-1060, (-300, -100, 100, 300)), (-690, (-300, 300))):
+        for zz in zs:
+            B.pillar(xx, zz, 28, T, top)
+    # The dais and the throne on the south side, facing north up the carpet
+    tx = -900
+    for i, (dx, dz) in enumerate(((210, 120), (170, 90), (130, 60))):
+        B.box(('marble', 'stone_band'), tx - dx, tx + dx, T, T + 15 * (i + 1), z0, z0 + dz)
+    ty = T + 45
+    B.box(('carpet_red', 'stone_band'), tx - 40, tx + 40, ty, ty + 40, -440, -380)       # seat
+    B.box(('stone_band', 'marble2'), tx - 55, tx + 55, ty, ty + 200, -460, -440)          # back
+    B.box(('stone_band', 'stone_band'), tx - 30, tx + 30, ty + 200, ty + 230, -462, -440, collide=False)  # crest
+    B.box(('stone_band', 'marble2'), tx - 60, tx - 40, ty, ty + 70, -440, -380)           # arms
+    B.box(('stone_band', 'marble2'), tx + 40, tx + 60, ty, ty + 70, -440, -380)
+    # The red carpet from the dais to the doors
+    B.quad('carpet_red', [(tx - 70, T + 1, z1), (tx + 70, T + 1, z1), (tx + 70, T + 1, z0 + 60), (tx - 70, T + 1, z0 + 60)],
+           uv=[(0, 0), (64, 0), (64, 390), (0, 390)])
+    # Stained glass along the back wall, lit from behind: what the window looks across at
+    for zz in (-250, 0, 250):
+        B.quad('lattice', [(x0 + 2, 200, zz + 50), (x0 + 2, 200, zz - 50), (x0 + 2, 420, zz - 50), (x0 + 2, 420, zz + 50)],
+               uv=[(0, 64), (32, 64), (32, 0), (0, 0)], light=False, color=(255, 250, 220))
     # The window's reveal, through to the courtyard's own window tunnel at x -575
     B.quad('stone_court', [(-575, 113, 20), (-575, 113, -20), (-615, 113, -20), (-615, 113, 20)])
 
@@ -292,11 +296,13 @@ def build():
     B.wall('brick_court', 'x', gx1, gz0, gz1, F, gtop, -1, openings=[(1150, 1350, F, F + 220)])
     B.quad('carpet_blue', [(-1000, F + 1, gz1), (-920, F + 1, gz1), (-920, F + 1, gz0), (-1000, F + 1, gz0)],
            uv=[(0, 545), (36, 545), (36, 0), (0, 0)])
-    for zz in range(560, 1660, 200):
+    # Steps up to the throne room, which stands at the courtyard's height
+    B.stairs('marble', gx0, gx1, gz0 + 200, 200, THRONE_FLOOR - FLOOR, 4, -1)
+    for zz in range(760, 1660, 200):
         for xx in (-1070, -850):
             B.pillar(xx, zz, 18, F, gtop)
     # the lintel over the throne room doors
-    B.wall('stone_band', 'z', gz0 + 1, gx0, gx1, F + 300, F + 330, 1, collide=False)
+    B.wall('stone_band', 'z', gz0 + 1, gx0, gx1, THRONE_FLOOR + 300, THRONE_FLOOR + 330, 1, collide=False)
 
     # ---- Library ----
     lx0, lx1, lz0, lz1, ltop = -1700, -1100, 700, 1300, 380
@@ -332,16 +338,17 @@ def build():
     ex0, ex1, ez0, ez1, etop = -1400, -520, 1660, 2360, 560
     B.floor('marble_check', ex0, ex1, ez0, ez1)
     # the front doors' threshold carries the exit back out to the drawbridge
-    B.floor('marble_check', -1020, -900, ez1 - 40, ez1 - 2, y=F + 0.5, surface='exit')
+    B.floor('marble_check', -1060, -860, ez1 - 40, ez1 - 2, y=F + 0.5, surface='exit')
     B.ceiling('ceiling', ex0, ex1, ez0, ez1, etop)
     B.wall('brick_white2', 'x', ex0, ez0, ez1, F, etop, +1)
     B.wall('brick_white2', 'x', ex1, ez0, ez1, F, etop, -1)
     B.wall('brick_white2', 'z', ez0, ex0, ex1, F, etop, +1,
            openings=[(-1100, -820, F, F + 300), (-1400, -1200, F + 320, F + 520)])
-    B.wall('brick_white2', 'z', ez1, ex0, ex1, F, etop, -1, openings=[(-1020, -900, F, F + 240)])
+    B.wall('brick_white2', 'z', ez1, ex0, ex1, F, etop, -1, openings=[(-1060, -860, F, F + 240)])
     # the great doors (shut, the way out is their threshold)
-    B.quad('window', [(-900, F, ez1 + 20), (-1020, F, ez1 + 20), (-1020, F + 240, ez1 + 20), (-900, F + 240, ez1 + 20)],
-           color=(150, 110, 80))
+    B.quad('window', [(-860, F, ez1 + 20), (-1060, F, ez1 + 20), (-1060, F + 240, ez1 + 20), (-860, F + 240, ez1 + 20)],
+           collide=SURF['wall'], color=(150, 110, 80))
+    B.floor('marble_check', -1060, -860, ez1, ez1 + 20, surface='exit')
     B.quad('carpet_red', [(-1000, F + 1, ez1), (-920, F + 1, ez1), (-920, F + 1, ez0), (-1000, F + 1, ez0)],
            uv=[(0, 320), (36, 320), (36, 0), (0, 0)])
     for xx in (-1150, -770):
@@ -477,11 +484,14 @@ def emit(B):
     files[col_path] = G.collision_file(B.col_verts, B.col_polys, SURFACES, cam_settings=(1, 1))
     room_path = BASE + f'{SCENE}_room_0'
     HEISHI3, ZL4 = 0x0142, 0x01D3
-    guards = [(-1300, -170, 0x4000), (-1300, 170, 0x4000), (-1060, 760, 0x4000), (-860, 1160, -0x4000),
-              (-600, 1260, -0x8000), (-420, 1300, 0), (-1110, 2250, -0x8000), (-810, 2250, -0x8000),
-              (-1450, 1000, 0x4000), (-1250, 1500, 0x4000)]
-    actors = [G.actor_entry(HEISHI3, (x, FLOOR if z < 1300 or x > -1100 else FLOOR + 300, z), (0, yaw, 0), 0)
-              for x, z, yaw in guards]
+    # (x, y, z, yaw): two by the throne, two along the throne room's back wall facing the window (as the courtyard
+    # shows them), the rest about the castle
+    T = THRONE_FLOOR
+    guards = [(-1010, T, -330, 0), (-790, T, -330, 0), (-1037, T, 58, 0x4000), (-1037, T, -58, 0x4000),
+              (-1060, FLOOR, 760, 0x4000), (-860, FLOOR, 1160, -0x4000), (-600, FLOOR, 1260, -0x8000),
+              (-420, FLOOR, 1300, 0), (-1110, FLOOR, 2250, -0x8000), (-810, FLOOR, 2250, -0x8000),
+              (-1450, FLOOR, 1000, 0x4000), (-1250, FLOOR + 300, 1500, 0x4000)]
+    actors = [G.actor_entry(HEISHI3, (x, y, z), (0, yaw, 0), 0) for x, y, z, yaw in guards]
     # Zelda at the courtyard window, peering in (her own spot in the courtyard)
     actors.append(G.actor_entry(ZL4, (-485, 84, 0), (0, -0x4000, 0), 0))
     files[room_path] = G.room_file([(dl_path, ''), (court_opa.path, court_xlu.path)], objects=(0x0097, 0x0191),
@@ -489,7 +499,7 @@ def emit(B):
                                    echo=10, behavior=(0, 0), skymod=(0, 1))
     spawns = [
         G.actor_entry(0, (-960, FLOOR, 2280), (0, -0x8000, 0), 0x0FFF),   # inside the front doors, facing north
-        G.actor_entry(0, (-700, FLOOR, 0), (0, -0x4000, 0), 0x0FFF),      # the throne room, by the window
+        G.actor_entry(0, (-700, THRONE_FLOOR, 0), (0, -0x4000, 0), 0x0FFF),  # the throne room, by the window
     ]
     # Lighting from the courtyard (its fog and colours)
     lighting = [(100, 70, 70, -74, 100, -21, -1, -6, -6, -74, -100, 21, 20, 20, 60, 0, 0, 0, 2020, 12800),

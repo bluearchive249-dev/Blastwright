@@ -201,6 +201,16 @@ static void OnPlayerUpdate() {
         return;
     }
     player = GET_PLAYER(play);
+    // Out through the interior's front doors (the threshold's floor exit, made sure of here: walking into the shut
+    // doors at the south end of the entrance hall), back onto the drawbridge
+    if (play->sceneNum == CASTLE_SCENE) {
+        if ((play->transitionTrigger == TRANS_TRIGGER_OFF) && (play->msgCtx.msgMode == MSGMODE_NONE) &&
+            (player->actor.world.pos.z > 2300.0f) && (fabsf(player->actor.world.pos.x + 960.0f) < 110.0f) &&
+            (player->actor.world.pos.y < 120.0f)) {
+            Warp(play, ENTR_CASTLE_GROUNDS_SOUTH_EXIT);
+        }
+        return;
+    }
     if (play->sceneNum != SCENE_HYRULE_CASTLE) {
         return;
     }
