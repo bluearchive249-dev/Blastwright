@@ -5840,6 +5840,10 @@ static s32 BossGanon_Player_HasTrident(void);
 void BossGanon_Player_SetupTridentSpin(BossGanon* this, PlayState* play);
 void BossGanon_Player_TridentSpin(BossGanon* this, PlayState* play);
 void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play);
+void BossGanon_Player_Grab(BossGanon* this, PlayState* play);
+void BossGanon_Player_GrabThrow(BossGanon* this, PlayState* play);
+s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play);
+static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play);
 void BossGanon_Player_Brood(BossGanon* this, PlayState* play);
 void BossGanon_Player_Laugh(BossGanon* this, PlayState* play);
@@ -5933,6 +5937,24 @@ static ColliderCylinderInit sPlayerPoundCylinderInit = {
     { 60, 80, 0, { 0, 0, 0 } },
 };
 
+// The throat grab (D-Pad Down, see BossGanon_Player_TryGrab)
+#define GDF_GRAB_NONE 0
+#define GDF_GRAB_HELD 1
+#define GDF_GRAB_FLYING 2
+#define GDF_GRAB_DOWN 3
+static Actor* sGdfGrabActor = NULL;
+static u8 sGdfGrabState = GDF_GRAB_NONE;
+static u8 sGdfGrabIsEnemy = false;
+static f32 sGdfGrabNeck = 0.0f;
+static f32 sGdfGrabArmWeight = 0.0f;
+static Vec3f sGdfGrabVel;
+static s16 sGdfGrabTimer = 0;
+
+// Holding someone up by the throat (A mustn't talk to them)
+s32 BossGanon_Player_IsHolding(void) {
+    return sGdfGrabState == GDF_GRAB_HELD;
+}
+
 s32 BossGanon_Player_IsBusy(Actor* thisx) {
     BossGanon* this = (BossGanon*)thisx;
 
@@ -5945,7 +5967,7 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
            (this->actionFunc == BossGanon_Player_Block) || (this->actionFunc == BossGanon_Player_Laugh) ||
            (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
            (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land) ||
-           (this->actionFunc == BossGanon_Player_TridentSpin);
+           (this->actionFunc == BossGanon_Player_TridentSpin) || (this->actionFunc == BossGanon_Player_GrabThrow);
     // Not the dark aura: he moves freely while holding it. Nor the trident's flight: he walks about while it's out
 }
 
@@ -6705,6 +6727,8 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
         BossGanon_Player_SetupChargeBigMagic(this, play);
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
         BossGanon_Player_SetupLaugh(this, play);
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN) && BossGanon_Player_TryGrab(this, play)) {
+        // by the throat
     } else if (PlayAsGanondorf_OrganButtonPressed() &&
                (GET_PLAYER(play)->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
         // The organ rises out of solid ground, so not while levitating
@@ -7645,6 +7669,8 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
         }
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
         BossGanon_Player_SetupLaugh(this, play);
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN)) {
+        BossGanon_Player_TryGrab(this, play); // by the throat
     }
 }
 
@@ -9698,6 +9724,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     this->actionFunc(this, play);
+    BossGanon_Player_UpdateGrabbed(this, play);
 
     {
         // The dark aura handles his legs itself (it walks)
@@ -11380,6 +11407,293 @@ void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play) {
     if ((sGdfTridentState == GDF_TRIDENT_OUT) && (this->collider.base.atFlags & AT_HIT)) {
         this->collider.base.atFlags &= ~AT_HIT;
         sGdfTridentState = GDF_TRIDENT_RETURNING; // the first thing it strikes sends it back
+    }
+}
+
+// ---- Grabbing by the throat (D-Pad Down) ----
+// He seizes the person or monster in front of him by the throat and lifts them off their feet (they hang still in his
+// fist, their own doings stopped); he can walk about with them. D-Pad Down or B again: he swings them up and slams
+// them down on the ground ahead of him. People aren't hurt (they lie there a moment, then brush themselves off and
+// get up); monsters are hurt badly.
+#define GDF_GRAB_RANGE 150.0f
+#define GDF_GRAB_MAX_HEIGHT 160.0f // taller than that (a Goron elder, a Big Goron) he can't lift
+#define GDF_GRAB_DOWN_FRAMES 35
+#define GDF_GRAB_THROW_FRAMES 18
+#define GDF_GRAB_RELEASE_FRAME 9
+
+
+// Still in the scene (actors can be killed or unloaded while he holds one)
+static s32 BossGanon_Player_GrabAlive(PlayState* play, Actor* target) {
+    static const u8 sCats[] = { ACTORCAT_NPC, ACTORCAT_ENEMY };
+    s32 i;
+    Actor* actor;
+
+    if (target == NULL) {
+        return false;
+    }
+    for (i = 0; i < ARRAY_COUNT(sCats); i++) {
+        for (actor = play->actorCtx.actorLists[sCats[i]].head; actor != NULL; actor = actor->next) {
+            if (actor == target) {
+                return actor->update != NULL;
+            }
+        }
+    }
+    return false;
+}
+
+static Actor* BossGanon_Player_FindGrabTarget(BossGanon* this, PlayState* play) {
+    static const u8 sCats[] = { ACTORCAT_NPC, ACTORCAT_ENEMY };
+    Actor* best = NULL;
+    f32 bestScore = 0.0f;
+    s32 i;
+    Actor* actor;
+
+    for (i = 0; i < ARRAY_COUNT(sCats); i++) {
+        for (actor = play->actorCtx.actorLists[sCats[i]].head; actor != NULL; actor = actor->next) {
+            f32 dist = Actor_WorldDistXZToActor(&this->actor, actor);
+            f32 height = actor->focus.pos.y - actor->world.pos.y;
+            s16 yawDiff = Actor_WorldYawTowardActor(&this->actor, actor) - this->actor.shape.rot.y;
+            f32 score;
+
+            if ((actor->update == NULL) || (actor->draw == NULL) || (actor->id == ACTOR_BOSS_GANON) ||
+                (actor->id == ACTOR_EN_GANON_MANT) || (actor->id == ACTOR_EN_HORSE)) {
+                continue;
+            }
+            if ((dist > GDF_GRAB_RANGE) || (ABS(yawDiff) > 0x3000) || (height > GDF_GRAB_MAX_HEIGHT) ||
+                (fabsf(actor->world.pos.y - this->playerFloorY) > 80.0f)) {
+                continue;
+            }
+            // The one he's turned toward wins over one closer off to the side
+            score = (f32)ABS(yawDiff) + (dist * 12.0f);
+            if ((best == NULL) || (score < bestScore)) {
+                best = actor;
+                bestScore = score;
+            }
+        }
+    }
+    return best;
+}
+
+static void BossGanon_Player_GrabToIdle(BossGanon* this, PlayState* play) {
+    if (sPlayerSwordState != GDF_SWORD_OFF) {
+        BossGanon_Player_SetupSwordIdle(this, play);
+    } else {
+        BossGanon_Player_SetupFloat(this, play);
+    }
+}
+
+// Back on their feet, themselves again
+static void BossGanon_Player_GrabRelease(PlayState* play) {
+    Actor* actor = sGdfGrabActor;
+
+    if ((actor != NULL) && BossGanon_Player_GrabAlive(play, actor)) {
+        actor->shape.rot.x = actor->world.rot.x = 0;
+        actor->shape.rot.z = actor->world.rot.z = 0;
+        actor->velocity.x = actor->velocity.y = actor->velocity.z = 0.0f;
+        actor->speedXZ = 0.0f;
+        actor->prevPos = actor->world.pos;
+        actor->home.pos = actor->world.pos;
+        actor->freezeTimer = 0;
+    }
+    sGdfGrabActor = NULL;
+    sGdfGrabState = GDF_GRAB_NONE;
+}
+
+s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play) {
+    Actor* target;
+
+    if ((sGdfGrabState != GDF_GRAB_NONE) || this->playerHidden || GanondorfSongs_IsOcarinaOut()) {
+        return false;
+    }
+    target = BossGanon_Player_FindGrabTarget(this, play);
+    if (target == NULL) {
+        return false;
+    }
+    sGdfGrabActor = target;
+    sGdfGrabState = GDF_GRAB_HELD;
+    sGdfGrabIsEnemy = target->category == ACTORCAT_ENEMY;
+    sGdfGrabNeck = CLAMP(target->focus.pos.y - target->world.pos.y, 15.0f, 110.0f);
+    sGdfGrabArmWeight = 0.0f;
+    target->freezeTimer = 2;
+    this->actionFunc = BossGanon_Player_Grab;
+    Audio_PlayActorSound2(&this->actor, NA_SE_PL_PULL_UP_ROCK);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+    return true;
+}
+
+// Holding them up: he walks about freely, his right arm out with them dangling from his fist
+void BossGanon_Player_Grab(BossGanon* this, PlayState* play) {
+    Input* input = &play->state.input[0];
+
+    SkelAnime_Update(&this->skelAnime);
+    BossGanon_Player_KeepFloatRoot(this);
+    if (this->playerGrounded) {
+        BossGanon_Player_UpdateWalk(this, play);
+    } else {
+        this->playerWalkWeight = 0.0f;
+    }
+    Math_ApproachF(&sGdfGrabArmWeight, 1.0f, 1.0f, 0.25f);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfTridentArmPoses[1], sGdfGrabArmWeight);
+    sCape->backPush = -2.0f;
+    sCape->backSwayMagnitude = 0.5f;
+
+    if (sGdfGrabState != GDF_GRAB_HELD) {
+        BossGanon_Player_GrabToIdle(this, play);
+        return;
+    }
+    // A cutscene or conversation: he lets go
+    if (!BossGanon_Player_LinkCanAttack(play)) {
+        BossGanon_Player_GrabRelease(play);
+        BossGanon_Player_GrabToIdle(this, play);
+        return;
+    }
+    if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN) || CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        this->actionFunc = BossGanon_Player_GrabThrow;
+        sGdfGrabTimer = 0;
+        this->actor.yawTowardsPlayer = this->actor.shape.rot.y;
+    }
+}
+
+// The slam: up over his head, then down hard on the ground in front of him
+void BossGanon_Player_GrabThrow(BossGanon* this, PlayState* play) {
+    Vec3s arm[3];
+    f32 t;
+    s32 i;
+
+    SkelAnime_Update(&this->skelAnime);
+    BossGanon_Player_KeepFloatRoot(this);
+    Math_ApproachZeroF(&this->playerWalkWeight, 1.0f, 0.25f);
+    if (this->playerGrounded) {
+        BossGanon_Player_ApplyWalk(this);
+    }
+    sGdfGrabTimer++;
+    if (sGdfGrabTimer <= 6) {
+        // Up
+        t = sGdfGrabTimer / 6.0f;
+        for (i = 0; i < 3; i++) {
+            BossGanon_Player_SlerpRot((Vec3s*)&sGdfTridentArmPoses[1][i], (Vec3s*)&sGdfTridentArmPoses[0][i], t,
+                                      &arm[i]);
+        }
+    } else {
+        // Down and through
+        t = CLAMP((sGdfGrabTimer - 6) / 4.0f, 0.0f, 1.0f);
+        for (i = 0; i < 3; i++) {
+            BossGanon_Player_SlerpRot((Vec3s*)&sGdfTridentArmPoses[0][i], (Vec3s*)&sGdfClimbPoses[3][i], t,
+                                      &arm[i]);
+        }
+    }
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, arm, 1.0f);
+    sCape->backPush = -3.0f;
+    sCape->backSwayMagnitude = 1.0f;
+
+    if (sGdfGrabTimer == 4) {
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+    }
+    if ((sGdfGrabTimer == GDF_GRAB_RELEASE_FRAME) && (sGdfGrabState == GDF_GRAB_HELD)) {
+        // Let go on the way down: hurled at the ground ahead of him
+        sGdfGrabState = GDF_GRAB_FLYING;
+        sGdfGrabVel.x = Math_SinS(this->actor.shape.rot.y) * 9.0f;
+        sGdfGrabVel.z = Math_CosS(this->actor.shape.rot.y) * 9.0f;
+        sGdfGrabVel.y = -6.0f;
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_SWING_HARD);
+    }
+    if (sGdfGrabTimer >= GDF_GRAB_THROW_FRAMES) {
+        BossGanon_Player_GrabToIdle(this, play);
+    }
+}
+
+// Runs every frame while someone's held, flying or lying where they landed
+static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
+    Actor* actor = sGdfGrabActor;
+    Vec3f hand = this->unk_2EC[8];
+    CollisionPoly* poly;
+    Vec3f probe;
+    f32 floorY;
+
+    if (sGdfGrabState == GDF_GRAB_NONE) {
+        return;
+    }
+    if (!BossGanon_Player_GrabAlive(play, actor)) {
+        sGdfGrabActor = NULL;
+        sGdfGrabState = GDF_GRAB_NONE;
+        return;
+    }
+    // Their own update is held off the whole time: no walking off, no attacking
+    actor->freezeTimer = 2;
+
+    switch (sGdfGrabState) {
+        case GDF_GRAB_HELD:
+            // Hanging by the throat from his fist, facing him, legs kicking a little
+            if ((this->actionFunc != BossGanon_Player_Grab) && (this->actionFunc != BossGanon_Player_GrabThrow)) {
+                // Interrupted (hurt, ...): dropped
+                sGdfGrabState = GDF_GRAB_FLYING;
+                sGdfGrabVel.x = sGdfGrabVel.z = 0.0f;
+                sGdfGrabVel.y = 0.0f;
+                break;
+            }
+            actor->world.pos.x = hand.x;
+            actor->world.pos.y = hand.y - sGdfGrabNeck;
+            actor->world.pos.z = hand.z;
+            actor->shape.rot.y = actor->world.rot.y = this->actor.shape.rot.y + 0x8000;
+            actor->shape.rot.z = (s16)(Math_SinS(play->gameplayFrames * 0x1800) * 0x300);
+            actor->shape.rot.x = 0;
+            actor->focus.pos = hand;
+            break;
+
+        case GDF_GRAB_FLYING:
+            actor->world.pos.x += sGdfGrabVel.x;
+            actor->world.pos.y += sGdfGrabVel.y;
+            actor->world.pos.z += sGdfGrabVel.z;
+            sGdfGrabVel.y -= 2.5f;
+            Math_ApproachS(&actor->shape.rot.x, -0x4000, 2, 0x1800); // thrown over onto their back
+            actor->shape.rot.z = 0;
+            probe = actor->world.pos;
+            probe.y += 60.0f;
+            floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &probe);
+            if (floorY <= BGCHECK_Y_MIN) {
+                floorY = this->playerFloorY;
+            }
+            if (actor->world.pos.y <= floorY) {
+                // The slam
+                Vec3f zero = { 0.0f, 0.0f, 0.0f };
+
+                actor->world.pos.y = floorY;
+                actor->shape.rot.x = -0x4000;
+                Actor_RequestQuakeAndRumble(&this->actor, play, 4, 12);
+                Audio_PlayActorSound2(actor, NA_SE_IT_HAMMER_HIT);
+                Audio_PlayActorSound2(actor, NA_SE_PL_BODY_HIT);
+                Actor_SpawnFloorDustRing(play, actor, &actor->world.pos, 30.0f, 12, 6.0f, 500, 20, true);
+                EffectSsHitMark_SpawnFixedScale(play, 0, &actor->world.pos);
+                (void)zero;
+                sGdfGrabState = GDF_GRAB_DOWN;
+                sGdfGrabTimer = GDF_GRAB_DOWN_FRAMES;
+            }
+            actor->prevPos = actor->world.pos;
+            actor->focus.pos = actor->world.pos;
+            break;
+
+        case GDF_GRAB_DOWN:
+            // Lying there, then up again (a monster takes the blow as it comes to)
+            if (--sGdfGrabTimer <= 0) {
+                Vec3f pos = actor->world.pos;
+
+                BossGanon_Player_GrabRelease(play);
+                if (sGdfGrabIsEnemy && (actor->colChkInfo.health > 0)) {
+                    // Monsters are hurt badly: most of their health goes in the slam, and the blow that lands as
+                    // they come to finishes the weaker ones (people just pick themselves up and dust themselves off)
+                    actor->colChkInfo.health = MAX(actor->colChkInfo.health - 6, 1);
+                    this->collider.dim.radius = 50;
+                    this->collider.dim.height = 80;
+                    this->collider.dim.yShift = 0;
+                    this->collider.dim.pos.x = (s16)pos.x;
+                    this->collider.dim.pos.y = (s16)(pos.y - 20.0f);
+                    this->collider.dim.pos.z = (s16)pos.z;
+                    BossGanon_Player_SetAT(this, play);
+                } else {
+                    Actor_SpawnFloorDustRing(play, actor, &pos, 20.0f, 6, 3.0f, 300, 15, false);
+                }
+            }
+            break;
     }
 }
 

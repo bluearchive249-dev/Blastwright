@@ -594,7 +594,8 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
 
     // B = sword, R = shield, Z = targeting, L = levitate. D-pad Up is the laugh, D-pad Right the transformation
     // (the organ is on L3, D-pad Down is free).
-    u16 blocked = BTN_B | BTN_R | BTN_Z | BTN_L | BTN_DUP;
+    // D-pad Down is the throat grab
+    u16 blocked = BTN_B | BTN_R | BTN_Z | BTN_L | BTN_DUP | BTN_DDOWN;
 
     if (IsGanonFormEnabled()) {
         blocked |= BTN_DRIGHT;
@@ -615,8 +616,9 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
                  CHECK_BTN_ALL(input->cur.button, BTN_A) && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
                  ((doAction == DO_ACTION_NONE) || (doAction == DO_ACTION_ATTACK) || (doAction == DO_ACTION_JUMP) ||
                   (doAction == DO_ACTION_PUTAWAY));
-    if (busy || sLevitating || (doAction == DO_ACTION_NONE) || (doAction == DO_ACTION_ATTACK) ||
-        (doAction == DO_ACTION_JUMP) || (doAction == DO_ACTION_PUTAWAY)) {
+    // Holding someone up by the throat, A doesn't talk to them (or open anything)
+    if (busy || sLevitating || ((ganon == NULL) && BossGanon_Player_IsHolding()) || (doAction == DO_ACTION_NONE) ||
+        (doAction == DO_ACTION_ATTACK) || (doAction == DO_ACTION_JUMP) || (doAction == DO_ACTION_PUTAWAY)) {
         blocked |= BTN_A;
     }
 

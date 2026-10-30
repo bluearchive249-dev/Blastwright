@@ -246,6 +246,7 @@ typedef struct BossGanon {
 
 // SoH: "Play as Ganondorf"
 s32 BossGanon_Player_IsBusy(Actor* thisx);
+s32 BossGanon_Player_IsHolding(void);
 s32 BossGanon_Player_IsPhantom(void);
 // The guards hunt him (he murdered someone in the market and hasn't left by the drawbridge)
 s32 BossGanon_Player_IsWanted(void);

@@ -2128,6 +2128,8 @@ void SohMenu::AddMenuEnhancements() {
             " - C-Left / C-Down / C-Right: Light ball / Pound / Big Magic.\n"
             " - L / Z: Levitate up / down. Let go to hover, move with the stick.\n"
             " - D-Pad Up: Laugh. L3 (left stick click): Play the organ.\n"
+            " - D-Pad Down: Grab the person or monster in front of him by the throat. D-Pad Down or B again: slam "
+            "them into the ground (monsters are badly hurt, people just get back up).\n"
             " - A still opens doors, talks, climbs and grabs.\n"
             " - Attacks aim at the enemy or eye/crystal switch, sun switch or unlit torch he's facing.\n\n"
             "His attacks count as every damage type and go through every defense, so they also break rocks and "
