@@ -7106,9 +7106,14 @@ static void BossGanon_Player_ApplyStanceArms(BossGanon* this) {
     f32 phase;
     s32 i;
 
-    // Phantom Ganon has no sheath: his left arm stays free
+    // Phantom Ganon has no sheath: his left arm stays free. Nor does a trident: drawn (in his right hand), his left arm
+    // swings free as he walks; put away, it's carried in his left fist (that arm held still)
     Math_ApproachF(&this->playerSheathArmWeight,
-                   ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_IsPhantom()) ? 1.0f : 0.0f, 1.0f, 0.2f);
+                   ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_IsPhantom() &&
+                    !(BossGanon_Player_HasTrident() && (sPlayerSwordState == GDF_SWORD_DRAWN)))
+                       ? 1.0f
+                       : 0.0f,
+                   1.0f, 0.2f);
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
                               this->playerSheathArmWeight);
 
