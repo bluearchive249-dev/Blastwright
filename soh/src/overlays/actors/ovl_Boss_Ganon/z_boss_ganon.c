@@ -5945,8 +5945,8 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
            (this->actionFunc == BossGanon_Player_Block) || (this->actionFunc == BossGanon_Player_Laugh) ||
            (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
            (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land) ||
-           (this->actionFunc == BossGanon_Player_TridentSpin) || (this->actionFunc == BossGanon_Player_TridentThrow);
-    // Not the dark aura: he moves freely while holding it
+           (this->actionFunc == BossGanon_Player_TridentSpin);
+    // Not the dark aura: he moves freely while holding it. Nor the trident's flight: he walks about while it's out
 }
 
 // Whether Ganondorf is free to start something (used for levitation)
@@ -11298,6 +11298,12 @@ void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play) {
 
     SkelAnime_Update(&this->skelAnime);
     BossGanon_Player_KeepFloatRoot(this);
+    // He's free to move while it flies: his legs walk, his right arm stays out after it
+    if (this->playerGrounded) {
+        BossGanon_Player_UpdateWalk(this, play);
+    } else {
+        this->playerWalkWeight = 0.0f;
+    }
     BossGanon_Player_TridentArms(this, 0.0f);
 
     sGdfTridentTimer++;
