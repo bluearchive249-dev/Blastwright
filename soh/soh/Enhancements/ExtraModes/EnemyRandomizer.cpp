@@ -1183,8 +1183,10 @@ static const std::map<s32, const char*> enemyRandomizerModes = {
 };
 
 void RegisterEnemyRandomizerWidgets() {
-    WidgetPath path = { "Enhancements", "Extra Modes", SECTION_COLUMN_2 };
+    // In its own column: the second holds the Play as Ganondorf options
+    WidgetPath path = { "Enhancements", "Extra Modes", SECTION_COLUMN_3 };
 
+    SohGui::mSohMenu->AddWidget(path, "Enemies", WIDGET_SEPARATOR_TEXT);
     SohGui::mSohMenu->AddWidget(path, "Enemy Randomizer", WIDGET_CVAR_COMBOBOX)
         .CVar(CVAR_ENHANCEMENT("RandomizedEnemies"))
         .Callback([](WidgetInfo& info) { UpdateSelectedEnemies(); })
