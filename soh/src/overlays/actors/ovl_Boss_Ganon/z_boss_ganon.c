@@ -11223,13 +11223,20 @@ void BossGanon_Player_SetupTridentSpin(BossGanon* this, PlayState* play) {
     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
 }
 
+// Right arm poses for the trident, solved offline with inverse kinematics on his skeleton: the arm straight up, the fist
+// well above his head (spinning it), and thrown, the fist out ahead of him at shoulder height after it
+static const Vec3s sGdfTridentArmPoses[2][3] = {
+    { { -21258, -30829, -19024 }, { 343, 8936, -9851 }, { 2132, 4505, -2113 } },   // overhead
+    { { -31207, 24093, 16322 }, { 242, 6426, -12825 }, { 2172, 1324, -2589 } },    // thrown
+};
+
 static void BossGanon_Player_TridentArms(BossGanon* this, f32 overhead) {
     Vec3s arm[3];
     s32 i;
 
-    // Overhead: the fist high above his head; thrown: reaching forward at chest height
     for (i = 0; i < 3; i++) {
-        BossGanon_Player_SlerpRot((Vec3s*)&sGdfClimbPoses[3][i], (Vec3s*)&sGdfClimbPoses[2][i], overhead, &arm[i]);
+        BossGanon_Player_SlerpRot((Vec3s*)&sGdfTridentArmPoses[1][i], (Vec3s*)&sGdfTridentArmPoses[0][i], overhead,
+                                  &arm[i]);
     }
     BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, arm, 1.0f);
 }
