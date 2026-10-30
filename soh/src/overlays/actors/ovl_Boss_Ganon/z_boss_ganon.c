@@ -3589,6 +3589,9 @@ static f32 sGdfTridentTravel = 0.0f;
 static Vec3f sGdfPlayerHeadPos;
 static u8 sGdfPlayerHeadValid = false;
 
+// The throat grab: whoever he holds hangs from his right fist, placed as the hand is drawn (see the grab, below)
+static void BossGanon_Player_GrabFollowHand(BossGanon* this);
+
 void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
     static s8 bodyPartLimbMap[] = {
         -1, -1, 1, -1, 3, 4, 5, -1, 6, 7, 8, -1, -1, -1, -1, -1, -1, -1, -1, 2, 12, 13, 14, 9, 10, 11, -1, -1, -1, -1,
@@ -3649,6 +3652,7 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
         } else if (limbIndex == 10) {
             Matrix_Get(&this->playerRightHandMtx);
             this->playerHandMtxValid = true;
+            BossGanon_Player_GrabFollowHand(this);
         }
     }
 
@@ -5949,6 +5953,7 @@ static f32 sGdfGrabNeck = 0.0f;
 static f32 sGdfGrabArmWeight = 0.0f;
 static Vec3f sGdfGrabVel;
 static s16 sGdfGrabTimer = 0;
+static u8 sGdfGrabOrigCategory = ACTORCAT_NPC;
 
 // Holding someone up by the throat (A mustn't talk to them)
 s32 BossGanon_Player_IsHolding(void) {
@@ -11424,7 +11429,7 @@ void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play) {
 
 // Still in the scene (actors can be killed or unloaded while he holds one)
 static s32 BossGanon_Player_GrabAlive(PlayState* play, Actor* target) {
-    static const u8 sCats[] = { ACTORCAT_NPC, ACTORCAT_ENEMY };
+    static const u8 sCats[] = { ACTORCAT_NPC, ACTORCAT_ENEMY, ACTORCAT_CHEST };
     s32 i;
     Actor* actor;
 
@@ -11494,6 +11499,9 @@ static void BossGanon_Player_GrabRelease(PlayState* play) {
         actor->prevPos = actor->world.pos;
         actor->home.pos = actor->world.pos;
         actor->freezeTimer = 0;
+        if (actor->category != sGdfGrabOrigCategory) {
+            Actor_ChangeCategory(play, &play->actorCtx, actor, sGdfGrabOrigCategory);
+        }
     }
     sGdfGrabActor = NULL;
     sGdfGrabState = GDF_GRAB_NONE;
@@ -11512,6 +11520,10 @@ s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play) {
     sGdfGrabActor = target;
     sGdfGrabState = GDF_GRAB_HELD;
     sGdfGrabIsEnemy = target->category == ACTORCAT_ENEMY;
+    // Drawn after him for as long as he has them (the last category drawn), so they can be put in his fist as his
+    // hand is drawn, this frame (see BossGanon_Player_GrabFollowHand): drawn before him, they trailed a frame behind
+    sGdfGrabOrigCategory = target->category;
+    Actor_ChangeCategory(play, &play->actorCtx, target, ACTORCAT_CHEST);
     sGdfGrabNeck = CLAMP(target->focus.pos.y - target->world.pos.y, 15.0f, 110.0f);
     sGdfGrabArmWeight = 0.0f;
     target->freezeTimer = 2;
@@ -11602,8 +11614,25 @@ void BossGanon_Player_GrabThrow(BossGanon* this, PlayState* play) {
     }
 }
 
+// As his right hand is drawn (they're drawn after him): the one he holds hangs by the throat from his fist
+static void BossGanon_Player_GrabFollowHand(BossGanon* this) {
+    static Vec3f sGrip = { GDF_GRIP_X, GDF_GRIP_Y, GDF_GRIP_Z };
+    Actor* actor = sGdfGrabActor;
+    Vec3f hand;
+
+    if ((sGdfGrabState != GDF_GRAB_HELD) || (actor == NULL) || (actor->update == NULL)) {
+        return;
+    }
+    Matrix_MultVec3f(&sGrip, &hand);
+    actor->world.pos.x = hand.x;
+    actor->world.pos.y = hand.y - sGdfGrabNeck;
+    actor->world.pos.z = hand.z;
+    actor->focus.pos = hand;
+}
+
 // Runs every frame while someone's held, flying or lying where they landed
 static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
+    static Vec3f sGrip = { GDF_GRIP_X, GDF_GRIP_Y, GDF_GRIP_Z };
     Actor* actor = sGdfGrabActor;
     Vec3f hand = this->unk_2EC[8];
     CollisionPoly* poly;
@@ -11620,6 +11649,18 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
     }
     // Their own update is held off the whole time: no walking off, no attacking
     actor->freezeTimer = 2;
+
+    // Inside his right fist (where the trident's held), from the hand as last drawn, carried along by however far
+    // he's moved since: they're drawn before him, so this keeps them in his grip instead of trailing behind it
+    if (this->playerHandMtxValid) {
+        Matrix_Push();
+        Matrix_Put(&this->playerRightHandMtx);
+        Matrix_MultVec3f(&sGrip, &hand);
+        Matrix_Pop();
+        hand.x += this->actor.world.pos.x - this->actor.prevPos.x;
+        hand.y += this->actor.world.pos.y - this->actor.prevPos.y;
+        hand.z += this->actor.world.pos.z - this->actor.prevPos.z;
+    }
 
     switch (sGdfGrabState) {
         case GDF_GRAB_HELD:
