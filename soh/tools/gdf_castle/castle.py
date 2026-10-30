@@ -492,8 +492,9 @@ def emit(B):
               (-420, FLOOR, 1300, 0), (-1110, FLOOR, 2250, -0x8000), (-810, FLOOR, 2250, -0x8000),
               (-1450, FLOOR, 1000, 0x4000), (-1250, FLOOR + 300, 1500, 0x4000)]
     actors = [G.actor_entry(HEISHI3, (x, y, z), (0, yaw, 0), 0) for x, y, z, yaw in guards]
-    # Zelda at the courtyard window, peering in (her own spot in the courtyard)
-    actors.append(G.actor_entry(ZL4, (-485, 84, 0), (0, -0x4000, 0), 0))
+    # Zelda at the courtyard window, peering in (her own spot and facing in the courtyard: her peeking animation
+    # turns her about, so it is the same 0x4000 the courtyard gives her)
+    actors.append(G.actor_entry(ZL4, (-485, 84, 0), (0, 0x4000, 0), 0))
     files[room_path] = G.room_file([(dl_path, ''), (court_opa.path, court_xlu.path)], objects=(0x0097, 0x0191),
                                    actors=actors,
                                    echo=10, behavior=(0, 0), skymod=(0, 1))
