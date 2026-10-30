@@ -1,3 +1,27 @@
+# Ganondorf: Invasion
+
+The multiplayer edition of **Play as Ganondorf** for Ship of Harkinian: online, up to **six Links** play the game
+together while **one player invades as Ganondorf** to make their playthrough harder (at most 7 players).
+
+- **Ganondorf** has his full boss moveset (light balls, Big Magic, cape block, levitation, sword stance, tridents, the
+  throat grab, Ganon form) and all the character fixes. He can never hurt a Link directly.
+- **The Links** play the game as normal, each in his own colour: Green, Red, Blue, Purple, White or Black. They share
+  their progress.
+- **No extra modes**: the single-player extras of Play as Ganondorf (Gerudo start and intro, castle interior, guards,
+  song player, title screen) and the game's other extra modes are off and out of the menu.
+
+## How to play
+1. Everyone opens **Network > Anchor** in the menu bar, enters the same **Room ID**, a name, and presses **Enable**.
+2. In the **Invasion** lobby below, everyone takes a seat: **Ganondorf** or one of the six Links.
+3. The host (the room's owner) presses **Start the game**. Everyone starts a new file.
+4. Ganondorf and the Links all begin in Kokiri Forest. There's a truce until a Link enters the Deku Tree.
+
+Ganondorf sees where every Link is at the top of his screen (their area, and an arrow toward them nearby).
+
+Based on Ship of Harkinian; the original README follows.
+
+---
+
 ![Ship of Harkinian](docs/shiptitle.darkmode.png#gh-dark-mode-only)
 ![Ship of Harkinian](docs/shiptitle.lightmode.png#gh-light-mode-only)
 

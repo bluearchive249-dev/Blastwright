@@ -1183,6 +1183,10 @@ static const std::map<s32, const char*> enemyRandomizerModes = {
 };
 
 void RegisterEnemyRandomizerWidgets() {
+    // Ganondorf: Invasion (the multiplayer edition) has no extra modes in its menu
+    if (true) {
+        return;
+    }
     // In its own column: the second holds the Play as Ganondorf options
     WidgetPath path = { "Enhancements", "Extra Modes", SECTION_COLUMN_3 };
 

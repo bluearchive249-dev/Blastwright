@@ -2066,54 +2066,6 @@ void SohMenu::AddMenuEnhancements() {
     AddSidebarEntry("Enhancements", path.sidebarName, 3);
     path.column = SECTION_COLUMN_1;
 
-    AddWidget(path, "Bounce off Walls", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("BounceOffWalls"))
-        .Options(
-            CheckboxOptions().Tooltip("Allows Link to bounce off walls when linear velocity is high enough. This is "
-                                      "relevant when frequently being knocked back by traps, CC, or in Anchor."));
-    AddWidget(path, "Mirrored World", WIDGET_CVAR_COMBOBOX)
-        .CVar(CVAR_ENHANCEMENT("MirroredWorldMode"))
-        .Options(
-            ComboboxOptions()
-                .DefaultIndex(MIRRORED_WORLD_OFF)
-                .ComboMap(mirroredWorldModes)
-                .Tooltip(
-                    "Mirrors the world horizontally:\n\n"
-                    " - Always: Always mirror the world.\n"
-                    " - Random: Randomly decide to mirror the world on each scene change.\n"
-                    " - Random (Seeded): Scenes are mirrored based on the current randomizer seed/file.\n"
-                    " - Dungeons: Mirror the world in Dungeons.\n"
-                    " - Dungeons (Vanilla): Mirror the world in Vanilla Dungeons.\n"
-                    " - Dungeons (MQ): Mirror the world in MQ Dungeons.\n"
-                    " - Dungeons Random: Randomly decide to mirror the world in Dungeons.\n"
-                    " - Dungeons Random (Seeded): Dungeons are mirrored based on the current randomizer seed/file."));
-    AddWidget(path, "Ivan the Fairy (Coop Mode)", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("IvanCoopModeEnabled"))
-        .Options(CheckboxOptions().Tooltip(
-            "Enables Ivan the Fairy. Player 2 can control Ivan and press the C-Buttons to use items and mess with "
-            "Player 1!"));
-    AddWidget(path, "Dogs Follow You Everywhere", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("DogFollowsEverywhere"))
-        .Options(CheckboxOptions().Tooltip("Allows dogs to follow you anywhere you go, even if you leave the Market."));
-    AddWidget(path, "Rupee Dash Mode", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("RupeeDash"))
-        .Options(CheckboxOptions().Tooltip("Rupees reduce over time; Link suffers damage when the count hits 0."));
-    AddWidget(path, "Rupee Dash Wallet Scaling", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("RupeeDashScaling"))
-        .PreFunc([](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("RupeeDash"), 0) == 0; })
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip("The larger Link's wallet, the faster Rupees reduce."));
-    AddWidget(path, "Rupee Dash Interval: %d seconds", WIDGET_CVAR_SLIDER_INT)
-        .CVar(CVAR_ENHANCEMENT("RupeeDashInterval"))
-        .PreFunc([](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("RupeeDash"), 0) == 0; })
-        .Options(IntSliderOptions()
-                     .Min(1)
-                     .Max(10)
-                     .DefaultValue(5)
-                     .Format("%d seconds")
-                     .Tooltip("Interval between Rupee reduction in Rupee Dash Mode."));
-    AddWidget(path, "Shadow Tag Mode", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ShadowTag"))
-        .Options(CheckboxOptions().Tooltip("A Wallmaster follows Link everywhere, don't get caught!"));
     // Everything for the Play as Ganondorf mod, in its own column
     path.column = SECTION_COLUMN_2;
     AddWidget(path, "Ganondorf", WIDGET_SEPARATOR_TEXT);
@@ -2236,29 +2188,6 @@ void SohMenu::AddMenuEnhancements() {
             "ragged and worn through. Always holds the spear: B, B, B is two slashes and a stab, stick + R then B a "
             "lunging stab, R + B (or C-Left) a ball of light. No Big Magic or sword skills. D-Pad Left still toggles "
             "the dark aura."));
-    AddWidget(path, "GanondorfKillWarning", WIDGET_CUSTOM)
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-        })
-        .CustomFunction([](WidgetInfo& info) {
-            // Bright red so it can't be missed (the menu's own red is too dark to read)
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.15f, 0.15f, 1.0f));
-            ImGui::TextWrapped(ICON_FA_EXCLAMATION_TRIANGLE
-                               " CAUTION: THIS WILL PERMANENTLY KILL NPCs IN YOUR SAVE FILE, USE WITH CARE.");
-            ImGui::PopStyleColor();
-        })
-        .HideInSearch(true);
-    AddWidget(path, "Kill NPCs", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KillNpcs"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-        })
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "His attacks (blade, spear, balls of light, pound, dark aura, and as Phantom Ganon or Ganon) kill NPCs, in "
-            "a spray of blood. Every NPC "
-            "killed is written into the save file the next time you save and never appears again, even with this "
-            "option turned off. That includes characters the story needs, so it can make the game impossible to "
-            "finish. There is no undo."));
     AddWidget(path, "Organ Instead of Ocarina", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganOcarina"))
         .PreFunc([](WidgetInfo& info) {
@@ -2282,41 +2211,6 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(-40.0f).Max(40.0f).DefaultValue(0.0f).Format("%.0f").Tooltip(
             "Raises or lowers him on the saddle, if he sits too high or sinks into the horse."));
-    AddWidget(path, "Ocarina Song Player", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-        })
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "Plays songs from MIDI files (.mid) on the ocarina (his pipe organ with Organ Instead of Ocarina). Put "
-            "them in a folder called ganondorf_songs next to the game.\n\n"
-            "While the ocarina is out:\n"
-            " - D-Pad Up: play / stop the selected song\n"
-            " - D-Pad Left / Right: previous / next song\n\n"
-            "The ocarina plays one note at a time, so a song becomes its melody (the highest note at any moment, "
-            "drums left out), moved by octaves into the ocarina's range."));
-    AddWidget(path, "GanondorfSongList", WIDGET_CUSTOM)
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
-        })
-        .CustomFunction([](WidgetInfo& info) { GanondorfSongs_DrawMenu(); })
-        .HideInSearch(true);
-    AddWidget(path, "Loop Songs", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Loop"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
-        })
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip("Start the song over when it ends."));
-    AddWidget(path, "Song Tempo: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Tempo"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Songs.Enabled"), 1) == 0;
-        })
-        .Options(FloatSliderOptions().Min(0.5f).Max(2.0f).DefaultValue(1.0f).Format("%.2fx").Tooltip(
-            "Speed of the songs (applies the next time a song starts)."));
     AddWidget(path, "Kick Doors and Chests Open", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.DoorKick"))
         .PreFunc([](WidgetInfo& info) {
@@ -2343,42 +2237,6 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Z makes him sink while levitating, so on a controller, click the right stick (R3) to Z-target: lock on "
             "to enemies and people, and hear the Poe's notes on an enemy (target it, then press C-Up)."));
-    AddWidget(path, "Gerudo Bodyguards", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Bodyguards"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-        })
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "Three Gerudo fighters, in green, blue and red, drop in at his side and follow him everywhere. When an "
-            "enemy comes near they run in and cut it down with their own slashes and spinning slashes. Enemies can "
-            "knock them back but can't kill them. Turn it off to dismiss them."));
-    AddWidget(path, "Guards Fear Him", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GuardsFear"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-        })
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "The soldiers at Hyrule Castle don't catch the King of Evil and throw him out: a guard who spots him "
-            "freezes, trembles and keeps out of his way. The castle gate and town guards talk to him accordingly. "
-            "(After a murder in Castle Town the guard hunt still comes for him.)"));
-    AddWidget(path, "Hyrule Castle Interior", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CastleInterior"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-        })
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "Needs gdf_castle.o2r in the mods folder. On the castle grounds the castle's drawbridge works: it "
-            "lowers when he walks up to the gate, and the castle door leads inside: the entrance hall and its "
-            "gallery, the grand hall, the library, the barracks, the royal rooms upstairs, and the throne room, "
-            "whose window looks out on Zelda in the courtyard."));
-    AddWidget(path, "Visit the Castle Interior", WIDGET_BUTTON)
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-            info.options->disabled = (gPlayState == NULL) || !GanondorfCastle_IsAvailable();
-        })
-        .Options(ButtonOptions().Tooltip("Go straight inside Hyrule Castle (to try it out).")
-                     .Size(UIWidgets::Sizes::Inline))
-        .Callback([](WidgetInfo& info) { GanondorfCastle_VisitInterior(); });
     AddWidget(path, "Walk Around in Cutscenes", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.RoamInCutscenes"))
         .PreFunc([](WidgetInfo& info) {
@@ -2388,34 +2246,6 @@ void SohMenu::AddMenuEnhancements() {
             "In cutscenes and conversations he can walk about with the stick while the scene plays on (Link, who "
             "the scene moves, stays put). He's back at his place once the scene is over. Not through doors, chests, "
             "items, ladders, ledges or on horseback. Scripted cameras don't follow him."));
-    AddWidget(path, "Start in the Gerudo Fortress (Experimental)", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoStart"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-        })
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "New files start at the Gerudo Fortress, his home, instead of Link's house (no Deku Tree opening): a "
-            "narration and his Poe's greeting welcome him back, and the Gerudo serve their King instead of chasing "
-            "him. The file keeps starting there when you continue it. Applies to files made while it's on."));
-    AddWidget(path, "Gerudo Intro Cutscene", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoIntro"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0) ||
-                            (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoStart"), 0) == 0);
-        })
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "A new Gerudo file opens with his own intro instead of the narration: the fortress at dusk, the King of "
-            "the Gerudo at his window and his war table, a vision he can't explain, the oath of his warriors by "
-            "torchlight, the king's letter, and the ride out toward Hyrule. Press START to skip it. Play then begins "
-            "at dawn outside the castle town."));
-    AddWidget(path, "Play the Gerudo Intro", WIDGET_BUTTON)
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
-            info.options->disabled = (gPlayState == NULL) || GanondorfIntro_IsActive();
-        })
-        .Options(ButtonOptions().Tooltip("Watch the Gerudo intro now (START skips it). Afterwards you're back where "
-                                         "you were.").Size(UIWidgets::Sizes::Inline))
-        .Callback([](WidgetInfo& info) { GanondorfIntro_Start(false); });
     AddWidget(path, "Organ on L3", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.L3Organ"))
         .PreFunc([](WidgetInfo& info) {
@@ -2519,85 +2349,7 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(0.4f).Max(1.5f).DefaultValue(0.8f).Format("%.2fx").Tooltip(
             "How far back and how high the camera sits while Ganon is out."));
-    AddWidget(path, "Ganondorf Title Screen", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleScreen"))
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "The title screen takes place in Ganondorf's chamber at the top of his tower: he plays his theme on the "
-            "organ forever, seen from behind. Works with or without Play as Ganondorf.\n\n"
-            "Takes effect the next time the title screen loads (restart, or quit to the title screen)."));
-    AddWidget(path, "Ganondorf Title Logo", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleLogo"))
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "The title screen shows \"The Legend of Ganondorf: King of Evil\" instead of the Ocarina of Time logo. "
-            "Also shows the credit \"Mod by Grimsfrost\" beside the copyright. Works with or without Play as "
-            "Ganondorf. The logo needs gdf_logo.bin next to the game."));
     path.column = SECTION_COLUMN_1;
-    AddWidget(path, "Hurt Container Mode", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("HurtContainer"))
-        .Options(CheckboxOptions().Tooltip("Changes Heart Piece and Heart Container functionality.\n\n"
-                                           " - Each Heart Container or full Heart Piece reduces Link's Hearts by 1.\n"
-                                           " - Can be enabled retroactively after a File has already started."));
-    AddWidget(path, "Additional Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Enabled"))
-        .Options(CheckboxOptions().Tooltip("Enables additional Trap variants."));
-    AddWidget(path, "Trap Options", WIDGET_SEPARATOR_TEXT).PreFunc([](WidgetInfo& info) {
-        info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0;
-    });
-    AddWidget(path, "Tier 1 Traps:", WIDGET_TEXT).PreFunc([](WidgetInfo& info) {
-        info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0;
-    });
-    AddWidget(path, "Freeze Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Ice"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Burn Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Burn"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Shock Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Shock"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Tier 2 Traps:", WIDGET_TEXT).PreFunc([](WidgetInfo& info) {
-        info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0;
-    });
-    AddWidget(path, "Knockback Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Knockback"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Speed Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Speed"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Bomb Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Bomb"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Tier 3 Traps:", WIDGET_TEXT).PreFunc([](WidgetInfo& info) {
-        info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0;
-    });
-    AddWidget(path, "Void Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Void"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Ammo Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Ammo"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Death Traps", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Kill"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; });
-    AddWidget(path, "Teleport Traps", WIDGET_CVAR_COMBOBOX)
-        .CVar(CVAR_ENHANCEMENT("ExtraTraps.Teleport"))
-        .PreFunc(
-            [](WidgetInfo& info) { info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("ExtraTraps.Enabled"), 0) == 0; })
-        .Options(ComboboxOptions()
-                     .ComboMap(teleportTrapModes)
-                     .DefaultIndex(TELEPORT_TRAP_OFF)
-                     .Tooltip("Where a Teleport Trap can send you. Off keeps them out of the trap pool.\n\n"
-                              "Simple: Link's House and the six warp song pads.\n"
-                              "Advanced: The same pool the randomizer uses when it shuffles spawns and warp songs."));
 
     // Cheats
     path.sidebarName = "Cheats";
