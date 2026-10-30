@@ -16,6 +16,7 @@
 #include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
 #include "soh/Enhancements/ExtraModes/GanondorfKills.h"
 #include "soh/Enhancements/ExtraModes/GanondorfIntro.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "textures/icon_item_field_static/icon_item_field_static.h" // SoH: the map on the intro's war table
 #include "overlays/actors/ovl_En_Horse_Ganon/z_en_horse_ganon.h" // SoH: the Gerudo intro's horse
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
@@ -81,7 +82,10 @@ void BossGanon_UpdateEffects(PlayState* play);
 s32 BossGanon_CheckFallingPlatforms(BossGanon* this, PlayState* play, Vec3f* checkPos);
 
 // SoH: "Play as Ganondorf"
-#define GDF_IS_PLAYER(dorf) ((dorf)->actor.params == GDF_PARAMS_PLAYER)
+// (also another player's Ganondorf in Invasion mode, drawn the same way: his puppet only takes its pose from the network)
+#define GDF_IS_PLAYER(dorf) (((dorf)->actor.params == GDF_PARAMS_PLAYER) || ((dorf)->actor.params == GDF_PARAMS_PUPPET))
+void BossGanon_Puppet_Init(BossGanon* this, PlayState* play);
+void BossGanon_Puppet_Update(Actor* thisx, PlayState* play);
 // The arena floor is at y = 0. Outside the arena, use the floor under Link.
 #define GDF_FLOOR_Y(dorf) (GDF_IS_PLAYER(dorf) ? (dorf)->playerFloorY : 0.0f)
 // How far below the floor his organ starts and goes back to
@@ -471,6 +475,10 @@ static void BossGanon_Init_Impl(Actor* thisx, PlayState* play2) {
         BossGanon_Player_Init(this, play);
         return;
     }
+    if (thisx->params == GDF_PARAMS_PUPPET) {
+        BossGanon_Puppet_Init(this, play);
+        return;
+    }
     if ((thisx->params >= GDF_PARAMS_PLAYER_LIGHT_BALL) &&
         (thisx->params < GDF_PARAMS_PLAYER_BIG_MAGIC + GDF_PLAYER_BIG_MAGIC_COUNT)) {
         BossGanon_PlayerProjectile_Init(this, play);
@@ -613,6 +621,9 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
     }
 
     // SoH: "Play as Ganondorf"
+    if (this->actor.params == GDF_PARAMS_PUPPET) {
+        GdfInvasion_PuppetDestroyed(&this->actor);
+    }
     if (GDF_IS_PLAYER(this)) {
         if (this->playerPgReady) {
             // Phantom Ganon's tables are part of the actor: only the skeleton registration goes
@@ -12145,7 +12156,7 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
 static s32 BossGanon_GetOwner(BossGanon* this) {
     Actor* parent = this->actor.parent;
 
-    if (BossGanon_IsPlayerAttack(&this->actor)) {
+    if (BossGanon_IsPlayerAttack(&this->actor) || (this->actor.params == GDF_PARAMS_PUPPET)) {
         return 1;
     }
     if (this->actor.params < 0x64) {
@@ -12153,7 +12164,7 @@ static s32 BossGanon_GetOwner(BossGanon* this) {
     }
     // Projectiles and effects get their parent right after their init
     if ((parent != NULL) && (parent->id == ACTOR_BOSS_GANON)) {
-        return parent->params == GDF_PARAMS_PLAYER;
+        return (parent->params == GDF_PARAMS_PLAYER) || (parent->params == GDF_PARAMS_PUPPET);
     }
     return -1;
 }
@@ -12179,6 +12190,105 @@ static s32 BossGanon_GetOwner(BossGanon* this) {
         BossGanon_RestoreContext(saved);                              \
     }
 
+// ------------------------------------------------------------------------------------------------
+// SoH: "Play as Ganondorf", Invasion mode: another player's Ganondorf on this screen. He's drawn exactly as the
+// player-controlled one (cape, sword, hands), but all he does is take his pose from the network every frame.
+// ------------------------------------------------------------------------------------------------
+
+// The local player's Ganondorf, as sent to the others
+s32 BossGanon_Player_GetNetPose(GdfNetPose* out) {
+    BossGanon* this = sPlayerGanondorf;
+    s32 n;
+
+    if ((this == NULL) || (this->actor.update == NULL) || (this->actor.params != GDF_PARAMS_PLAYER)) {
+        return false;
+    }
+    out->valid = true;
+    out->hidden = this->playerHidden;
+    out->swordState = sPlayerSwordState;
+    out->pos = this->actor.world.pos;
+    out->rotY = this->actor.shape.rot.y;
+    out->floorY = this->playerFloorY;
+    n = MIN(this->skelAnime.limbCount, GDF_NET_JOINTS);
+    memcpy(out->joints, this->skelAnime.jointTable, n * sizeof(Vec3s));
+    return true;
+}
+
+void BossGanon_Puppet_Init(BossGanon* this, PlayState* play) {
+    Actor* thisx = &this->actor;
+    s16 i;
+
+    for (i = 0; i < ARRAY_COUNT(sPlayerEffects); i++) {
+        sPlayerEffects[i].type = GDF_EFF_NONE;
+    }
+    sCurEffects = sPlayerEffects;
+    sGanondorf = this;
+
+    Actor_ProcessInitChain(thisx, sInitChain);
+    // Not an enemy, not something to lock on to, and always updated and drawn wherever he is in the scene
+    thisx->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    thisx->flags |= ACTOR_FLAG_UPDATE_DURING_OCARINA | ACTOR_FLAG_UPDATE_CULLING_DISABLED |
+                    ACTOR_FLAG_DRAW_CULLING_DISABLED;
+    thisx->update = BossGanon_Puppet_Update;
+    ActorShape_Init(&thisx->shape, 0, NULL, 0);
+    Actor_SetScale(thisx, 0.01f);
+    SkelAnime_InitFlex(play, &this->skelAnime, &gGanondorfSkel, NULL, NULL, NULL, 0);
+    Collider_InitCylinder(play, &this->collider);
+    Collider_SetCylinder(play, &this->collider, thisx, &sPlayerPoundCylinderInit);
+    thisx->room = -1;
+
+    sCape = (EnGanonMant*)Actor_SpawnAsChild(&play->actorCtx, thisx, play, ACTOR_EN_GANON_MANT, 0.0f, 0.0f, 0.0f, 0, 0,
+                                             0, PLAYER_GANONDORF_CAPE_PARAMS);
+    if (sCape == NULL) {
+        Actor_Kill(thisx);
+        return;
+    }
+    sCape->actor.room = -1;
+    sPlayerCapeDraw = sCape->actor.draw;
+    Actor_ChangeCategory(play, &play->actorCtx, &sCape->actor, ACTORCAT_MISC);
+    Actor_ChangeCategory(play, &play->actorCtx, thisx, ACTORCAT_MISC);
+
+    this->playerFloorY = thisx->world.pos.y;
+    Collider_InitQuad(play, &this->playerSwordQuad);
+    Collider_SetQuad(play, &this->playerSwordQuad, thisx, &sPlayerSwordQuadInit);
+    this->playerSwordBlure = TOTAL_EFFECT_COUNT;
+    Effect_Add(play, &this->playerSwordBlure, EFFECT_BLURE2, 0, 0, &sPlayerSwordBlureInit);
+    this->playerOrganSink = GDF_ORGAN_SINK_DEPTH;
+    this->triforceType = GDF_TRIFORCE_DORF;
+    this->playerHidden = true; // until his first pose arrives
+    this->actionFunc = BossGanon_Player_Float; // never run, but the draw looks at it
+}
+
+void BossGanon_Puppet_Update_Impl(Actor* thisx, PlayState* play) {
+    BossGanon* this = (BossGanon*)thisx;
+    GdfNetPose pose;
+    s32 n;
+
+    if (!GdfInvasion_GetPuppetPose(thisx, &pose) || !pose.valid) {
+        this->playerHidden = true;
+        if (sCape != NULL) {
+            sCape->actor.draw = NULL;
+        }
+        return;
+    }
+    thisx->prevPos = thisx->world.pos;
+    thisx->world.pos = pose.pos;
+    thisx->shape.rot.y = thisx->world.rot.y = pose.rotY;
+    thisx->focus.pos = pose.pos;
+    thisx->focus.pos.y += 120.0f;
+    this->playerFloorY = pose.floorY;
+    this->playerHidden = pose.hidden;
+    sPlayerSwordState = pose.swordState;
+    n = MIN(this->skelAnime.limbCount, GDF_NET_JOINTS);
+    memcpy(this->skelAnime.jointTable, pose.joints, n * sizeof(Vec3s));
+    // Used for the cape's sway
+    thisx->velocity.x = thisx->world.pos.x - thisx->prevPos.x;
+    thisx->velocity.z = thisx->world.pos.z - thisx->prevPos.z;
+    if (sCape != NULL) {
+        sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
+    }
+}
+
 BOSS_GANON_CONTEXT_ENTRY(BossGanon_Init)
 BOSS_GANON_CONTEXT_ENTRY(BossGanon_Update)
 BOSS_GANON_CONTEXT_ENTRY(BossGanon_Draw)
@@ -12188,6 +12298,7 @@ BOSS_GANON_CONTEXT_ENTRY(func_808E2544)
 BOSS_GANON_CONTEXT_ENTRY(BossGanon_Player_Update)
 BOSS_GANON_CONTEXT_ENTRY(BossGanon_PlayerLightBall_Update)
 BOSS_GANON_CONTEXT_ENTRY(BossGanon_PlayerBigMagic_Update)
+BOSS_GANON_CONTEXT_ENTRY(BossGanon_Puppet_Update)
 
 #include "overlays/ovl_Boss_Ganon/ovl_Boss_Ganon.h"
 

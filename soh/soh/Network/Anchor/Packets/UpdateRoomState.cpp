@@ -1,6 +1,7 @@
 #include <nlohmann/json.hpp>
 
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 extern "C" {
 extern PlayState* gPlayState;
@@ -28,6 +29,7 @@ nlohmann::json Anchor::PrepRoomState() {
         payload["syncItemsAndFlags"] = CVarGetInteger(CVAR_REMOTE_ANCHOR("RoomSettings.SyncItemsAndFlags"), 1);
     }
 
+    GdfInvasion_WriteRoomState(payload); // Invasion mode: the game's start
     return payload;
 }
 
@@ -49,4 +51,5 @@ void Anchor::HandlePacket_UpdateRoomState(nlohmann::json payload) {
     roomState.showLocationsMode = payload["state"]["showLocationsMode"].get<u8>();
     roomState.teleportMode = payload["state"]["teleportMode"].get<u8>();
     roomState.syncItemsAndFlags = payload["state"]["syncItemsAndFlags"].get<u8>();
+    GdfInvasion_ReadRoomState(payload["state"]);
 }

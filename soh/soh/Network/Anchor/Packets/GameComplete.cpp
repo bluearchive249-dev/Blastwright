@@ -1,6 +1,7 @@
 #include <nlohmann/json.hpp>
 
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/Notification/Notification.h"
 #include "soh/ShipUtils.h"
 
@@ -14,6 +15,10 @@ const std::string gameCompleteMessages[] = {
  */
 
 void Anchor::SendPacket_GameComplete() {
+    // Invasion mode: the Invader's own progress isn't shared (he only receives the Hero's)
+    if (GdfInvasion_IsInvader()) {
+        return;
+    }
     if (!IsSaveLoaded()) {
         return;
     }

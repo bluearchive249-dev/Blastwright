@@ -1,6 +1,7 @@
 #include <nlohmann/json.hpp>
 
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/Enhancements/game-interactor/GameInteractionEffect.h"
 
 extern "C" {
@@ -15,6 +16,10 @@ extern PlayState* gPlayState;
  */
 
 void Anchor::SendPacket_SetFlag(s16 sceneNum, s16 flagType, s16 flag) {
+    // Invasion mode: the Invader's own progress isn't shared (he only receives the Hero's)
+    if (GdfInvasion_IsInvader()) {
+        return;
+    }
     if (!IsSaveLoaded() || !roomState.syncItemsAndFlags) {
         return;
     }
