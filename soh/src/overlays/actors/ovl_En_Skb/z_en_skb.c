@@ -3,6 +3,7 @@
 #include "objects/object_skb/object_skb.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -191,7 +192,7 @@ void EnSkb_Destroy(Actor* thisx, PlayState* play) {
 
 void func_80AFCD60(EnSkb* this) {
     // Don't despawn stallchildren during daytime when enemy randomizer is enabled.
-    if (IS_DAY && !CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0)) {
+    if (IS_DAY && !CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0) && !GdfInvasion_IsSummoned(&this->actor)) {
         func_80AFCF48(this);
     } else if (Actor_IsFacingPlayer(&this->actor, 0x11C7) &&
                (this->actor.xzDistToPlayer < (60.0f + (this->actor.params * 6.0f)))) {
@@ -291,7 +292,7 @@ void EnSkb_Advance(EnSkb* this, PlayState* play) {
     // Don't despawn stallchildren during daytime or when a stalchildren walks too far away from his "home" when enemy
     // randomizer is enabled.
     if ((Math_Vec3f_DistXZ(&this->actor.home.pos, &player->actor.world.pos) > 800.0f || IS_DAY) &&
-        !CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0)) {
+        !CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0) && !GdfInvasion_IsSummoned(&this->actor)) {
         func_80AFCF48(this);
     } else if (Actor_IsFacingPlayer(&this->actor, 0x11C7) &&
                (this->actor.xzDistToPlayer < (60.0f + (this->actor.params * 6.0f)))) {

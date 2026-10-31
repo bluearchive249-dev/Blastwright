@@ -74,6 +74,8 @@ void GdfInvasion_NetGrabEnd(u32 clientId, s32 thrown, s16 yaw);
 
 // Invasion mode: his attacks cost magic (false: not enough, the attack doesn't start), and can hurt the Links
 s32 GdfInvasion_PayAttack(s32 cost);
+// Made by a Dark Art (or its copy in his game): stays put by day and away from its home (Stalchildren)
+s32 GdfInvasion_IsSummoned(Actor* actor);
 s32 GdfInvasion_CanHurtLinks(void);
 
 // Ganondorf may start an attack (not while his Dark Arts menu is open or he's pacified)

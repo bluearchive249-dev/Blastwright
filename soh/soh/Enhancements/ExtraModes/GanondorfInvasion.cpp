@@ -2511,3 +2511,17 @@ static void RegisterInvasionGhosts() {
 }
 
 static RegisterShipInitFunc ghostInitFunc(RegisterInvasionGhosts, {});
+
+extern "C" s32 GdfInvasion_IsSummoned(Actor* actor) {
+    for (Actor* a : sSummoned) {
+        if (a == actor) {
+            return true;
+        }
+    }
+    for (auto& [key, g] : sGhosts) {
+        if (g.actor == actor) {
+            return true;
+        }
+    }
+    return false;
+}
