@@ -1489,8 +1489,8 @@ static void TickInvasion() {
     }
     if (!IsBanished() && (gSaveContext.magicState == MAGIC_STATE_IDLE) &&
         (gSaveContext.magic < gSaveContext.magicCapacity)) {
-        bool far = FindTargetLink(play) == 0;
-        if ((sFrame % (far ? GDF_FPS : (GDF_FPS * 3 / 2))) == 0) {
+        bool farAway = FindTargetLink(play) == 0;
+        if ((sFrame % (farAway ? GDF_FPS : (GDF_FPS * 3 / 2))) == 0) {
             gSaveContext.magic++;
         }
     }
@@ -1522,7 +1522,7 @@ static ImU32 Col(int r, int g, int b, int a) {
     return IM_COL32(r, g, b, a);
 }
 
-static void DrawText(ImDrawList* list, float size, ImVec2 pos, ImU32 col, const std::string& text) {
+static void DrawHudText(ImDrawList* list, float size, ImVec2 pos, ImU32 col, const std::string& text) {
     list->AddText(ImGui::GetFont(), size, ImVec2(pos.x + 1, pos.y + 1), Col(0, 0, 0, 140), text.c_str());
     list->AddText(ImGui::GetFont(), size, pos, col, text.c_str());
 }
@@ -1540,7 +1540,7 @@ static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
     float f = CLAMP(sResolve / GDF_RESOLVE_MAX, 0.0f, 1.0f);
     list->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), Col(0, 0, 0, 120), 2.0f);
     list->AddRectFilled(ImVec2(x, y), ImVec2(x + w * f, y + h), Col(200, 40, 70, 210), 2.0f);
-    DrawText(list, font * 0.8f, ImVec2(x + w + 6.0f, y - font * 0.25f), Col(230, 200, 210, 170), "Resolve");
+    DrawHudText(list, font * 0.8f, ImVec2(x + w + 6.0f, y - font * 0.25f), Col(230, 200, 210, 170), "Resolve");
 
     // The arts on his C-buttons, under the buttons
     float cx = vp->Pos.x + vp->Size.x - 190.0f * scale;
@@ -1558,7 +1558,7 @@ static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
             text += "  " + std::to_string((sArtReady[art] - sFrame) / GDF_FPS + 1) + "s";
         }
         ImU32 c = (!a.ready || cooling || !affordable) ? Col(170, 160, 180, 120) : Col(225, 190, 255, 200);
-        DrawText(list, font * 0.85f, ImVec2(cx, cy), c, text);
+        DrawHudText(list, font * 0.85f, ImVec2(cx, cy), c, text);
         cy += font;
     }
 
@@ -1567,7 +1567,7 @@ static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
         list->AddRectFilled(vp->Pos, ImVec2(vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y), Col(10, 0, 20, 150));
         std::string t = "Pacified... back in " + std::to_string((sBanishedUntil - sFrame) / GDF_FPS + 1) + " s";
         ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(font * 1.6f, FLT_MAX, 0.0f, t.c_str());
-        DrawText(list, font * 1.6f,
+        DrawHudText(list, font * 1.6f,
                  ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, vp->Pos.y + (vp->Size.y - sz.y) * 0.5f),
                  Col(230, 200, 255, 230), t);
     }
@@ -1575,7 +1575,7 @@ static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
     // A message about his last cast
     if (sFrame < sCastMessageUntil) {
         ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, sCastMessage.c_str());
-        DrawText(list, font, ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, vp->Pos.y + vp->Size.y * 0.72f),
+        DrawHudText(list, font, ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, vp->Pos.y + vp->Size.y * 0.72f),
                  Col(230, 210, 255, 220), sCastMessage);
     }
 }
@@ -1595,8 +1595,8 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
 
     list->AddRectFilled(ImVec2(x0 - 16 * scale, y0 - 46 * scale),
                         ImVec2(x0 + gridW + 16 * scale, y0 + gridH + 52 * scale), Col(14, 4, 24, 215), 8.0f);
-    DrawText(list, font * 1.4f, ImVec2(x0, y0 - 40 * scale), Col(220, 170, 255, 255), "Dark Arts");
-    DrawText(list, font * 0.9f, ImVec2(x0 + 120 * scale, y0 - 34 * scale), Col(200, 190, 210, 190),
+    DrawHudText(list, font * 1.4f, ImVec2(x0, y0 - 40 * scale), Col(220, 170, 255, 255), "Dark Arts");
+    DrawHudText(list, font * 0.9f, ImVec2(x0 + 120 * scale, y0 - 34 * scale), Col(200, 190, 210, 190),
              "D-Pad: choose   C: put on that button   START/B: close");
 
     for (int i = 0; i < GDF_ART_COUNT; i++) {
@@ -1611,29 +1611,29 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
         if (selected) {
             list->AddRect(p0, p1, Col(255, 220, 120, 255), 4.0f, 0, 2.0f * scale);
         }
-        DrawText(list, font * 0.85f, ImVec2(p0.x + 4 * scale, p0.y + 3 * scale),
+        DrawHudText(list, font * 0.85f, ImVec2(p0.x + 4 * scale, p0.y + 3 * scale),
                  a.ready ? Col(240, 225, 255, 255) : Col(150, 140, 160, 200), a.name);
-        DrawText(list, font * 0.75f, ImVec2(p0.x + 4 * scale, p0.y + cellH - font * 0.95f),
+        DrawHudText(list, font * 0.75f, ImVec2(p0.x + 4 * scale, p0.y + cellH - font * 0.95f),
                  Col(160, 200, 255, 200), std::to_string(a.cost) + " magic");
         for (int slot = 0; slot < 3; slot++) {
             if (SlotArt(slot) == i) {
                 static const char* sTags[3] = { "<", "v", ">" };
-                DrawText(list, font * 0.9f, ImVec2(p1.x - 12 * scale, p0.y + 2 * scale), Col(255, 200, 60, 255),
+                DrawHudText(list, font * 0.9f, ImVec2(p1.x - 12 * scale, p0.y + 2 * scale), Col(255, 200, 60, 255),
                          sTags[slot]);
             }
         }
     }
     // Rows and the selected art
     for (int row = 0; row < GDF_ART_ROWS; row++) {
-        DrawText(list, font * 0.7f, ImVec2(x0 + gridW + 4 * scale, y0 + row * (cellH + gap) + 4 * scale),
+        DrawHudText(list, font * 0.7f, ImVec2(x0 + gridW + 4 * scale, y0 + row * (cellH + gap) + 4 * scale),
                  Col(180, 160, 200, 160), sRows[row]);
     }
     const DarkArt& sel = sArts[sCursor];
     std::string desc = std::string(sel.desc) + "  (" + std::to_string(sel.cost) + " magic, " +
                        std::to_string(sel.cooldown) + " s)" + (sel.ready ? "" : "  - coming later");
-    DrawText(list, font * 0.9f, ImVec2(x0, y0 + gridH + 12 * scale), Col(220, 210, 230, 230), desc);
+    DrawHudText(list, font * 0.9f, ImVec2(x0, y0 + gridH + 12 * scale), Col(220, 210, 230, 230), desc);
     if (!GdfInvasion_AdventureStarted()) {
-        DrawText(list, font * 0.85f, ImVec2(x0, y0 + gridH + 30 * scale), Col(255, 180, 120, 220),
+        DrawHudText(list, font * 0.85f, ImVec2(x0, y0 + gridH + 30 * scale), Col(255, 180, 120, 220),
                  "Truce: nothing can be cast until a Link enters the Deku Tree.");
     }
 }
@@ -1666,7 +1666,7 @@ static void DrawHeroHud(ImGuiViewport* vp, float scale) {
         std::string t = std::string(sArts[GDF_FIRST_CURSE + i].name) + "  " +
                         std::to_string((sCurses[i].until - sFrame) / GDF_FPS + 1) + "s";
         ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, t.c_str());
-        DrawText(list, font, ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, y), Col(220, 120, 255, 220), t);
+        DrawHudText(list, font, ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, y), Col(220, 120, 255, 220), t);
         y += font * 1.1f;
     }
 }
@@ -1700,8 +1700,8 @@ static void DrawChat(ImGuiViewport* vp, float scale) {
         }
         std::string name = line.name + ": ";
         ImVec2 nsz = ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, name.c_str());
-        DrawText(list, font, ImVec2(x, y), Col(line.color.r, line.color.g, line.color.b, alpha), name);
-        DrawText(list, font, ImVec2(x + nsz.x, y), Col(240, 240, 240, alpha), line.text);
+        DrawHudText(list, font, ImVec2(x, y), Col(line.color.r, line.color.g, line.color.b, alpha), name);
+        DrawHudText(list, font, ImVec2(x + nsz.x, y), Col(240, 240, 240, alpha), line.text);
         y += font * 1.15f;
     }
 
