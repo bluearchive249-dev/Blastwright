@@ -107,6 +107,10 @@ s32 PlayAsGanondorf_IsGanonOut(PlayState* play);
 s32 GdfInvasion_DarkLinkInput(Actor* actor, Input* input, s16 camYaw);
 s32 GdfInvasion_DarkLinkPossessed(Actor* actor);
 s32 GdfInvasion_CanHurtLinks(void);
+// Kokiri Forest's peace: a young Link who has never had both sword and shield on (0: the local Link)
+s32 GdfInvasion_LinkAtPeace(u32 clientId);
+s32 GdfInvasion_CanHurtLink(u32 clientId);
+s32 GdfInvasion_CanGrabLink(u32 clientId);
 
 // Ganondorf may start an attack (not while his Dark Arts menu is open or he's pacified)
 s32 GdfInvasion_CanAct(void);

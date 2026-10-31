@@ -76,10 +76,54 @@ extern "C" s32 GdfInvasion_IsHero(void) {
     return GdfInvasion_Role() == GDF_INVASION_HERO;
 }
 
-// The truce lasts until the Hero has entered the Deku Tree. Remembered (per player) once it happens; the Anchor menu
-// can reset it for a new playthrough.
+// No truce: only Kokiri Forest is at peace, for a young Link who has never yet had both a sword and a shield on.
+// Once he has, it's gone for good (losing the shield doesn't bring it back). Each Link remembers it for himself
+// (reset with a new game) and sends it with his pose.
 extern "C" s32 GdfInvasion_AdventureStarted(void) {
-    return CVarGetInteger(CVAR_INVASION("Started"), 0) != 0;
+    return true;
+}
+
+static bool IsKokiriScene(s16 scene) {
+    switch (scene) {
+        case SCENE_KOKIRI_FOREST:
+        case SCENE_LINKS_HOUSE:
+        case SCENE_KNOW_IT_ALL_BROS_HOUSE:
+        case SCENE_TWINS_HOUSE:
+        case SCENE_MIDOS_HOUSE:
+        case SCENE_SARIAS_HOUSE:
+        case SCENE_KOKIRI_SHOP:
+            return true;
+    }
+    return false;
+}
+
+static bool IsSword(s32 item) {
+    return (item == ITEM_SWORD_KOKIRI) || (item == ITEM_SWORD_MASTER) || (item == ITEM_SWORD_BGS) ||
+           (item == ITEM_SWORD_KNIFE);
+}
+
+static bool OwnArmedOnce() {
+    return CVarGetInteger(CVAR_INVASION("Armed"), 0) != 0;
+}
+
+static bool sClientArmed[256];
+static bool ClientArmedOnce(uint32_t clientId);
+
+// This Link (0: the local one) is in peaceful Kokiri Forest
+extern "C" s32 GdfInvasion_LinkAtPeace(uint32_t clientId) {
+    if (Anchor::Instance == nullptr) {
+        return false;
+    }
+    bool self = (clientId == 0) || (Anchor::Instance->clients.count(clientId) && Anchor::Instance->clients[clientId].self);
+    if (self) {
+        return GdfInvasion_IsHero() && !OwnArmedOnce() && (gPlayState != nullptr) &&
+               IsKokiriScene(gPlayState->sceneNum) && (gSaveContext.linkAge == LINK_AGE_CHILD);
+    }
+    if (!Anchor::Instance->clients.count(clientId)) {
+        return false;
+    }
+    auto& client = Anchor::Instance->clients[clientId];
+    return !ClientArmedOnce(clientId) && IsKokiriScene(client.sceneNum) && (client.linkAge == LINK_AGE_CHILD);
 }
 
 // ---- Ganondorf's pose over the network ----
@@ -165,6 +209,7 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
     GdfNetPose pose;
 
     if (GdfInvasion_IsHero()) {
+        payload["gArmed"] = OwnArmedOnce();
         WriteMirror(payload);
         return;
     }
@@ -242,6 +287,9 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
 void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
     ClientGdf& c = sClients[clientId];
 
+    if (payload.contains("gArmed") && (clientId < 256)) {
+        sClientArmed[clientId] |= payload.value("gArmed", false); // once armed, for good
+    }
     if (payload.contains("gm") && GdfInvasion_IsInvader()) {
         ReadMirror(clientId, payload["gm"]);
     }
@@ -414,25 +462,11 @@ static void OnGameFrameUpdate() {
     if (!AnchorOn()) {
         return;
     }
-    // The adventure starts when the Hero (any other player, for the Invader) is inside the Deku Tree
-    if (!GdfInvasion_AdventureStarted() && (GdfInvasion_Role() != GDF_INVASION_OFF)) {
-        bool started = false;
-
-        for (auto& [clientId, client] : Anchor::Instance->clients) {
-            bool isHero = client.self ? GdfInvasion_IsHero() : !GdfInvasion_IsClientGanondorf(clientId);
-
-            if (!isHero || !client.online || !(client.self ? Anchor::Instance->IsSaveLoaded() : client.isSaveLoaded)) {
-                continue;
-            }
-            s16 scene = client.self ? ((gPlayState != nullptr) ? gPlayState->sceneNum : -1) : client.sceneNum;
-            if (scene == SCENE_DEKU_TREE) {
-                started = true;
-            }
-        }
-        if (started) {
-            CVarSetInteger(CVAR_INVASION("Started"), 1);
-            Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
-        }
+    // A young Link with a sword and a shield on: Kokiri Forest's peace is over for him
+    if (GdfInvasion_IsHero() && !OwnArmedOnce() && Anchor::Instance->IsSaveLoaded() &&
+        IsSword(gSaveContext.equips.buttonItems[0]) && (CUR_EQUIP_VALUE(EQUIP_TYPE_SHIELD) != EQUIP_VALUE_SHIELD_NONE)) {
+        CVarSetInteger(CVAR_INVASION("Armed"), 1);
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
 }
 
@@ -524,16 +558,6 @@ static void DrawLinkLocator() {
         y += size.y + 8.0f;
     }
 
-    // The truce
-    if (!GdfInvasion_AdventureStarted()) {
-        const char* truce = "Truce until Link enters the Deku Tree";
-        float fontSize = ImGui::GetFontSize() * 0.7f * fmaxf(scale, 1.0f);
-        ImVec2 size = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, truce);
-        float x = vp->Pos.x + (vp->Size.x - size.x) * 0.5f;
-
-        list->AddText(ImGui::GetFont(), fontSize, ImVec2(x + 1.0f, y + 1.0f), IM_COL32(0, 0, 0, 90), truce);
-        list->AddText(ImGui::GetFont(), fontSize, ImVec2(x, y), IM_COL32(200, 200, 200, 110), truce);
-    }
 }
 
 std::shared_ptr<Ship::GuiWindow> GdfInvasion_CreateHudWindow() {
@@ -663,7 +687,7 @@ static void ApplyStart() {
     CVarSetInteger(CVAR_INVASION("Role"), role);
     // Everyone in one team: the Links share their progress (and Ganondorf receives it)
     CVarSetString(CVAR_REMOTE_ANCHOR("TeamId"), "invasion");
-    CVarSetInteger(CVAR_INVASION("Started"), 0); // a new game: the truce holds until the Deku Tree
+    CVarSetInteger(CVAR_INVASION("Armed"), 0); // a new game: Kokiri Forest is at peace until he takes up sword and shield
     SaveCVars();
     SendOwnState();
     Notification::Emit({
@@ -797,8 +821,7 @@ void GdfInvasion_DrawMenu() {
         ImGui::Text("You are: %s", (role == GDF_INVASION_INVADER) ? "Ganondorf"
                                    : (role == GDF_INVASION_HERO)  ? sSeats[CLAMP(OwnSeat(), 0, 7)].name
                                                                   : "watching (no seat)");
-        ImGui::Text("Adventure: %s", GdfInvasion_AdventureStarted() ? "started (a Link has entered the Deku Tree)"
-                                                                     : "truce until a Link enters the Deku Tree");
+        ImGui::TextWrapped("Kokiri Forest is at peace for a young Link until he has a sword and a shield on.");
         if (role == GDF_INVASION_INVADER) {
             bool hud = CVarGetInteger(CVAR_INVASION("Hud"), 1) != 0;
             if (ImGui::Checkbox("Show where the Links are (top of the screen)", &hud)) {
@@ -1077,8 +1100,12 @@ extern "C" s32 GdfInvasion_PayAttack(s32 cost) {
     return true;
 }
 
+extern "C" s32 GdfInvasion_CanHurtLink(uint32_t clientId) {
+    return GdfInvasion_IsInvader() && GameStarted() && !GdfInvasion_LinkAtPeace(clientId);
+}
+
 extern "C" s32 GdfInvasion_CanHurtLinks(void) {
-    return GdfInvasion_IsInvader() && GameStarted() && GdfInvasion_AdventureStarted();
+    return GdfInvasion_IsInvader() && GameStarted();
 }
 
 extern "C" s32 GdfInvasion_CanAct(void) {
@@ -1129,12 +1156,6 @@ static void TryCast(PlayState* play, int slot) {
     }
     if (!a.ready) {
         Flash(std::string(a.name) + " isn't ready yet (coming in a later version)");
-        Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-        return;
-    }
-    if (!GdfInvasion_AdventureStarted()) {
-        Flash("The truce holds until a Link enters the Deku Tree");
         Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
@@ -1215,6 +1236,12 @@ static void TryCast(PlayState* play, int slot) {
         Flash("No Link close enough");
         Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+    if (GdfInvasion_LinkAtPeace(target)) {
+        Flash("Kokiri Forest is at peace until he takes up sword and shield");
+        Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                             &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
     // Paid now (given back if that Link's game refuses it)
@@ -1332,6 +1359,10 @@ static uint32_t sCurseFrom = 0;
 
 static bool LinkCanBeCursed(PlayState* play) {
     Player* player = GET_PLAYER(play);
+
+    if (GdfInvasion_LinkAtPeace(0)) {
+        return false; // peaceful Kokiri Forest
+    }
 
     if ((play == nullptr) || (player == nullptr) || Player_InCsMode(play) ||
         (play->csCtx.state != CS_STATE_IDLE) || (play->msgCtx.msgMode != MSGMODE_NONE) ||
@@ -2382,10 +2413,8 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
     std::string desc = std::string(sel.desc) + "  (" + std::to_string(sel.cost) + " magic, " +
                        std::to_string(sel.cooldown) + " s)" + (sel.ready ? "" : "  - coming later");
     DrawHudText(list, font * 0.9f, ImVec2(x0, y0 + gridH + 12 * scale), Col(220, 210, 230, 230), desc);
-    if (!GdfInvasion_AdventureStarted()) {
-        DrawHudText(list, font * 0.85f, ImVec2(x0, y0 + gridH + 30 * scale), Col(255, 180, 120, 220),
-                 "Truce: nothing can be cast until a Link enters the Deku Tree.");
-    }
+    DrawHudText(list, font * 0.85f, ImVec2(x0, y0 + gridH + 30 * scale), Col(255, 180, 120, 200),
+                "Kokiri Forest is at peace for a young Link without both sword and shield.");
 }
 
 // A Link: what Ganondorf has cursed him with, and the gloom
@@ -2554,8 +2583,12 @@ extern "C" u32 GdfInvasion_DummyClientId(Actor* actor) {
     return Anchor::Instance->GetDummyPlayerClientId(actor);
 }
 
+extern "C" s32 GdfInvasion_CanGrabLink(uint32_t clientId) {
+    return GdfInvasion_IsInvader() && GameStarted() && !GdfInvasion_LinkAtPeace(clientId);
+}
+
 extern "C" s32 GdfInvasion_CanGrabLinks(void) {
-    return GdfInvasion_IsInvader() && GameStarted() && GdfInvasion_AdventureStarted();
+    return GdfInvasion_IsInvader() && GameStarted();
 }
 
 extern "C" void GdfInvasion_NetGrabHold(u32 clientId, Vec3f* hand, f32 neck, s16 yaw) {
@@ -2821,4 +2854,8 @@ extern "C" s32 GdfInvasion_DarkLinkPossessed(Actor* actor) {
         return (sFrame < sPossessUntil) && (actor == GhostDarkLink());
     }
     return (actor == sDarkLink) && (sFrame - sDlHeard <= 10);
+}
+
+static bool ClientArmedOnce(uint32_t clientId) {
+    return (clientId < 256) && sClientArmed[clientId];
 }

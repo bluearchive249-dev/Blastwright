@@ -11557,7 +11557,7 @@ static Actor* BossGanon_Player_FindGrabTarget(BossGanon* this, PlayState* play) 
                 continue;
             }
             // Another player's Link: only Ganondorf in Invasion mode (after the truce), and his game does the rest
-            if ((GdfInvasion_DummyClientId(actor) != 0) && !GdfInvasion_CanGrabLinks()) {
+            if ((GdfInvasion_DummyClientId(actor) != 0) && !GdfInvasion_CanGrabLink(GdfInvasion_DummyClientId(actor))) {
                 continue;
             }
             if ((dist > GDF_GRAB_RANGE) || (ABS(yawDiff) > 0x3000) || (height > GDF_GRAB_MAX_HEIGHT) ||

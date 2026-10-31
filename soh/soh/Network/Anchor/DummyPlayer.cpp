@@ -186,7 +186,7 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     }
     // Ganondorf's game: his attacks can hurt the Links once the truce is over (they cost him magic), whatever the
     // room's PvP setting
-    if (GdfInvasion_IsInvader() && !GdfInvasion_CanHurtLinks()) {
+    if (GdfInvasion_IsInvader() && !GdfInvasion_CanHurtLink(clientId)) {
         actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
         return;
     }
