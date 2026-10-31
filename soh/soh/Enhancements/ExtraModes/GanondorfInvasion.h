@@ -76,6 +76,9 @@ void GdfInvasion_NetGrabEnd(u32 clientId, s32 thrown, s16 yaw);
 s32 GdfInvasion_PayAttack(s32 cost);
 // Made by a Dark Art (or its copy in his game): stays put by day and away from its home (Stalchildren)
 s32 GdfInvasion_IsSummoned(Actor* actor);
+// Dark Link driven by Ganondorf: his input in place of Dark Link's own (false when he isn't driving him)
+s32 GdfInvasion_DarkLinkInput(Actor* actor, Input* input, s16 camYaw);
+s32 GdfInvasion_DarkLinkPossessed(Actor* actor);
 s32 GdfInvasion_CanHurtLinks(void);
 
 // Ganondorf may start an attack (not while his Dark Arts menu is open or he's pacified)

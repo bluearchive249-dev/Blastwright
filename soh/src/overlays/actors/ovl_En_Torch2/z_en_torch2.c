@@ -5,6 +5,7 @@
  */
 
 #include "z_en_torch2.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "objects/object_torch2/object_torch2.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -259,6 +260,11 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
     input->cur.button = 0;
     camera = Play_GetCamera(play, 0);
     attackItem = EnTorch2_GetAttackItem(play, this);
+    // Invasion mode: driven by Ganondorf, he skips waiting for Link
+    if ((sActionState == ENTORCH2_WAIT) && GdfInvasion_DarkLinkPossessed(thisx)) {
+        sActionState = ENTORCH2_ATTACK;
+        sAlpha = 255;
+    }
     switch (sActionState) {
         case ENTORCH2_WAIT:
             this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
@@ -589,6 +595,11 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
         input->cur.button |= BTN_Z;
     }
 
+    // Invasion mode: Ganondorf's controller in place of his own (not while he's dying)
+    if (sActionState != ENTORCH2_DEATH) {
+        GdfInvasion_DarkLinkInput(thisx, input, camera->camDir.y);
+    }
+
     // Updates Dark Link's "controller". The conditional seems to cause him to
     // stop targeting and hold shield if he's been holding it long enough.
 
@@ -683,6 +694,17 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
     }
 
     play->playerUpdate(this, play, input);
+
+    // Invasion mode: his copy in Ganondorf's game only shows him (no hurting, no getting hurt)
+    if (GdfInvasion_IsInvader()) {
+        this->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
+        this->meleeWeaponQuads[1].base.atFlags &= ~AT_ON;
+        this->shieldQuad.base.atFlags &= ~AT_ON;
+        this->cylinder.base.acFlags &= ~AC_ON;
+        this->meleeWeaponQuads[0].base.acFlags &= ~AC_ON;
+        this->meleeWeaponQuads[1].base.acFlags &= ~AC_ON;
+        this->shieldQuad.base.acFlags &= ~AC_ON;
+    }
 
     /*
      * Handles sword clanks and removes their recoil for both Links. Dark Link staggers

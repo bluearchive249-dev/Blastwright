@@ -93,6 +93,19 @@ struct ClientGdf {
 static std::map<uint32_t, ClientGdf> sClients;
 static u32 sFrame = 0;
 static u32 sVeilUntil = 0; // Shadow Veil (Ganondorf): unseen and unheard by the Links
+// Dark Link: Ganondorf drives him in the Link's game for a minute (his own Ganondorf stands still meanwhile)
+static u32 sPossessStart = 0;
+static u32 sPossessUntil = 0;
+static s16 sPossessCam = -1;
+static s16 sPossessYaw = 0;  // the way his camera looks
+static s16 sDlYaw = 0;       // his stick, as a direction in the world
+static s16 sDlTilt = 0;
+static u16 sDlButtons = 0;
+// The Link's side: what Ganondorf last sent for his Dark Link
+static Actor* sDarkLink = nullptr;
+static u32 sDarkLinkUntil = 0;
+static u32 sDlHeard = 0;
+static Actor* GhostDarkLink();
 
 // What Ganondorf's Dark Arts made in a Link's game, sent with that Link's pose so Ganondorf sees it too
 struct Mirrored {
@@ -151,6 +164,9 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
         return;
     }
     payload["gdfRole"] = GDF_INVASION_INVADER;
+    if (sFrame < sPossessUntil) {
+        payload["dl"] = nlohmann::json::array({ (int)sDlYaw, (int)sDlTilt, (int)sDlButtons });
+    }
     if (!BossGanon_Player_GetNetPose(&pose)) {
         return;
     }
@@ -204,6 +220,12 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
     }
 
     c.isGanondorf = payload.value("gdfRole", 0) == GDF_INVASION_INVADER;
+    if (c.isGanondorf && payload.contains("dl") && payload["dl"].is_array() && (payload["dl"].size() >= 3)) {
+        sDlYaw = (s16)payload["dl"][0].get<int>();
+        sDlTilt = (s16)payload["dl"][1].get<int>();
+        sDlButtons = (u16)payload["dl"][2].get<int>();
+        sDlHeard = sFrame;
+    }
     if (!c.isGanondorf || !payload.contains("gdf")) {
         c.pose.valid = false;
         return;
@@ -839,7 +861,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Moblin Guard", ART_MONSTER, 30, 40, 0, true, "Two spear Moblins appear ahead of Link and charge him." },
     { "Ammo Blight", ART_OWN, 16, 60, 0, true, "A third of one kind of Link's ammo crumbles away." },
     { "Dark Pact", ART_OWN, 0, 120, 0, true, "Trade 30 of your Resolve for 40 magic." },
-    { "", ART_OWN, 0, 0, 0, false, "" },
+    { "Dark Link", ART_MONSTER, 40, 120, 60, true, "Dark Link rises before Link, and you control him for a minute." },
     { "", ART_OWN, 0, 0, 0, false, "" },
     { "", ART_OWN, 0, 0, 0, false, "" },
 };
@@ -864,6 +886,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
 #define GDF_ART_MOBLINS 24
 #define GDF_ART_AMMO 25
 #define GDF_ART_PACT 26
+#define GDF_ART_DARKLINK 27
 static const char* sCurseMessages[8] = {
     "has reversed your path!", "has frozen the ground!",  "weighs you down with iron!", "has shrunk you!",
     "has sealed your hand!",   "has cast a blinding gloom!", "has stolen your bearings!", "summons a ghostly gale!",
@@ -937,7 +960,7 @@ extern "C" s32 GdfInvasion_CanAct(void) {
     if (!GdfInvasion_IsInvader()) {
         return true;
     }
-    return !sMenuOpen && !IsBanished() && (sFrame >= sEyeUntil);
+    return !sMenuOpen && !IsBanished() && (sFrame >= sEyeUntil) && (sFrame >= sPossessUntil);
 }
 
 static void Flash(const std::string& message) {
@@ -976,6 +999,9 @@ static void TryCast(PlayState* play, int slot) {
         return;
     }
     const DarkArt& a = sArts[art];
+    if (sFrame < sPossessUntil) {
+        return; // he's busy being Dark Link
+    }
     if (!a.ready) {
         Flash(std::string(a.name) + " isn't ready yet (coming in a later version)");
         Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
@@ -1073,6 +1099,11 @@ static void TryCast(PlayState* play, int slot) {
     payload["type"] = GDF_PKT_CURSE;
     payload["targetClientId"] = target;
     payload["curse"] = art - GDF_FIRST_CURSE;
+    if (art == GDF_ART_DARKLINK) {
+        sPossessStart = sFrame;
+        sPossessUntil = sFrame + (a.duration + 1) * GDF_FPS;
+        Flash("You are Dark Link for a minute");
+    }
     payload["art"] = art;
     payload["duration"] = a.duration;
     Anchor::Instance->SendJsonToRemote(payload);
@@ -1316,6 +1347,7 @@ static const char* ArtMessage(int art) {
         case GDF_ART_TITHE: return "takes his tithe!";
         case GDF_ART_MOBLINS: return "sends his Moblin guard!";
         case GDF_ART_AMMO: return "blights your ammo!";
+        case GDF_ART_DARKLINK: return "sends your shadow against you!";
     }
     return "has cursed you!";
 }
@@ -1329,8 +1361,20 @@ static int MonstersFor(int art) {
         case GDF_ART_SENTINEL:
         case GDF_ART_DUEL: return 1;
         case GDF_ART_MOBLINS: return 2;
+        case GDF_ART_DARKLINK: return 1;
     }
     return 0;
+}
+
+static bool DarkLinkHere(PlayState* play) {
+    for (int cat : { ACTORCAT_BOSS, ACTORCAT_ENEMY }) {
+        for (Actor* a = play->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
+            if (a->id == ACTOR_EN_TORCH2) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Starts an art in this Link's game; false when it can't happen now (the magic goes back)
@@ -1428,6 +1472,9 @@ static bool StartArt(PlayState* play, int art) {
             break;
         }
         default:
+            if ((art == GDF_ART_DARKLINK) && (ActorAlive(sDarkLink) || DarkLinkHere(play))) {
+                return false; // one shadow at a time
+            }
             if ((art == GDF_ART_DUEL) || (art == GDF_ART_MOBLINS) || (monsters > 0) || (art == GDF_ART_BOMB_RAIN) ||
                 (art == GDF_ART_ROCK_FALL)) {
                 sSummon.art = art;
@@ -1487,6 +1534,16 @@ static void UpdateSummons() {
                 Actor_Kill(o.actor);
             }
             o.actor = nullptr;
+        }
+    }
+    // Dark Link's minute is up
+    if (sDarkLink != nullptr) {
+        if (!ActorAlive(sDarkLink)) {
+            sDarkLink = nullptr;
+        } else if ((play != nullptr) && (sFrame >= sDarkLinkUntil)) {
+            Smoke(play, &sDarkLink->world.pos);
+            Actor_Kill(sDarkLink);
+            sDarkLink = nullptr;
         }
     }
     if ((sQuicksandUntil != 0) && (sFrame >= sQuicksandUntil)) {
@@ -1565,6 +1622,25 @@ static void UpdateSummons() {
                 sSummon.art = -1;
             }
             break;
+        case GDF_ART_DARKLINK: {
+            if (sSummon.spotCount == 0) {
+                sSummon.spots[0] = AheadOfLink(play, 220.0f);
+                sSummon.spotCount = 1;
+                sSummon.start = sFrame;
+                Smoke(play, &sSummon.spots[0]);
+                break;
+            }
+            if (t >= GDF_FPS) {
+                Vec3f* p = &sSummon.spots[0];
+                sDarkLink = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_TORCH2, p->x, p->y, p->z, 0,
+                                        Math_Vec3f_Yaw(p, &player->actor.world.pos), 0, 0);
+                Track(sDarkLink);
+                sDarkLinkUntil = sFrame + 60 * GDF_FPS;
+                sSummon.art = -1;
+                sSummon.spotCount = 0;
+            }
+            break;
+        }
         case GDF_ART_MOBLINS: {
             // Two spear Moblins, ahead of him and to either side
             if (sSummon.spotCount == 0) {
@@ -1706,6 +1782,17 @@ static void UpdateCurses() {
 }
 
 extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
+    // Ganondorf as Dark Link: his controller drives Dark Link, not himself
+    if (GdfInvasion_IsInvader() && (sFrame < sPossessUntil)) {
+        float sx = input->cur.stick_x;
+        float sy = input->cur.stick_y;
+        float tilt = sqrtf(sx * sx + sy * sy);
+        sDlTilt = (tilt < 8.0f) ? 0 : (s16)fminf(tilt, 127.0f);
+        sDlYaw = sPossessYaw - (s16)(atan2f(sx, sy) * (32768.0f / 3.14159265f));
+        sDlButtons = input->cur.button & (BTN_A | BTN_B | BTN_R | BTN_Z);
+        memset(input, 0, sizeof(*input));
+        return;
+    }
     // Ganondorf: his menu open, or banished
     if (GdfInvasion_IsInvader() && (sMenuOpen || IsBanished() || (sFrame < sEyeUntil))) {
         memset(input, 0, sizeof(*input));
@@ -1890,6 +1977,9 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
             // Refused (that Link was in a cutscene, talking, ...): the magic comes back, and the cooldown resets
             gSaveContext.magic = MIN(gSaveContext.magic + sArts[art].cost, gSaveContext.magicCapacity);
             sArtReady[art] = sFrame;
+            if (art == GDF_ART_DARKLINK) {
+                sPossessUntil = 0;
+            }
             Flash(std::string(sArts[art].name) + " didn't take hold (try again)");
         }
     } else if (type == GDF_PKT_PACIFIED) {
@@ -1950,6 +2040,33 @@ static void TickInvasion() {
         Play_ClearCamera(play, sEyeCam);
         Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_ACTIVE);
         sEyeCam = -1;
+    }
+    // Dark Link: the camera follows him (as he is in the Link's game); it ends early if he falls
+    Actor* dl = (sFrame < sPossessUntil) ? GhostDarkLink() : nullptr;
+    if ((sFrame < sPossessUntil) && (dl == nullptr) && (sFrame - sPossessStart > 4 * GDF_FPS)) {
+        sPossessUntil = 0;
+        Flash("Dark Link is gone");
+    }
+    if ((sFrame < sPossessUntil) && (dl != nullptr)) {
+        if (sPossessCam < 0) {
+            sPossessCam = Play_CreateSubCamera(play);
+            Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
+            Play_ChangeCameraStatus(play, sPossessCam, CAM_STAT_ACTIVE);
+            sPossessYaw = dl->shape.rot.y;
+        }
+        Math_SmoothStepToS(&sPossessYaw, dl->shape.rot.y, 12, 0x300, 0x20);
+        Vec3f at = dl->world.pos;
+        at.y += 45.0f;
+        Vec3f eye = at;
+        eye.x -= Math_SinS(sPossessYaw) * 230.0f;
+        eye.z -= Math_CosS(sPossessYaw) * 230.0f;
+        eye.y += 90.0f;
+        Play_CameraSetAtEye(play, sPossessCam, &at, &eye);
+    } else if (sPossessCam >= 0) {
+        sPossessUntil = 0;
+        Play_ClearCamera(play, sPossessCam);
+        Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_ACTIVE);
+        sPossessCam = -1;
     }
     // His magic: the full bar, refilling on its own (faster when he keeps away from the Links)
     if (!gSaveContext.isMagicAcquired || !gSaveContext.isDoubleMagicAcquired) {
@@ -2495,7 +2612,7 @@ static void UpdateGhosts() {
             continue;
         }
         // After coming up as themselves for a moment, they only follow (no fighting him)
-        if ((sFrame - g.born > 20) || (g.id == ACTOR_EN_BOM)) {
+        if (((sFrame - g.born > 20) || (g.id == ACTOR_EN_BOM)) && (g.id != ACTOR_EN_TORCH2)) {
             g.actor->freezeTimer = 2;
         }
         ++it;
@@ -2524,4 +2641,37 @@ extern "C" s32 GdfInvasion_IsSummoned(Actor* actor) {
         }
     }
     return false;
+}
+
+static Actor* GhostDarkLink() {
+    for (auto& [key, g] : sGhosts) {
+        if ((g.id == ACTOR_EN_TORCH2) && ActorAlive(g.actor)) {
+            return g.actor;
+        }
+    }
+    return nullptr;
+}
+
+// Dark Link's "controller": Ganondorf's, while he drives him (in the Link's game, and his copy in Ganondorf's)
+extern "C" s32 GdfInvasion_DarkLinkInput(Actor* actor, Input* input, s16 camYaw) {
+    if (GdfInvasion_IsInvader()) {
+        if ((sFrame >= sPossessUntil) || (actor != GhostDarkLink())) {
+            return false;
+        }
+        camYaw = sPossessYaw;
+    } else if ((actor != sDarkLink) || (sFrame - sDlHeard > 10)) {
+        return false;
+    }
+    s16 rel = camYaw - sDlYaw;
+    input->cur.stick_x = (s8)(sDlTilt * Math_SinS(rel));
+    input->cur.stick_y = (s8)(sDlTilt * Math_CosS(rel));
+    input->cur.button = sDlButtons;
+    return true;
+}
+
+extern "C" s32 GdfInvasion_DarkLinkPossessed(Actor* actor) {
+    if (GdfInvasion_IsInvader()) {
+        return (sFrame < sPossessUntil) && (actor == GhostDarkLink());
+    }
+    return (actor == sDarkLink) && (sFrame - sDlHeard <= 10);
 }
