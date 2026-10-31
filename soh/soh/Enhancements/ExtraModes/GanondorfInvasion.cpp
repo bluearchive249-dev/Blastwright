@@ -364,7 +364,8 @@ void GdfInvasion_WriteClientState(nlohmann::json& state) {
 }
 
 void GdfInvasion_ReadClientState(uint32_t clientId, const nlohmann::json& state) {
-    if (state.is_object()) {
+    // A state without a seat (an older game, or Invasion mode off) leaves what we knew
+    if (state.is_object() && state.contains("gdfSeat")) {
         sClientSeats[clientId] = state.value("gdfSeat", GDF_SEAT_NONE);
     }
 }
