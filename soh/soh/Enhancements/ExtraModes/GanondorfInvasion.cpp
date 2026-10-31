@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <map>
+#include <vector>
 #include <string>
 
 #include <imgui.h>
@@ -84,6 +85,25 @@ struct ClientGdf {
 static std::map<uint32_t, ClientGdf> sClients;
 static u32 sFrame = 0;
 
+// Sounds his Ganondorf made since the last packet went out (with the frame, so sounds nobody was around to hear
+// aren't all played at once when someone walks in)
+static std::vector<std::pair<u16, u32>> sSfxQueue;
+
+extern "C" void GdfInvasion_NoteSfx(u16 sfxId) {
+    if (!GdfInvasion_IsInvader()) {
+        return;
+    }
+    std::erase_if(sSfxQueue, [](const std::pair<u16, u32>& q) { return sFrame - q.second > 3; });
+    for (auto& q : sSfxQueue) {
+        if (q.first == sfxId) {
+            return; // the same sound twice in a frame (a looping one) is one sound
+        }
+    }
+    if (sSfxQueue.size() < GDF_NET_SFX) {
+        sSfxQueue.push_back({ sfxId, sFrame });
+    }
+}
+
 void GdfInvasion_WritePose(nlohmann::json& payload) {
     GdfNetPose pose;
 
@@ -108,6 +128,26 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
         joints.push_back(pose.joints[i].z);
     }
     g["j"] = joints;
+    // His cape, glows, aura and organ
+    std::vector<float> fx(pose.fx, pose.fx + pose.fxCount);
+    g["x"] = fx;
+    // His light balls and Big Magic in flight: kind, position, rotation, scale, alpha, floor
+    std::vector<float> balls;
+    for (int i = 0; i < pose.ballCount; i++) {
+        const GdfNetBall& b = pose.balls[i];
+        balls.insert(balls.end(), { (float)b.kind, b.pos.x, b.pos.y, b.pos.z, (float)b.rot.x, (float)b.rot.y,
+                                    (float)b.rot.z, b.scale, b.fwork0, b.fwork1, b.floorY });
+    }
+    g["b"] = balls;
+    // The sounds he made
+    std::vector<int> sfx;
+    for (auto& q : sSfxQueue) {
+        if (sFrame - q.second <= 3) {
+            sfx.push_back(q.first);
+        }
+    }
+    g["s2"] = sfx;
+    sSfxQueue.clear();
     payload["gdf"] = g;
 }
 
@@ -134,8 +174,32 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
         for (int i = 0; i < GDF_NET_JOINTS; i++) {
             c.pose.joints[i] = { (s16)j[i * 3], (s16)j[i * 3 + 1], (s16)j[i * 3 + 2] };
         }
+        std::vector<float> fx = g.value("x", std::vector<float>{});
+        c.pose.fxCount = (u8)MIN((int)fx.size(), GDF_NET_FX);
+        for (int i = 0; i < c.pose.fxCount; i++) {
+            c.pose.fx[i] = fx[i];
+        }
+        std::vector<float> balls = g.value("b", std::vector<float>{});
+        c.pose.ballCount = (u8)MIN((int)(balls.size() / 11), GDF_NET_BALLS);
+        for (int i = 0; i < c.pose.ballCount; i++) {
+            const float* v = &balls[i * 11];
+            GdfNetBall& b = c.pose.balls[i];
+            b.kind = (u8)v[0];
+            b.pos = { v[1], v[2], v[3] };
+            b.rot = { (s16)v[4], (s16)v[5], (s16)v[6] };
+            b.scale = v[7];
+            b.fwork0 = v[8];
+            b.fwork1 = v[9];
+            b.floorY = v[10];
+        }
         c.pose.valid = true;
         c.lastFrame = sFrame;
+        // His sounds, from his puppet
+        if (c.puppet != nullptr) {
+            for (int sfx : g.value("s2", std::vector<int>{})) {
+                Audio_PlayActorSound2(c.puppet, (u16)sfx);
+            }
+        }
     } catch (...) {
         c.pose.valid = false;
     }

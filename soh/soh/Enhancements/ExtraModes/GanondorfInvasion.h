@@ -14,6 +14,20 @@ extern "C" {
 
 // Ganondorf's pose as sent to the other players (PLAYER_UPDATE), and what his puppet on their screen is drawn with
 #define GDF_NET_JOINTS 26 // gGanondorfSkel: the root translation and 25 limbs
+#define GDF_NET_BALLS 8   // his light balls and Big Magic in flight
+#define GDF_NET_FX 72     // his effect state (cape, glows, aura, organ, ...), packed as numbers
+#define GDF_NET_SFX 16    // sounds he made since the last packet
+
+typedef struct {
+    u8 kind; // 0 = light ball, 1 = Big Magic
+    Vec3f pos;
+    Vec3s rot;
+    f32 scale;
+    f32 fwork0;
+    f32 fwork1;
+    f32 floorY;
+} GdfNetBall;
+
 typedef struct {
     u8 valid;
     u8 hidden;     // not drawn (first person, a crawlspace, ...)
@@ -22,7 +36,14 @@ typedef struct {
     s16 rotY;
     f32 floorY;
     Vec3s joints[GDF_NET_JOINTS];
+    u8 fxCount;
+    f32 fx[GDF_NET_FX];
+    u8 ballCount;
+    GdfNetBall balls[GDF_NET_BALLS];
 } GdfNetPose;
+
+// ovl_Boss_Ganon: a sound the local Ganondorf (or his light balls) made, to be heard on the others' screens too
+void GdfInvasion_NoteSfx(u16 sfxId);
 
 // The local player's role (0 when the mode is off or Anchor isn't on)
 s32 GdfInvasion_Role(void);
