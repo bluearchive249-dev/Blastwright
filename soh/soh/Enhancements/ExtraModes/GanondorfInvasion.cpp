@@ -2178,9 +2178,33 @@ static void DrawChat(ImGuiViewport* vp, float scale) {
     float font = ImGui::GetFontSize() * 0.85f * fmaxf(scale, 1.0f);
     float x = vp->Pos.x + 16.0f * scale;
     float y = vp->Pos.y + vp->Size.y * 0.62f;
-    for (const ChatLine& line : sChat) {
+    auto lineAlpha = [](const ChatLine& line) {
         u32 age = sFrame - line.frame;
-        int alpha = sChatOpen ? 230 : (age < 10 * GDF_FPS) ? 220 : (age < 12 * GDF_FPS) ? 220 - (age - 10 * GDF_FPS) * 5 : 0;
+        return sChatOpen ? 230 : (age < 10 * GDF_FPS) ? 220 : (age < 12 * GDF_FPS) ? 220 - (int)(age - 10 * GDF_FPS) * 5 : 0;
+    };
+    // A dark box behind the lines shown, so they read over any scene; it fades with them
+    {
+        float boxW = 0.0f;
+        int lines = 0;
+        int boxAlpha = 0;
+        for (const ChatLine& line : sChat) {
+            int alpha = lineAlpha(line);
+            if (alpha <= 0) {
+                continue;
+            }
+            std::string all = line.name + ": " + line.text;
+            boxW = fmaxf(boxW, ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, all.c_str()).x);
+            boxAlpha = std::max(boxAlpha, alpha);
+            lines++;
+        }
+        if (lines > 0) {
+            float pad = 6.0f * scale;
+            list->AddRectFilled(ImVec2(x - pad, y - pad), ImVec2(x + boxW + pad, y + lines * font * 1.15f + pad * 0.6f),
+                                Col(0, 0, 0, boxAlpha * 200 / 230), 4.0f * scale);
+        }
+    }
+    for (const ChatLine& line : sChat) {
+        int alpha = lineAlpha(line);
         if (alpha <= 0) {
             continue;
         }
@@ -2196,7 +2220,7 @@ static void DrawChat(ImGuiViewport* vp, float scale) {
     }
     ImGui::SetNextWindowPos(ImVec2(x, y + 4.0f));
     ImGui::SetNextWindowSize(ImVec2(fminf(vp->Size.x * 0.45f, 520.0f * scale), 0));
-    ImGui::SetNextWindowBgAlpha(0.6f);
+    ImGui::SetNextWindowBgAlpha(0.9f);
     ImGui::Begin("##GdfChat", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoDocking);
