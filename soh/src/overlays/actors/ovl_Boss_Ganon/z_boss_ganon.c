@@ -12547,6 +12547,13 @@ void BossGanon_Player_CastPose(void) {
     }
 }
 
+// Phantom Step: he appears where Link (his own) was just put
+void BossGanon_Player_NetSnap(void) {
+    if ((sPlayerGanondorf != NULL) && (sPlayerGanondorf->actor.update != NULL) && (gPlayState != NULL)) {
+        BossGanon_Player_SnapToLink(sPlayerGanondorf, gPlayState);
+    }
+}
+
 // Pacified: his voice cracks and he goes up in dark smoke
 void BossGanon_Player_NetPacified(void) {
     BossGanon* this = sPlayerGanondorf;

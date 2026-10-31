@@ -63,6 +63,8 @@ s32 BossGanon_Player_IsBlockingNet(void);
 void BossGanon_Player_NetHurt(s32 heavy);
 void BossGanon_Player_CastPose(void);
 void BossGanon_Player_NetPacified(void);
+// Phantom Step: he's moved with Link (snapped, not walked over)
+void BossGanon_Player_NetSnap(void);
 
 // The throat grab on another player's Link: whether he may, which player a dummy is, and what his fist does
 u32 GdfInvasion_DummyClientId(Actor* actor);
