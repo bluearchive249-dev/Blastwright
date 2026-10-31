@@ -6000,6 +6000,7 @@ static f32 sGdfGrabArmWeight = 0.0f;
 static Vec3f sGdfGrabVel;
 static s16 sGdfGrabTimer = 0;
 static u8 sGdfGrabOrigCategory = ACTORCAT_NPC;
+static u32 sGdfGrabNetClient = 0; // Invasion mode: the one held is another player's Link (his game moves him)
 
 // Holding someone up by the throat (A mustn't talk to them)
 s32 BossGanon_Player_IsHolding(void) {
@@ -11520,6 +11521,10 @@ static Actor* BossGanon_Player_FindGrabTarget(BossGanon* this, PlayState* play) 
                 (actor->id == ACTOR_EN_GANON_MANT) || (actor->id == ACTOR_EN_HORSE)) {
                 continue;
             }
+            // Another player's Link: only Ganondorf in Invasion mode (after the truce), and his game does the rest
+            if ((GdfInvasion_DummyClientId(actor) != 0) && !GdfInvasion_CanGrabLinks()) {
+                continue;
+            }
             if ((dist > GDF_GRAB_RANGE) || (ABS(yawDiff) > 0x3000) || (height > GDF_GRAB_MAX_HEIGHT) ||
                 (fabsf(actor->world.pos.y - this->playerFloorY) > 80.0f)) {
                 continue;
@@ -11547,6 +11552,13 @@ static void BossGanon_Player_GrabToIdle(BossGanon* this, PlayState* play) {
 static void BossGanon_Player_GrabRelease(PlayState* play) {
     Actor* actor = sGdfGrabActor;
 
+    if (sGdfGrabNetClient != 0) {
+        GdfInvasion_NetGrabEnd(sGdfGrabNetClient, false, 0);
+        sGdfGrabNetClient = 0;
+        sGdfGrabActor = NULL;
+        sGdfGrabState = GDF_GRAB_NONE;
+        return;
+    }
     if ((actor != NULL) && BossGanon_Player_GrabAlive(play, actor)) {
         actor->shape.rot.x = actor->world.rot.x = 0;
         actor->shape.rot.z = actor->world.rot.z = 0;
@@ -11575,6 +11587,17 @@ s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play) {
     }
     sGdfGrabActor = target;
     sGdfGrabState = GDF_GRAB_HELD;
+    sGdfGrabNetClient = GdfInvasion_DummyClientId(target);
+    if (sGdfGrabNetClient != 0) {
+        // Another player's Link: his own game lifts him into this fist (sent every frame with this pose)
+        sGdfGrabIsEnemy = false;
+        sGdfGrabNeck = 40.0f;
+        sGdfGrabArmWeight = 0.0f;
+        this->actionFunc = BossGanon_Player_Grab;
+        Audio_PlayActorSound2(&this->actor, NA_SE_PL_PULL_UP_ROCK);
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+        return true;
+    }
     sGdfGrabIsEnemy = target->category == ACTORCAT_ENEMY;
     // Drawn after him for as long as he has them (the last category drawn), so they can be put in his fist as his
     // hand is drawn, this frame (see BossGanon_Player_GrabFollowHand): drawn before him, they trailed a frame behind
@@ -11659,6 +11682,16 @@ void BossGanon_Player_GrabThrow(BossGanon* this, PlayState* play) {
     }
     if ((sGdfGrabTimer == GDF_GRAB_RELEASE_FRAME) && (sGdfGrabState == GDF_GRAB_HELD)) {
         // Let go on the way down: hurled at the ground ahead of him
+        if (sGdfGrabNetClient != 0) {
+            // His game throws him (no harm: he's knocked down and gets up)
+            GdfInvasion_NetGrabEnd(sGdfGrabNetClient, true, this->actor.shape.rot.y);
+            sGdfGrabNetClient = 0;
+            sGdfGrabActor = NULL;
+            sGdfGrabState = GDF_GRAB_NONE;
+            Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_SWING_HARD);
+        }
+    }
+    if ((sGdfGrabTimer == GDF_GRAB_RELEASE_FRAME) && (sGdfGrabState == GDF_GRAB_HELD)) {
         sGdfGrabState = GDF_GRAB_FLYING;
         sGdfGrabVel.x = Math_SinS(this->actor.shape.rot.y) * 9.0f;
         sGdfGrabVel.z = Math_CosS(this->actor.shape.rot.y) * 9.0f;
@@ -11680,6 +11713,10 @@ static void BossGanon_Player_GrabFollowHand(BossGanon* this) {
         return;
     }
     Matrix_MultVec3f(&sGrip, &hand);
+    if (sGdfGrabNetClient != 0) {
+        GdfInvasion_NetGrabHold(sGdfGrabNetClient, &hand, sGdfGrabNeck, this->actor.shape.rot.y);
+        return;
+    }
     actor->world.pos.x = hand.x;
     actor->world.pos.y = hand.y - sGdfGrabNeck;
     actor->world.pos.z = hand.z;
@@ -11699,8 +11736,20 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
         return;
     }
     if (!BossGanon_Player_GrabAlive(play, actor)) {
+        if (sGdfGrabNetClient != 0) {
+            GdfInvasion_NetGrabEnd(sGdfGrabNetClient, false, 0);
+            sGdfGrabNetClient = 0;
+        }
         sGdfGrabActor = NULL;
         sGdfGrabState = GDF_GRAB_NONE;
+        return;
+    }
+    // Another player's Link: nothing to do here but let go if he's interrupted (his game holds him)
+    if (sGdfGrabNetClient != 0) {
+        if ((sGdfGrabState != GDF_GRAB_HELD) ||
+            ((this->actionFunc != BossGanon_Player_Grab) && (this->actionFunc != BossGanon_Player_GrabThrow))) {
+            BossGanon_Player_GrabRelease(play);
+        }
         return;
     }
     // Their own update is held off the whole time: no walking off, no attacking

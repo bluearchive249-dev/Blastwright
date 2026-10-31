@@ -64,6 +64,12 @@ void BossGanon_Player_NetHurt(s32 heavy);
 void BossGanon_Player_CastPose(void);
 void BossGanon_Player_NetPacified(void);
 
+// The throat grab on another player's Link: whether he may, which player a dummy is, and what his fist does
+u32 GdfInvasion_DummyClientId(Actor* actor);
+s32 GdfInvasion_CanGrabLinks(void);
+void GdfInvasion_NetGrabHold(u32 clientId, Vec3f* hand, f32 neck, s16 yaw);
+void GdfInvasion_NetGrabEnd(u32 clientId, s32 thrown, s16 yaw);
+
 // Ganondorf may start an attack (not while his Dark Arts menu is open or he's pacified)
 s32 GdfInvasion_CanAct(void);
 // His C-buttons: true when a Dark Art on it was cast (or tried), so the button does nothing else
