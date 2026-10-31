@@ -87,6 +87,10 @@ struct ClientGdf {
 static std::map<uint32_t, ClientGdf> sClients;
 static u32 sFrame = 0;
 
+static void WriteGrab(nlohmann::json& g);
+static void ReadGrab(uint32_t from, const nlohmann::json& g);
+bool GdfInvasion_IsHeld();
+
 // Sounds his Ganondorf made since the last packet went out (with the frame, so sounds nobody was around to hear
 // aren't all played at once when someone walks in)
 static std::vector<std::pair<u16, u32>> sSfxQueue;
@@ -150,6 +154,7 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
     }
     g["s2"] = sfx;
     sSfxQueue.clear();
+    WriteGrab(g);
     payload["gdf"] = g;
 }
 
@@ -196,6 +201,8 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
         }
         c.pose.valid = true;
         c.lastFrame = sFrame;
+        // Whether he has this player's Link by the throat
+        ReadGrab(clientId, g);
         // His sounds, from his puppet
         if (c.puppet != nullptr) {
             for (int sfx : g.value("s2", std::vector<int>{})) {
@@ -1107,6 +1114,11 @@ extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
         memset(input, 0, sizeof(*input));
         return;
     }
+    // A Link held by the throat: no control
+    if (GdfInvasion_IsHeld()) {
+        memset(input, 0, sizeof(*input));
+        return;
+    }
     // A Link: a sealed C-button
     if (sSealedButton != 0) {
         input->cur.button &= ~sSealedButton;
@@ -1590,4 +1602,138 @@ void GdfInvasionHud::Draw() {
         DrawHeroHud(vp, scale);
     }
     DrawLinkLocator();
+}
+
+// =================================================================================================
+// The throat grab on a Link: Ganondorf's game decides it (he grabs that Link's dummy) and sends where his fist is
+// with his pose every frame; the Link's own game hangs him there (no control) and, on the throw, knocks him down
+// ahead of Ganondorf, unhurt. Not during the truce.
+// =================================================================================================
+
+struct NetGrabOut {
+    uint32_t target = 0;
+    u8 state = 0; // 1 held, 2 thrown, 0 let go
+    Vec3f hand = { 0, 0, 0 };
+    float neck = 40.0f;
+    s16 yaw = 0;
+    u32 frame = 0;
+    int count = 0; // which grab this is (so a throw is acted on once)
+};
+static NetGrabOut sGrabOut;
+
+extern "C" u32 GdfInvasion_DummyClientId(Actor* actor) {
+    if ((Anchor::Instance == nullptr) || (actor == nullptr) || (actor->update != DummyPlayer_Update)) {
+        return 0;
+    }
+    return Anchor::Instance->GetDummyPlayerClientId(actor);
+}
+
+extern "C" s32 GdfInvasion_CanGrabLinks(void) {
+    return GdfInvasion_IsInvader() && GameStarted() && GdfInvasion_AdventureStarted();
+}
+
+extern "C" void GdfInvasion_NetGrabHold(u32 clientId, Vec3f* hand, f32 neck, s16 yaw) {
+    if ((sGrabOut.target != clientId) || (sGrabOut.state != 1)) {
+        sGrabOut.count++;
+    }
+    sGrabOut.target = clientId;
+    sGrabOut.state = 1;
+    sGrabOut.hand = *hand;
+    sGrabOut.neck = neck;
+    sGrabOut.yaw = yaw;
+    sGrabOut.frame = sFrame;
+}
+
+extern "C" void GdfInvasion_NetGrabEnd(u32 clientId, s32 thrown, s16 yaw) {
+    sGrabOut.target = clientId;
+    sGrabOut.state = thrown ? 2 : 0;
+    sGrabOut.yaw = yaw;
+    sGrabOut.frame = sFrame;
+}
+
+// Added to his pose packet: the grab, for a short while after it changes (so a throw isn't missed)
+static void WriteGrab(nlohmann::json& g) {
+    if ((sGrabOut.target == 0) || (sFrame - sGrabOut.frame > 10)) {
+        return;
+    }
+    g["gg"] = { sGrabOut.target, sGrabOut.state, sGrabOut.hand.x, sGrabOut.hand.y, sGrabOut.hand.z, sGrabOut.neck,
+                sGrabOut.yaw, sGrabOut.count };
+}
+
+// ---- The Link being held ----
+struct HeldBy {
+    uint32_t from = 0;
+    bool held = false;
+    Vec3f hand = { 0, 0, 0 };
+    float neck = 40.0f;
+    u32 lastFrame = 0;
+    int count = -1;
+    int thrownCount = -1;
+};
+static HeldBy sHeld;
+
+static void ReadGrab(uint32_t from, const nlohmann::json& g) {
+    PlayState* play = gPlayState;
+
+    if (!g.contains("gg") || !GdfInvasion_IsHero() || (play == nullptr)) {
+        return;
+    }
+    std::vector<float> v = g["gg"].get<std::vector<float>>();
+    if ((v.size() < 8) || ((uint32_t)v[0] != Anchor::Instance->ownClientId)) {
+        return;
+    }
+    int state = (int)v[1];
+    int count = (int)v[7];
+    if (state == 1) {
+        if (!sHeld.held) {
+            Audio_PlaySfxGeneral(NA_SE_VO_LI_DAMAGE_S, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+        sHeld.held = true;
+        sHeld.from = from;
+        sHeld.hand = { v[2], v[3], v[4] };
+        sHeld.neck = v[5];
+        sHeld.lastFrame = sFrame;
+        sHeld.count = count;
+    } else if (sHeld.held && (sHeld.from == from)) {
+        sHeld.held = false;
+        if ((state == 2) && (sHeld.thrownCount != count)) {
+            // Thrown: knocked down, flying away from him, no damage
+            Player* player = GET_PLAYER(play);
+            sHeld.thrownCount = count;
+            player->actor.world.pos = { v[2], v[3] - v[5], v[4] };
+            Actor_SetPlayerKnockbackLargeNoDamage(play, &player->actor, 12.0f, (s16)v[6], 9.0f);
+        }
+    }
+}
+
+// Every frame: while held, he hangs from the fist
+static void UpdateHeld() {
+    PlayState* play = gPlayState;
+
+    if (!sHeld.held) {
+        return;
+    }
+    if ((play == nullptr) || !GdfInvasion_IsHero() || (sFrame - sHeld.lastFrame > 15)) {
+        sHeld.held = false; // Ganondorf's gone (or the game left the area)
+        return;
+    }
+    Player* player = GET_PLAYER(play);
+    player->actor.world.pos = { sHeld.hand.x, sHeld.hand.y - sHeld.neck, sHeld.hand.z };
+    player->actor.velocity.y = 0.0f;
+    player->linearVelocity = 0.0f;
+}
+
+static void OnHeroPlayerUpdate() {
+    UpdateHeld();
+}
+
+static void RegisterInvasionGrab() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayerUpdate>(OnHeroPlayerUpdate);
+}
+
+static RegisterShipInitFunc grabInitFunc(RegisterInvasionGrab, {});
+
+bool GdfInvasion_IsHeld() {
+    return sHeld.held;
 }
