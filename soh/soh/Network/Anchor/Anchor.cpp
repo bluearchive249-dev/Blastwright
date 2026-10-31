@@ -3,6 +3,7 @@
 #include "Anchor.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/ObjectExtension/ObjectExtension.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 extern "C" {
 #include "macros.h"
@@ -172,6 +173,8 @@ void Anchor::ProcessIncomingPacketQueue() {
                 HandlePacket_UpdateRoomState(payload);
             else if (packetType == UPDATE_DUNGEON_ITEMS)
                 HandlePacket_UpdateDungeonItems(payload);
+            else if (packetType.rfind("GDF_", 0) == 0)
+                GdfInvasion_HandlePacket(payload); // SoH: Play as Ganondorf, Invasion mode
         } catch (const std::exception& e) {
             SPDLOG_ERROR("[Anchor] Exception while processing incoming packet {}", e.what());
             SPDLOG_ERROR("[Anchor] Packet: {}", payload.dump());

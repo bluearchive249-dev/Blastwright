@@ -58,6 +58,20 @@ void GdfInvasion_PuppetDestroyed(Actor* puppet);
 
 // ovl_Boss_Ganon: the local Ganondorf's pose to send
 s32 BossGanon_Player_GetNetPose(GdfNetPose* out);
+// ovl_Boss_Ganon: blocking (a Link's hits do half), a hit's flinch, casting, and being pacified
+s32 BossGanon_Player_IsBlockingNet(void);
+void BossGanon_Player_NetHurt(s32 heavy);
+void BossGanon_Player_CastPose(void);
+void BossGanon_Player_NetPacified(void);
+
+// Ganondorf may start an attack (not while his Dark Arts menu is open or he's pacified)
+s32 GdfInvasion_CanAct(void);
+// His C-buttons: true when a Dark Art on it was cast (or tried), so the button does nothing else
+s32 GdfInvasion_HandleCButtons(PlayState* play);
+// From KaleidoSetup_Update: true when START opened or closed his Dark Arts menu instead of pausing
+s32 GdfInvasion_KaleidoHook(PlayState* play);
+// From Player: what the Dark Arts menu, banishment and curses do to the local Link's input
+void GdfInvasion_FilterLinkInput(PlayState* play, Input* input);
 
 #ifdef __cplusplus
 }
@@ -71,6 +85,10 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload);
 // Called from the Anchor dummy of each other player: true when that player is Ganondorf (the dummy Link isn't drawn)
 bool GdfInvasion_UpdateDummy(Actor* dummy, uint32_t clientId, bool inScene);
 bool GdfInvasion_IsClientGanondorf(uint32_t clientId);
+// A Link's side: the dummy of the Ganondorf player (his hitbox for the Links' attacks on his Resolve)
+bool GdfInvasion_UpdateGanondorfDummy(Actor* actor, uint32_t clientId);
+// Invasion packets (GDF_*): hits, curses, pacification, chat
+void GdfInvasion_HandlePacket(const nlohmann::json& payload);
 // The lobby (seats, start) and options, in the Anchor menu
 void GdfInvasion_DrawMenu();
 // The lobby's seat (client state) and the game's start (room state), along with Anchor's own

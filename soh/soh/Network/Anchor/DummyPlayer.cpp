@@ -178,12 +178,14 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
         gSaveContext.equips.buttonItems[0] = originalButtonItem0;
     }
 
-    // Invasion mode: Ganondorf (the puppet, or the Invader's own game) can't hurt Link, and for now Link can't hurt him
-    if (isGanondorf || GdfInvasion_IsInvader()) {
+    // Invasion mode: Ganondorf can't hurt a Link (no PvP from him); a Link's hits go to his Resolve instead
+    if (isGanondorf) {
+        // His hitbox: the Links' attacks wear down his Resolve
+        GdfInvasion_UpdateGanondorfDummy(actor, clientId);
+        return;
+    }
+    if (GdfInvasion_IsInvader()) {
         actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
-        if (isGanondorf) {
-            actor->shape.shadowAlpha = 0;
-        }
         return;
     }
 

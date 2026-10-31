@@ -15,12 +15,14 @@
 // See the project doc "PlayAsGanondorf-InvasionMode" for the rest of the plan (Resolve, the Dark Arts menu, ...).
 
 #include <cmath>
+#include <deque>
 #include <map>
 #include <vector>
 #include <string>
 
 #include <imgui.h>
 #include <libultraship/bridge/consolevariablebridge.h>
+#include <libultraship/bridge/controllerbridge.h>
 #include <ship/Context.h>
 #include <ship/window/Window.h>
 #include <ship/window/gui/GuiWindow.h>
@@ -313,7 +315,8 @@ static void DrawArrow(ImDrawList* list, ImVec2 c, float angle, float size, ImU32
     list->AddTriangleFilled(rot(0.0f, -size), rot(size * 0.7f, size * 0.7f), rot(-size * 0.7f, size * 0.7f), col);
 }
 
-void GdfInvasionHud::Draw() {
+// The Links' names, areas and arrows (Ganondorf only)
+static void DrawLinkLocator() {
     PlayState* play = gPlayState;
 
     if (!GdfInvasion_IsInvader() || !Anchor::Instance->isConnected || !Anchor::Instance->IsSaveLoaded() ||
@@ -605,6 +608,11 @@ void GdfInvasion_DrawMenu() {
                            "it harder. Ganondorf can never hurt a Link directly.");
         return;
     }
+    bool chat = CVarGetInteger(CVAR_INVASION("Chat"), 1) != 0;
+    if (ImGui::Checkbox("Chat (press T in game)", &chat)) {
+        CVarSetInteger(CVAR_INVASION("Chat"), chat ? 1 : 0);
+        SaveCVars();
+    }
     if (!Anchor::Instance->isEnabled || !Anchor::Instance->isConnected) {
         ImGui::TextWrapped("Connect to a room (above) to open the lobby. Everyone uses the same Room ID.");
         return;
@@ -712,3 +720,874 @@ static void RegisterGanondorfInvasionLobby() {
 }
 
 static RegisterShipInitFunc lobbyInitFunc(RegisterGanondorfInvasionLobby, {});
+
+// =================================================================================================
+// Resolve, the Dark Arts and the chat
+// =================================================================================================
+//
+// Resolve: the Links' hits on Ganondorf wear down his Resolve (120). At 0 he's pacified: banished for 30 s (45, 60
+// when it keeps happening), then he comes back at the area's entrance. It refills slowly when he isn't being hit.
+//
+// The Dark Arts: Ganondorf's item menu (START; Z + START still pauses), a 6 x 4 grid, one row per kind. He puts arts
+// on C-Left / C-Down / C-Right like Link's items and casts them with those buttons, paying with his magic bar (which
+// refills on its own in Invasion mode). The curses work now: they're cast on the nearest Link in his area and run
+// in that Link's game. Nothing can be cast during the truce.
+//
+// The chat: T opens it (Enter sends, Escape closes); everyone in the room sees the messages.
+
+#define GDF_FPS 20
+#define GDF_RESOLVE_MAX 120.0f
+#define GDF_CAST_RANGE 2000.0f
+
+#define GDF_PKT_HIT "GDF_HIT"
+#define GDF_PKT_CURSE "GDF_CURSE"
+#define GDF_PKT_CURSE_ACK "GDF_CURSE_ACK"
+#define GDF_PKT_PACIFIED "GDF_PACIFIED"
+#define GDF_PKT_CHAT "GDF_CHAT"
+
+enum DarkArtKind { ART_OBSTACLE, ART_MONSTER, ART_CURSE, ART_OWN };
+
+struct DarkArt {
+    const char* name;
+    DarkArtKind kind;
+    int cost;     // magic (the full bar is 96)
+    int cooldown; // seconds
+    int duration; // seconds (curses)
+    bool ready;   // built yet
+    const char* desc;
+};
+
+#define GDF_ART_COLS 6
+#define GDF_ART_ROWS 4
+#define GDF_ART_COUNT (GDF_ART_COLS * GDF_ART_ROWS)
+
+// Row by row: obstacles, monsters, curses, his own. Curses are index 12 onward.
+static const DarkArt sArts[GDF_ART_COUNT] = {
+    { "Red Ice Wall", ART_OBSTACLE, 14, 8, 20, false, "A wall of red ice across a path. Melts with fire." },
+    { "Wall of Flame", ART_OBSTACLE, 19, 10, 15, false, "A line of rising and falling fire." },
+    { "Rolling Boulders", ART_OBSTACLE, 24, 15, 0, false, "Three boulders roll toward the marker." },
+    { "Spike Trap", ART_OBSTACLE, 14, 8, 30, false, "A sliding blade guards a spot." },
+    { "Iron Bars", ART_OBSTACLE, 19, 20, 15, false, "The nearest door to Link is barred shut." },
+    { "Quicksand", ART_OBSTACLE, 24, 20, 20, false, "A circle of sinking sand." },
+    { "Ambush Ring", ART_MONSTER, 19, 15, 0, false, "Four small monsters rise around Link." },
+    { "Flank", ART_MONSTER, 24, 20, 0, false, "Two monsters, ahead of and behind Link." },
+    { "Swarm", ART_MONSTER, 24, 20, 0, false, "Keese circle above Link, then dive." },
+    { "Waves", ART_MONSTER, 34, 40, 0, false, "Three waves of three monsters." },
+    { "Sentinel", ART_MONSTER, 29, 30, 0, false, "One tough monster on Link's path." },
+    { "Duel", ART_MONSTER, 48, 60, 40, false, "Link is walled in with a Stalfos." },
+    { "Backwards Path", ART_CURSE, 19, 30, 12, true, "Link's controls are reversed." },
+    { "Frozen Ground", ART_CURSE, 14, 25, 15, true, "The ground under Link turns slippery." },
+    { "Iron Weight", ART_CURSE, 14, 25, 15, true, "Link is weighed down by iron (not in water)." },
+    { "Shrink", ART_CURSE, 19, 30, 20, true, "Link shrinks to a fraction of his size." },
+    { "Sealed Hand", ART_CURSE, 24, 40, 20, true, "One of Link's C-button items is sealed." },
+    { "Blinding Gloom", ART_CURSE, 19, 30, 25, true, "Darkness closes in around Link." },
+    { "Lost Bearings", ART_CURSE, 14, 30, 15, true, "Link can't Z-target." },
+    { "Ghostly Gale", ART_CURSE, 19, 30, 15, true, "Gusts of wind push Link about." },
+    { "Phantom Step", ART_OWN, 19, 30, 0, false, "Ganondorf steps out of sight." },
+    { "Eye of Ganon", ART_OWN, 10, 10, 10, false, "Watch Link from afar." },
+    { "Shadow Veil", ART_OWN, 24, 45, 15, false, "Ganondorf turns invisible to Link." },
+    { "Rupee Tithe", ART_OWN, 14, 60, 0, false, "Takes 20 rupees from Link." },
+};
+
+#define GDF_FIRST_CURSE 12
+static const char* sCurseMessages[8] = {
+    "has reversed your path!", "has frozen the ground!",  "weighs you down with iron!", "has shrunk you!",
+    "has sealed your hand!",   "has cast a blinding gloom!", "has stolen your bearings!", "summons a ghostly gale!",
+};
+
+static const u16 sCButtons[3] = { BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT };
+static const char* sCNames[3] = { "C-Left", "C-Down", "C-Right" };
+
+// ---- Ganondorf's side ----
+static float sResolve = GDF_RESOLVE_MAX;
+static u32 sLastHitFrame = 0;
+static u32 sBanishedUntil = 0;
+static u32 sStunnedUntil = 0;
+static int sPacifyCount = 0;
+static u32 sLastPacifyFrame = 0;
+static u32 sArtReady[GDF_ART_COUNT]; // frame each art can be cast again
+static bool sMenuOpen = false;
+static int sCursor = GDF_FIRST_CURSE;
+static u32 sMenuMoveFrame = 0;
+static std::string sCastMessage;
+static u32 sCastMessageUntil = 0;
+
+static int SlotArt(int slot) {
+    static const char* sCVars[3] = { CVAR_INVASION("Slot0"), CVAR_INVASION("Slot1"), CVAR_INVASION("Slot2") };
+    return CVarGetInteger(sCVars[slot], -1);
+}
+
+static void SetSlotArt(int slot, int art) {
+    static const char* sCVars[3] = { CVAR_INVASION("Slot0"), CVAR_INVASION("Slot1"), CVAR_INVASION("Slot2") };
+    for (int i = 0; i < 3; i++) {
+        if ((i != slot) && (SlotArt(i) == art)) {
+            CVarSetInteger(sCVars[i], -1); // an art sits on one button at a time
+        }
+    }
+    CVarSetInteger(sCVars[slot], art);
+    SaveCVars();
+}
+
+static bool IsBanished() {
+    return sFrame < sBanishedUntil;
+}
+
+static bool GameStarted() {
+    return GdfInvasion_Role() != GDF_INVASION_OFF;
+}
+
+extern "C" s32 GdfInvasion_CanAct(void) {
+    if (!GdfInvasion_IsInvader()) {
+        return true;
+    }
+    return !sMenuOpen && !IsBanished();
+}
+
+static void Flash(const std::string& message) {
+    sCastMessage = message;
+    sCastMessageUntil = sFrame + 3 * GDF_FPS;
+}
+
+// The Link a Dark Art goes to: the nearest one in his area, close enough
+static uint32_t FindTargetLink(PlayState* play) {
+    Player* self = GET_PLAYER(play);
+    uint32_t best = 0;
+    float bestDist = GDF_CAST_RANGE;
+
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (client.self || !client.online || !client.isSaveLoaded || (client.sceneNum != play->sceneNum) ||
+            GdfInvasion_IsClientGanondorf(clientId) || (client.player == nullptr)) {
+            continue;
+        }
+        Vec3f to = client.posRot.pos;
+        float d = Math_Vec3f_DistXYZ(&self->actor.world.pos, &to);
+        if (d < bestDist) {
+            bestDist = d;
+            best = clientId;
+        }
+    }
+    return best;
+}
+
+static void TryCast(PlayState* play, int slot) {
+    int art = SlotArt(slot);
+
+    if ((art < 0) || (art >= GDF_ART_COUNT)) {
+        return;
+    }
+    const DarkArt& a = sArts[art];
+    if (!a.ready) {
+        Flash(std::string(a.name) + " isn't ready yet (coming in a later version)");
+        Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+    if (!GdfInvasion_AdventureStarted()) {
+        Flash("The truce holds until a Link enters the Deku Tree");
+        Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+    if (sFrame < sStunnedUntil) {
+        return;
+    }
+    if (sFrame < sArtReady[art]) {
+        Flash(std::string(a.name) + ": " + std::to_string((sArtReady[art] - sFrame) / GDF_FPS + 1) + " s");
+        Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+    if (gSaveContext.magic < a.cost) {
+        Flash("Not enough magic");
+        Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+    uint32_t target = FindTargetLink(play);
+    if (target == 0) {
+        Flash("No Link close enough");
+        Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+    // Paid now (given back if that Link's game refuses it)
+    gSaveContext.magic -= a.cost;
+    sArtReady[art] = sFrame + a.cooldown * GDF_FPS;
+    nlohmann::json payload;
+    payload["type"] = GDF_PKT_CURSE;
+    payload["targetClientId"] = target;
+    payload["curse"] = art - GDF_FIRST_CURSE;
+    payload["art"] = art;
+    payload["duration"] = a.duration;
+    Anchor::Instance->SendJsonToRemote(payload);
+    BossGanon_Player_CastPose();
+    Flash(std::string(a.name) + " on " + Anchor::Instance->clients[target].name);
+}
+
+extern "C" s32 GdfInvasion_HandleCButtons(PlayState* play) {
+    Input* input = &play->state.input[0];
+
+    if (!GdfInvasion_IsInvader() || !GameStarted()) {
+        return false;
+    }
+    for (int slot = 0; slot < 3; slot++) {
+        if (CHECK_BTN_ALL(input->press.button, sCButtons[slot]) && (SlotArt(slot) >= 0)) {
+            TryCast(play, slot);
+            return true;
+        }
+    }
+    return false;
+}
+
+// START opens and closes the menu; in it the D-pad or stick moves, a C-button puts the art on that button
+extern "C" s32 GdfInvasion_KaleidoHook(PlayState* play) {
+    Input* input = &play->state.input[0];
+
+    if (!GdfInvasion_IsInvader() || !GameStarted()) {
+        sMenuOpen = false;
+        return false;
+    }
+    if (!sMenuOpen) {
+        if (CHECK_BTN_ALL(input->press.button, BTN_START) && !CHECK_BTN_ALL(input->cur.button, BTN_Z) &&
+            (play->pauseCtx.state == 0) && !Player_InCsMode(play)) {
+            sMenuOpen = true;
+            Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            return true;
+        }
+        return false;
+    }
+    // Closing
+    if (CHECK_BTN_ALL(input->press.button, BTN_START) || CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        sMenuOpen = false;
+        Audio_PlaySfxGeneral(NA_SE_SY_CANCEL, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return true;
+    }
+    // Moving
+    int dx = 0;
+    int dy = 0;
+    if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
+        dx = -1;
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_DRIGHT)) {
+        dx = 1;
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
+        dy = -1;
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN)) {
+        dy = 1;
+    } else if (sFrame - sMenuMoveFrame > 4) {
+        if (input->rel.stick_x < -40) {
+            dx = -1;
+        } else if (input->rel.stick_x > 40) {
+            dx = 1;
+        } else if (input->rel.stick_y > 40) {
+            dy = -1;
+        } else if (input->rel.stick_y < -40) {
+            dy = 1;
+        }
+    }
+    if ((dx != 0) || (dy != 0)) {
+        int col = (sCursor % GDF_ART_COLS + dx + GDF_ART_COLS) % GDF_ART_COLS;
+        int row = (sCursor / GDF_ART_COLS + dy + GDF_ART_ROWS) % GDF_ART_ROWS;
+        sCursor = row * GDF_ART_COLS + col;
+        sMenuMoveFrame = sFrame;
+        Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    }
+    // Onto a C-button
+    for (int slot = 0; slot < 3; slot++) {
+        if (CHECK_BTN_ALL(input->press.button, sCButtons[slot])) {
+            SetSlotArt(slot, sCursor);
+            Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+    }
+    return true; // no pausing while it's open
+}
+
+// ---- A Link's side: the curses on him ----
+struct ActiveCurse {
+    u32 until = 0;
+    bool active = false;
+};
+static ActiveCurse sCurses[8];
+static u16 sSealedButton = 0;
+static s8 sBootsBefore = EQUIP_VALUE_BOOTS_KOKIRI;
+static uint32_t sCurseFrom = 0;
+
+static bool LinkCanBeCursed(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    if ((play == nullptr) || (player == nullptr) || Player_InCsMode(play) ||
+        (play->csCtx.state != CS_STATE_IDLE) || (play->msgCtx.msgMode != MSGMODE_NONE) ||
+        (play->transitionTrigger != TRANS_TRIGGER_OFF) || (play->pauseCtx.state != 0)) {
+        return false;
+    }
+    return !(player->stateFlags1 & (PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_GETTING_ITEM |
+                                     PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE));
+}
+
+static void SetCurse(int curse, bool on) {
+    PlayState* play = gPlayState;
+
+    switch (curse) {
+        case 0:
+            GameInteractor::State::ReverseControlsActive = on;
+            break;
+        case 1:
+            GameInteractor::State::SlipperyFloorActive = on;
+            break;
+        case 2:
+            if (play != nullptr) {
+                if (on) {
+                    sBootsBefore = (s8)(GET_PLAYER(play)->currentBoots + 1);
+                    GameInteractor::RawAction::ForceEquipBoots(EQUIP_VALUE_BOOTS_IRON);
+                } else {
+                    GameInteractor::RawAction::ForceEquipBoots(sBootsBefore);
+                }
+            }
+            break;
+        case 3:
+            GameInteractor::State::LinkSize = on ? GI_LINK_SIZE_MINISH : GI_LINK_SIZE_RESET;
+            break;
+        case 4:
+            sSealedButton = on ? sCButtons[(int)(Rand_ZeroOne() * 2.99f)] : 0;
+            break;
+        case 5:
+            // Drawn by the HUD (the darkness)
+            break;
+        case 6:
+            GameInteractor::State::DisableZTargetingActive = on;
+            break;
+        case 7:
+            GameInteractor::RawAction::SetRandomWind(on);
+            break;
+    }
+}
+
+static void HandleCurse(const nlohmann::json& payload) {
+    PlayState* play = gPlayState;
+    int curse = payload.value("curse", -1);
+    int duration = payload.value("duration", 10);
+    uint32_t from = payload.value("clientId", 0u);
+    bool ok = (curse >= 0) && (curse < 8) && GdfInvasion_IsHero() && LinkCanBeCursed(play) && !sCurses[curse].active;
+
+    if (ok && (curse == 2) && (GET_PLAYER(play)->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
+        ok = false; // no iron in water
+    }
+    if (ok) {
+        sCurses[curse].active = true;
+        sCurses[curse].until = sFrame + duration * GDF_FPS;
+        sCurseFrom = from;
+        SetCurse(curse, true);
+        Audio_PlaySfxGeneral(NA_SE_EN_GANON_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Notification::Emit({ .prefix = "Ganondorf", .message = sCurseMessages[curse] });
+    }
+    nlohmann::json ack;
+    ack["type"] = GDF_PKT_CURSE_ACK;
+    ack["targetClientId"] = from;
+    ack["ok"] = ok;
+    ack["art"] = payload.value("art", -1);
+    Anchor::Instance->SendJsonToRemote(ack);
+}
+
+static void UpdateCurses() {
+    for (int i = 0; i < 8; i++) {
+        if (sCurses[i].active && ((sFrame >= sCurses[i].until) || !GdfInvasion_IsHero())) {
+            sCurses[i].active = false;
+            SetCurse(i, false);
+        }
+    }
+}
+
+extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
+    // Ganondorf: his menu open, or banished
+    if (GdfInvasion_IsInvader() && (sMenuOpen || IsBanished())) {
+        memset(input, 0, sizeof(*input));
+        return;
+    }
+    // A Link: a sealed C-button
+    if (sSealedButton != 0) {
+        input->cur.button &= ~sSealedButton;
+        input->press.button &= ~sSealedButton;
+    }
+}
+
+// ---- Resolve ----
+static const DamageTable sResolveTable = {
+    /* Deku nut      */ DMG_ENTRY(0, 1), // stuns him
+    /* Deku stick    */ DMG_ENTRY(2, 0),
+    /* Slingshot     */ DMG_ENTRY(1, 0),
+    /* Explosive     */ DMG_ENTRY(4, 0),
+    /* Boomerang     */ DMG_ENTRY(0, 1),
+    /* Normal arrow  */ DMG_ENTRY(2, 0),
+    /* Hammer swing  */ DMG_ENTRY(5, 3),
+    /* Hookshot      */ DMG_ENTRY(0, 1),
+    /* Kokiri sword  */ DMG_ENTRY(2, 0),
+    /* Master sword  */ DMG_ENTRY(3, 0),
+    /* Giant's Knife */ DMG_ENTRY(5, 0),
+    /* Fire arrow    */ DMG_ENTRY(5, 0),
+    /* Ice arrow     */ DMG_ENTRY(5, 0),
+    /* Light arrow   */ DMG_ENTRY(15, 2),
+    /* Unk arrow 1   */ DMG_ENTRY(2, 0),
+    /* Unk arrow 2   */ DMG_ENTRY(2, 0),
+    /* Unk arrow 3   */ DMG_ENTRY(2, 0),
+    /* Fire magic    */ DMG_ENTRY(8, 3),
+    /* Ice magic     */ DMG_ENTRY(5, 0),
+    /* Light magic   */ DMG_ENTRY(8, 2),
+    /* Shield        */ DMG_ENTRY(0, 0),
+    /* Mirror Ray    */ DMG_ENTRY(0, 0),
+    /* Kokiri spin   */ DMG_ENTRY(4, 0),
+    /* Giant spin    */ DMG_ENTRY(10, 3),
+    /* Master spin   */ DMG_ENTRY(6, 0),
+    /* Kokiri jump   */ DMG_ENTRY(4, 0),
+    /* Giant jump    */ DMG_ENTRY(10, 3),
+    /* Master jump   */ DMG_ENTRY(6, 3),
+    /* Unknown 1     */ DMG_ENTRY(0, 0),
+    /* Unblockable   */ DMG_ENTRY(0, 0),
+    /* Hammer jump   */ DMG_ENTRY(10, 3),
+    /* Unknown 2     */ DMG_ENTRY(0, 0),
+};
+
+static std::map<uint32_t, u32> sHitCooldown;
+
+// A Link's side: his dummy of Ganondorf was hit
+bool GdfInvasion_UpdateGanondorfDummy(Actor* actor, uint32_t clientId) {
+    PlayState* play = gPlayState;
+    Player* dummy = (Player*)actor;
+    auto it = sClients.find(clientId);
+    bool hittable = (it != sClients.end()) && it->second.pose.valid && !it->second.pose.hidden && GameStarted();
+
+    actor->shape.shadowAlpha = 0;
+    if (!hittable) {
+        actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
+        return true;
+    }
+    actor->flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED; // Links can lock on to him
+    actor->colChkInfo.damageTable = (DamageTable*)&sResolveTable;
+    dummy->cylinder.info.bumperFlags &= ~BUMP_NO_HITMARK;
+    dummy->cylinder.dim.radius = 40;
+    dummy->cylinder.dim.height = 125;
+
+    if ((dummy->cylinder.base.acFlags & AC_HIT) && (sFrame >= sHitCooldown[clientId])) {
+        nlohmann::json payload;
+        payload["type"] = GDF_PKT_HIT;
+        payload["targetClientId"] = clientId;
+        payload["amount"] = actor->colChkInfo.damage;
+        payload["effect"] = actor->colChkInfo.damageEffect;
+        Anchor::Instance->SendJsonToRemote(payload);
+        sHitCooldown[clientId] = sFrame + 8;
+    }
+    Collider_UpdateCylinder(actor, &dummy->cylinder);
+    dummy->cylinder.dim.radius = 40;
+    dummy->cylinder.dim.height = 125;
+    CollisionCheck_SetAC(play, &play->colChkCtx, &dummy->cylinder.base);
+    Collider_ResetCylinderAC(play, &dummy->cylinder.base);
+    return true;
+}
+
+static void HandleHit(const nlohmann::json& payload) {
+    float amount = (float)payload.value("amount", 0);
+    int effect = payload.value("effect", 0);
+
+    if (!GdfInvasion_IsInvader() || IsBanished()) {
+        return;
+    }
+    if (effect == 1) {
+        sStunnedUntil = sFrame + 2 * GDF_FPS; // a Deku Nut: no casting for a moment
+    }
+    if (BossGanon_Player_IsBlockingNet()) {
+        amount *= 0.5f; // his cape takes half
+    }
+    if (amount <= 0.0f) {
+        BossGanon_Player_NetHurt(false);
+        return;
+    }
+    sResolve -= amount;
+    sLastHitFrame = sFrame;
+    BossGanon_Player_NetHurt(effect >= 2);
+    if (sResolve > 0.0f) {
+        return;
+    }
+    // Pacified
+    if (sFrame - sLastPacifyFrame > 5 * 60 * GDF_FPS) {
+        sPacifyCount = 0;
+    }
+    sPacifyCount++;
+    sLastPacifyFrame = sFrame;
+    int seconds = (sPacifyCount == 1) ? 30 : (sPacifyCount == 2) ? 45 : 60;
+    sBanishedUntil = sFrame + seconds * GDF_FPS;
+    sResolve = GDF_RESOLVE_MAX;
+    sMenuOpen = false;
+    BossGanon_Player_NetPacified();
+    nlohmann::json out;
+    out["type"] = GDF_PKT_PACIFIED;
+    out["by"] = Anchor::Instance->clients.count(payload.value("clientId", 0u))
+                    ? Anchor::Instance->clients[payload.value("clientId", 0u)].name
+                    : std::string("a Link");
+    out["seconds"] = seconds;
+    Anchor::Instance->SendJsonToRemote(out);
+    Notification::Emit({ .prefix = "Invasion",
+                         .message = "You've been pacified! Back in " + std::to_string(seconds) + " seconds." });
+}
+
+// ---- The chat ----
+struct ChatLine {
+    std::string name;
+    std::string text;
+    Color_RGB8 color;
+    u32 frame;
+};
+static std::deque<ChatLine> sChat;
+static bool sChatOpen = false;
+static bool sChatFocus = false;
+static char sChatInput[160] = "";
+#define GDF_CHAT_INPUT_BLOCK 0x4744
+
+static void AddChat(const std::string& name, const std::string& text, Color_RGB8 color) {
+    sChat.push_back({ name, text, color, sFrame });
+    while (sChat.size() > 8) {
+        sChat.pop_front();
+    }
+}
+
+static void SendChat(const std::string& text) {
+    nlohmann::json payload;
+    payload["type"] = GDF_PKT_CHAT;
+    payload["name"] = CVarGetString(CVAR_REMOTE_ANCHOR("Name"), "");
+    payload["text"] = text;
+    Anchor::Instance->SendJsonToRemote(payload);
+    Color_RGBA8 c = CVarGetColor(CVAR_REMOTE_ANCHOR("Color.Value"), { 100, 255, 100, 255 });
+    AddChat(CVarGetString(CVAR_REMOTE_ANCHOR("Name"), "You"), text, { c.r, c.g, c.b });
+}
+
+// ---- Packets from the others ----
+void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
+    std::string type = payload.value("type", std::string());
+    uint32_t from = payload.value("clientId", 0u);
+
+    if (type == GDF_PKT_HIT) {
+        HandleHit(payload);
+    } else if (type == GDF_PKT_CURSE) {
+        HandleCurse(payload);
+    } else if (type == GDF_PKT_CURSE_ACK) {
+        int art = payload.value("art", -1);
+        if (!payload.value("ok", false) && (art >= 0) && (art < GDF_ART_COUNT)) {
+            // Refused (that Link was in a cutscene, talking, ...): the magic comes back, and the cooldown resets
+            gSaveContext.magic = MIN(gSaveContext.magic + sArts[art].cost, gSaveContext.magicCapacity);
+            sArtReady[art] = sFrame;
+            Flash(std::string(sArts[art].name) + " didn't take hold (try again)");
+        }
+    } else if (type == GDF_PKT_PACIFIED) {
+        if (GdfInvasion_IsHero()) {
+            Notification::Emit({ .prefix = "Invasion",
+                                 .message = payload.value("by", std::string("A Link")) +
+                                            " pacified Ganondorf! He's gone for " +
+                                            std::to_string(payload.value("seconds", 30)) + " seconds." });
+        }
+    } else if (type == GDF_PKT_CHAT) {
+        std::string name = payload.value("name", std::string("?"));
+        Color_RGB8 color = { 255, 255, 255 };
+        if (Anchor::Instance->clients.count(from)) {
+            color = Anchor::Instance->clients[from].color;
+            if (GdfInvasion_IsClientGanondorf(from)) {
+                color = { 220, 80, 255 };
+            }
+        }
+        AddChat(name, payload.value("text", std::string()), color);
+    }
+}
+
+// ---- Each frame ----
+static void TickInvasion() {
+    PlayState* play = gPlayState;
+
+    UpdateCurses();
+    if (!GdfInvasion_IsInvader() || (play == nullptr) || !GameStarted()) {
+        return;
+    }
+    // His menu closes with anything that takes over the screen
+    if (sMenuOpen && ((play->msgCtx.msgMode != MSGMODE_NONE) || Player_InCsMode(play) ||
+                      (play->transitionTrigger != TRANS_TRIGGER_OFF))) {
+        sMenuOpen = false;
+    }
+    if (gSaveContext.gameMode != GAMEMODE_NORMAL) {
+        return;
+    }
+    // His magic: the full bar, refilling on its own (faster when he keeps away from the Links)
+    if (!gSaveContext.isMagicAcquired || !gSaveContext.isDoubleMagicAcquired) {
+        gSaveContext.isMagicAcquired = true;
+        gSaveContext.isDoubleMagicAcquired = true;
+        gSaveContext.magicLevel = 2;
+        gSaveContext.magicFillTarget = 0x60;
+        gSaveContext.magicCapacity = 0x60;
+    }
+    if (!IsBanished() && (gSaveContext.magicState == MAGIC_STATE_IDLE) &&
+        (gSaveContext.magic < gSaveContext.magicCapacity)) {
+        bool far = FindTargetLink(play) == 0;
+        if ((sFrame % (far ? GDF_FPS : (GDF_FPS * 3 / 2))) == 0) {
+            gSaveContext.magic++;
+        }
+    }
+    // Resolve refills once he hasn't been hit for 5 s
+    if (!IsBanished() && (sResolve < GDF_RESOLVE_MAX) && (sFrame - sLastHitFrame > 5 * GDF_FPS)) {
+        sResolve = MIN(GDF_RESOLVE_MAX, sResolve + 2.0f / GDF_FPS);
+    }
+    // Back from banishment: at the area's entrance
+    static bool sWasBanished = false;
+    if (sWasBanished && !IsBanished()) {
+        play->nextEntranceIndex = gSaveContext.entranceIndex;
+        play->transitionTrigger = TRANS_TRIGGER_START;
+        play->transitionType = TRANS_TYPE_FADE_BLACK;
+        gSaveContext.respawnFlag = 0;
+        gSaveContext.cutsceneIndex = 0;
+    }
+    sWasBanished = IsBanished();
+}
+
+static void RegisterInvasionPlay() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(TickInvasion);
+}
+
+static RegisterShipInitFunc playInitFunc(RegisterInvasionPlay, {});
+
+// ---- HUD parts ----
+
+static ImU32 Col(int r, int g, int b, int a) {
+    return IM_COL32(r, g, b, a);
+}
+
+static void DrawText(ImDrawList* list, float size, ImVec2 pos, ImU32 col, const std::string& text) {
+    list->AddText(ImGui::GetFont(), size, ImVec2(pos.x + 1, pos.y + 1), Col(0, 0, 0, 140), text.c_str());
+    list->AddText(ImGui::GetFont(), size, pos, col, text.c_str());
+}
+
+// Ganondorf: his Resolve, his C-button arts, banishment, and messages
+static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
+    ImDrawList* list = ImGui::GetForegroundDrawList(vp);
+    float font = ImGui::GetFontSize() * 0.8f * fmaxf(scale, 1.0f);
+
+    // Resolve, under the hearts and magic
+    float x = vp->Pos.x + 26.0f * scale;
+    float y = vp->Pos.y + 62.0f * scale;
+    float w = 110.0f * scale;
+    float h = 6.0f * scale;
+    float f = CLAMP(sResolve / GDF_RESOLVE_MAX, 0.0f, 1.0f);
+    list->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), Col(0, 0, 0, 120), 2.0f);
+    list->AddRectFilled(ImVec2(x, y), ImVec2(x + w * f, y + h), Col(200, 40, 70, 210), 2.0f);
+    DrawText(list, font * 0.8f, ImVec2(x + w + 6.0f, y - font * 0.25f), Col(230, 200, 210, 170), "Resolve");
+
+    // The arts on his C-buttons, under the buttons
+    float cx = vp->Pos.x + vp->Size.x - 190.0f * scale;
+    float cy = vp->Pos.y + 70.0f * scale;
+    for (int slot = 0; slot < 3; slot++) {
+        int art = SlotArt(slot);
+        if ((art < 0) || (art >= GDF_ART_COUNT)) {
+            continue;
+        }
+        const DarkArt& a = sArts[art];
+        bool cooling = sFrame < sArtReady[art];
+        bool affordable = gSaveContext.magic >= a.cost;
+        std::string text = std::string(sCNames[slot]) + ": " + a.name + " (" + std::to_string(a.cost) + ")";
+        if (cooling) {
+            text += "  " + std::to_string((sArtReady[art] - sFrame) / GDF_FPS + 1) + "s";
+        }
+        ImU32 c = (!a.ready || cooling || !affordable) ? Col(170, 160, 180, 120) : Col(225, 190, 255, 200);
+        DrawText(list, font * 0.85f, ImVec2(cx, cy), c, text);
+        cy += font;
+    }
+
+    // Banished
+    if (IsBanished()) {
+        list->AddRectFilled(vp->Pos, ImVec2(vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y), Col(10, 0, 20, 150));
+        std::string t = "Pacified... back in " + std::to_string((sBanishedUntil - sFrame) / GDF_FPS + 1) + " s";
+        ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(font * 1.6f, FLT_MAX, 0.0f, t.c_str());
+        DrawText(list, font * 1.6f,
+                 ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, vp->Pos.y + (vp->Size.y - sz.y) * 0.5f),
+                 Col(230, 200, 255, 230), t);
+    }
+
+    // A message about his last cast
+    if (sFrame < sCastMessageUntil) {
+        ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, sCastMessage.c_str());
+        DrawText(list, font, ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, vp->Pos.y + vp->Size.y * 0.72f),
+                 Col(230, 210, 255, 220), sCastMessage);
+    }
+}
+
+// Ganondorf's Dark Arts menu
+static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
+    ImDrawList* list = ImGui::GetForegroundDrawList(vp);
+    float font = ImGui::GetFontSize() * 0.75f * fmaxf(scale, 1.0f);
+    float cellW = 92.0f * scale;
+    float cellH = 40.0f * scale;
+    float gap = 4.0f * scale;
+    float gridW = GDF_ART_COLS * cellW + (GDF_ART_COLS - 1) * gap;
+    float gridH = GDF_ART_ROWS * cellH + (GDF_ART_ROWS - 1) * gap;
+    float x0 = vp->Pos.x + (vp->Size.x - gridW) * 0.5f;
+    float y0 = vp->Pos.y + (vp->Size.y - gridH) * 0.5f;
+    static const char* sRows[GDF_ART_ROWS] = { "Obstacles", "Monsters", "Curses", "His own" };
+
+    list->AddRectFilled(ImVec2(x0 - 16 * scale, y0 - 46 * scale),
+                        ImVec2(x0 + gridW + 16 * scale, y0 + gridH + 52 * scale), Col(14, 4, 24, 215), 8.0f);
+    DrawText(list, font * 1.4f, ImVec2(x0, y0 - 40 * scale), Col(220, 170, 255, 255), "Dark Arts");
+    DrawText(list, font * 0.9f, ImVec2(x0 + 120 * scale, y0 - 34 * scale), Col(200, 190, 210, 190),
+             "D-Pad: choose   C: put on that button   START/B: close");
+
+    for (int i = 0; i < GDF_ART_COUNT; i++) {
+        const DarkArt& a = sArts[i];
+        int col = i % GDF_ART_COLS;
+        int row = i / GDF_ART_COLS;
+        ImVec2 p0(x0 + col * (cellW + gap), y0 + row * (cellH + gap));
+        ImVec2 p1(p0.x + cellW, p0.y + cellH);
+        bool selected = i == sCursor;
+        ImU32 bg = a.ready ? Col(60, 20, 80, 220) : Col(35, 30, 40, 200);
+        list->AddRectFilled(p0, p1, bg, 4.0f);
+        if (selected) {
+            list->AddRect(p0, p1, Col(255, 220, 120, 255), 4.0f, 0, 2.0f * scale);
+        }
+        DrawText(list, font * 0.85f, ImVec2(p0.x + 4 * scale, p0.y + 3 * scale),
+                 a.ready ? Col(240, 225, 255, 255) : Col(150, 140, 160, 200), a.name);
+        DrawText(list, font * 0.75f, ImVec2(p0.x + 4 * scale, p0.y + cellH - font * 0.95f),
+                 Col(160, 200, 255, 200), std::to_string(a.cost) + " magic");
+        for (int slot = 0; slot < 3; slot++) {
+            if (SlotArt(slot) == i) {
+                static const char* sTags[3] = { "<", "v", ">" };
+                DrawText(list, font * 0.9f, ImVec2(p1.x - 12 * scale, p0.y + 2 * scale), Col(255, 200, 60, 255),
+                         sTags[slot]);
+            }
+        }
+    }
+    // Rows and the selected art
+    for (int row = 0; row < GDF_ART_ROWS; row++) {
+        DrawText(list, font * 0.7f, ImVec2(x0 + gridW + 4 * scale, y0 + row * (cellH + gap) + 4 * scale),
+                 Col(180, 160, 200, 160), sRows[row]);
+    }
+    const DarkArt& sel = sArts[sCursor];
+    std::string desc = std::string(sel.desc) + "  (" + std::to_string(sel.cost) + " magic, " +
+                       std::to_string(sel.cooldown) + " s)" + (sel.ready ? "" : "  - coming later");
+    DrawText(list, font * 0.9f, ImVec2(x0, y0 + gridH + 12 * scale), Col(220, 210, 230, 230), desc);
+    if (!GdfInvasion_AdventureStarted()) {
+        DrawText(list, font * 0.85f, ImVec2(x0, y0 + gridH + 30 * scale), Col(255, 180, 120, 220),
+                 "Truce: nothing can be cast until a Link enters the Deku Tree.");
+    }
+}
+
+// A Link: what Ganondorf has cursed him with, and the gloom
+static void DrawHeroHud(ImGuiViewport* vp, float scale) {
+    ImDrawList* list = ImGui::GetForegroundDrawList(vp);
+    float font = ImGui::GetFontSize() * 0.8f * fmaxf(scale, 1.0f);
+
+    if (sCurses[5].active) {
+        // Darkness closing in from the edges
+        float w = vp->Size.x;
+        float h = vp->Size.y;
+        ImVec2 o = vp->Pos;
+        ImU32 dark = Col(0, 0, 0, 235);
+        ImU32 clear = Col(0, 0, 0, 0);
+        list->AddRectFilledMultiColor(o, ImVec2(o.x + w * 0.32f, o.y + h), dark, clear, clear, dark);
+        list->AddRectFilledMultiColor(ImVec2(o.x + w * 0.68f, o.y), ImVec2(o.x + w, o.y + h), clear, dark, dark,
+                                      clear);
+        list->AddRectFilledMultiColor(o, ImVec2(o.x + w, o.y + h * 0.3f), dark, dark, clear, clear);
+        list->AddRectFilledMultiColor(ImVec2(o.x, o.y + h * 0.7f), ImVec2(o.x + w, o.y + h), clear, clear, dark,
+                                      dark);
+        list->AddRectFilled(o, ImVec2(o.x + w, o.y + h), Col(0, 0, 0, 90));
+    }
+    float y = vp->Pos.y + vp->Size.y * 0.16f;
+    for (int i = 0; i < 8; i++) {
+        if (!sCurses[i].active) {
+            continue;
+        }
+        std::string t = std::string(sArts[GDF_FIRST_CURSE + i].name) + "  " +
+                        std::to_string((sCurses[i].until - sFrame) / GDF_FPS + 1) + "s";
+        ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, t.c_str());
+        DrawText(list, font, ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, y), Col(220, 120, 255, 220), t);
+        y += font * 1.1f;
+    }
+}
+
+// The chat: T to talk
+static void DrawChat(ImGuiViewport* vp, float scale) {
+    if (!CVarGetInteger(CVAR_INVASION("Chat"), 1) || !Anchor::Instance->isConnected) {
+        if (sChatOpen) {
+            sChatOpen = false;
+            ControllerUnblockGameInput(GDF_CHAT_INPUT_BLOCK);
+        }
+        return;
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    if (!sChatOpen && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_T, false)) {
+        sChatOpen = true;
+        sChatFocus = true;
+        sChatInput[0] = '\0';
+        ControllerBlockGameInput(GDF_CHAT_INPUT_BLOCK);
+    }
+
+    ImDrawList* list = ImGui::GetForegroundDrawList(vp);
+    float font = ImGui::GetFontSize() * 0.85f * fmaxf(scale, 1.0f);
+    float x = vp->Pos.x + 16.0f * scale;
+    float y = vp->Pos.y + vp->Size.y * 0.62f;
+    for (const ChatLine& line : sChat) {
+        u32 age = sFrame - line.frame;
+        int alpha = sChatOpen ? 230 : (age < 10 * GDF_FPS) ? 220 : (age < 12 * GDF_FPS) ? 220 - (age - 10 * GDF_FPS) * 5 : 0;
+        if (alpha <= 0) {
+            continue;
+        }
+        std::string name = line.name + ": ";
+        ImVec2 nsz = ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, name.c_str());
+        DrawText(list, font, ImVec2(x, y), Col(line.color.r, line.color.g, line.color.b, alpha), name);
+        DrawText(list, font, ImVec2(x + nsz.x, y), Col(240, 240, 240, alpha), line.text);
+        y += font * 1.15f;
+    }
+
+    if (!sChatOpen) {
+        return;
+    }
+    ImGui::SetNextWindowPos(ImVec2(x, y + 4.0f));
+    ImGui::SetNextWindowSize(ImVec2(fminf(vp->Size.x * 0.45f, 520.0f * scale), 0));
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    ImGui::Begin("##GdfChat", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoDocking);
+    if (sChatFocus) {
+        ImGui::SetKeyboardFocusHere();
+        sChatFocus = false;
+    }
+    ImGui::SetNextItemWidth(-1);
+    bool send = ImGui::InputText("##GdfChatInput", sChatInput, sizeof(sChatInput),
+                                 ImGuiInputTextFlags_EnterReturnsTrue);
+    bool cancel = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    ImGui::End();
+    if (send || cancel) {
+        if (send && (sChatInput[0] != '\0')) {
+            SendChat(sChatInput);
+        }
+        sChatOpen = false;
+        ControllerUnblockGameInput(GDF_CHAT_INPUT_BLOCK);
+    }
+}
+
+void GdfInvasionHud::Draw() {
+    PlayState* play = gPlayState;
+
+    if ((Anchor::Instance == nullptr) || !Anchor::Instance->isEnabled) {
+        return;
+    }
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    float scale = vp->Size.y / 480.0f;
+
+    DrawChat(vp, scale);
+    if ((play == nullptr) || !Anchor::Instance->IsSaveLoaded() || (play->pauseCtx.state != 0)) {
+        return;
+    }
+    if (GdfInvasion_IsInvader() && GameStarted()) {
+        DrawInvaderHud(vp, scale);
+        if (sMenuOpen) {
+            DrawArtsMenu(vp, scale);
+        }
+    } else if (GdfInvasion_IsHero()) {
+        DrawHeroHud(vp, scale);
+    }
+    DrawLinkLocator();
+}
