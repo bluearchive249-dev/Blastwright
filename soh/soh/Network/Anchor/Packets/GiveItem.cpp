@@ -1,7 +1,6 @@
 #include <nlohmann/json.hpp>
 
 #include "soh/Network/Anchor/Anchor.h"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/Enhancements/randomizer/static_data.h"
 #include "soh/Notification/Notification.h"
 #include "soh/SohGui/ImGuiUtils.h"
@@ -19,10 +18,6 @@ extern PlayState* gPlayState;
 uint8_t incomingIceTrapsFromAnchor = 0;
 
 void Anchor::SendPacket_GiveItem(u16 modId, s16 getItemId) {
-    // Invasion mode: the Invader's own progress isn't shared (he only receives the Hero's)
-    if (GdfInvasion_IsInvader()) {
-        return;
-    }
     if (!IsSaveLoaded() || isProcessingIncomingPacket || !roomState.syncItemsAndFlags) {
         return;
     }

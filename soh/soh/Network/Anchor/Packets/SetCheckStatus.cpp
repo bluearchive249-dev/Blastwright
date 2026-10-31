@@ -1,7 +1,6 @@
 #include <nlohmann/json.hpp>
 
 #include "soh/Network/Anchor/Anchor.h"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/randomizer/randomizer_check_tracker.h"
 #include "soh/Enhancements/randomizer/randomizer.h"
@@ -16,10 +15,6 @@ static bool isResultOfHandling = false;
  */
 
 void Anchor::SendPacket_SetCheckStatus(RandomizerCheck rc) {
-    // Invasion mode: the Invader's own progress isn't shared (he only receives the Hero's)
-    if (GdfInvasion_IsInvader()) {
-        return;
-    }
     if (!IsSaveLoaded() || isResultOfHandling) {
         return;
     }

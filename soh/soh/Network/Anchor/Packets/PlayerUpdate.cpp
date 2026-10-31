@@ -1,6 +1,5 @@
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/JsonConversions.hpp"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include <nlohmann/json.hpp>
 
 extern "C" {
@@ -68,8 +67,6 @@ void Anchor::SendPacket_PlayerUpdate() {
     payload["unk_85C"] = player->unk_85C;
     payload["actionVar1"] = player->av1.actionVar1;
     payload["quiet"] = true;
-    // Invasion mode: the Invader's Ganondorf (his pose), for his puppet on the others' screens
-    GdfInvasion_WritePose(payload);
 
     for (auto& [clientId, client] : clients) {
         if (client.sceneNum == gPlayState->sceneNum && client.online && client.isSaveLoaded && !client.self) {
@@ -116,6 +113,5 @@ void Anchor::HandlePacket_PlayerUpdate(nlohmann::json payload) {
         client.unk_862 = payload.value("unk_862", (s16)0);
         client.unk_85C = payload.value("unk_85C", (f32)0);
         client.actionVar1 = payload.value("actionVar1", (s8)0);
-        GdfInvasion_ReadPose(clientId, payload);
     }
 }

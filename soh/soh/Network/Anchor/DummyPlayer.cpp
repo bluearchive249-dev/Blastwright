@@ -1,6 +1,5 @@
 #include "Anchor.h"
 #include "soh/Enhancements/nametag.h"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 extern "C" {
 #include "macros.h"
@@ -112,9 +111,6 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     }
 
     AnchorClient& client = Anchor::Instance->clients[clientId];
-    // Invasion mode: when this player is Ganondorf, his puppet stands in for this Link
-    bool isGanondorf = GdfInvasion_UpdateDummy(
-        actor, clientId, client.sceneNum == gPlayState->sceneNum && client.online && client.isSaveLoaded);
 
     if (client.sceneNum != gPlayState->sceneNum || !client.online || !client.isSaveLoaded) {
         actor->world.pos.x = -9999.0f;
@@ -178,17 +174,6 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
         gSaveContext.equips.buttonItems[0] = originalButtonItem0;
     }
 
-    // Invasion mode: Ganondorf can't hurt a Link (no PvP from him); a Link's hits go to his Resolve instead
-    if (isGanondorf) {
-        // His hitbox: the Links' attacks wear down his Resolve
-        GdfInvasion_UpdateGanondorfDummy(actor, clientId);
-        return;
-    }
-    if (GdfInvasion_IsInvader()) {
-        actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
-        return;
-    }
-
     if (Anchor::Instance->roomState.pvpMode == 0 ||
         (Anchor::Instance->roomState.pvpMode == 1 &&
          client.teamId == CVarGetString(CVAR_REMOTE_ANCHOR("TeamId"), "default"))) {
@@ -248,10 +233,6 @@ void DummyPlayer_Draw(Actor* actor, PlayState* play) {
     AnchorClient& client = Anchor::Instance->clients[clientId];
 
     if (client.sceneNum != gPlayState->sceneNum || !client.online || !client.isSaveLoaded) {
-        return;
-    }
-    // Invasion mode: Ganondorf's puppet is drawn instead
-    if (GdfInvasion_IsClientGanondorf(clientId)) {
         return;
     }
 

@@ -1,5 +1,4 @@
 #include "global.h"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 s16 sKaleidoSetupKscpPos0[] = { PAUSE_QUEST, PAUSE_EQUIP, PAUSE_ITEM, PAUSE_MAP };
 f32 sKaleidoSetupEyeX0[] = { 0.0f, 64.0f, 0.0f, -64.0f };
@@ -12,11 +11,6 @@ f32 sKaleidoSetupEyeZ1[] = { 0.0f, -64.0f, 0.0f, 64.0f };
 void KaleidoSetup_Update(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
-
-    // SoH: Play as Ganondorf, Invasion mode: START opens Ganondorf's Dark Arts menu (Z + START still pauses)
-    if (GdfInvasion_KaleidoHook(play)) {
-        return;
-    }
 
     if (pauseCtx->state == 0 && pauseCtx->debugState == 0 && play->gameOverCtx.state == GAMEOVER_INACTIVE &&
         play->transitionTrigger == TRANS_TRIGGER_OFF && play->transitionMode == TRANS_MODE_OFF &&

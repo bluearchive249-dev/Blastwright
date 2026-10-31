@@ -42,7 +42,6 @@ extern PlayState* gPlayState;
 }
 
 #include "PlayAsGanondorf.h"
-#include "GanondorfInvasion.h"
 
 #define CVAR_PLAY_AS_GDF(var) CVAR_ENHANCEMENT("PlayAsGanondorf." var)
 #define CVAR_PLAY_AS_GDF_ENABLED CVAR_PLAY_AS_GDF("Enabled")
@@ -111,8 +110,7 @@ static BossGanon2* FindPlayerGanon(PlayState* play) {
 }
 
 static bool IsGanonFormEnabled() {
-    // Not in Invasion mode yet: the other players' games can't show Ganon (he was invisible to them)
-    return (CVarGetInteger(CVAR_PLAY_AS_GDF("GanonForm"), 1) != 0) && !GdfInvasion_IsInvader();
+    return CVarGetInteger(CVAR_PLAY_AS_GDF("GanonForm"), 1) != 0;
 }
 
 // Ganon is too big for houses, shops, grottos and other interiors. Dungeons and temples (and their bosses) are fine,

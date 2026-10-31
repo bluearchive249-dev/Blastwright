@@ -5,7 +5,6 @@
 #include "soh/SohGui/SohMenu.h"
 #include "soh/util.h"
 #include "soh/SohGui/UIWidgets.hpp"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 namespace SohGui {
 extern std::shared_ptr<SohMenu> mSohMenu;
@@ -118,10 +117,6 @@ void AnchorMainMenu(WidgetInfo& info) {
     }
     UIWidgets::PopStyleButton();
     ImGui::EndDisabled();
-    ImGui::Spacing();
-
-    // SoH: "Play as Ganondorf", Invasion mode
-    GdfInvasion_DrawMenu();
     ImGui::Spacing();
 
     if (!anchor->isEnabled) {

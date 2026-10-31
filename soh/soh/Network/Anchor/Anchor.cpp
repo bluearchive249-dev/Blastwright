@@ -3,7 +3,6 @@
 #include "Anchor.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/ObjectExtension/ObjectExtension.h"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 extern "C" {
 #include "macros.h"
@@ -17,10 +16,7 @@ extern PlayState* gPlayState;
 void Anchor::Enable() {
     Network::Enable(CVarGetString(CVAR_REMOTE_ANCHOR("Host"), "anchor.hm64.org"),
                     CVarGetInteger(CVAR_REMOTE_ANCHOR("Port"), 43383));
-    // The client id is only reused within one run of the game (reconnecting after a drop). Read from the saved
-    // settings, two copies of the game started from the same settings (two folders on one PC, or a copied folder)
-    // handshook with the same id: the server took each one as the other reconnecting and closed it, back and forth,
-    // and the room went haywire whenever the second one joined. A restarted game joins as a new player.
+    ownClientId = CVarGetInteger(CVAR_REMOTE_ANCHOR("LastClientId"), 0);
     roomState.ownerClientId = 0;
 }
 
@@ -173,8 +169,6 @@ void Anchor::ProcessIncomingPacketQueue() {
                 HandlePacket_UpdateRoomState(payload);
             else if (packetType == UPDATE_DUNGEON_ITEMS)
                 HandlePacket_UpdateDungeonItems(payload);
-            else if (packetType.rfind("GDF_", 0) == 0)
-                GdfInvasion_HandlePacket(payload); // SoH: Play as Ganondorf, Invasion mode
         } catch (const std::exception& e) {
             SPDLOG_ERROR("[Anchor] Exception while processing incoming packet {}", e.what());
             SPDLOG_ERROR("[Anchor] Packet: {}", payload.dump());

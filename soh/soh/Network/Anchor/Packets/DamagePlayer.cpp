@@ -1,7 +1,6 @@
 #include <nlohmann/json.hpp>
 
 #include "soh/Network/Anchor/Anchor.h"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 extern "C" {
 #include "macros.h"
@@ -15,9 +14,6 @@ void func_80838280(Player* player);
  */
 
 void Anchor::SendPacket_DamagePlayer(u32 clientId, u8 damageEffect, u8 damage) {
-    if (GdfInvasion_IsInvader()) {
-        return;
-    }
     if (!IsSaveLoaded()) {
         return;
     }
@@ -33,10 +29,6 @@ void Anchor::SendPacket_DamagePlayer(u32 clientId, u8 damageEffect, u8 damage) {
 
 void Anchor::HandlePacket_DamagePlayer(nlohmann::json payload) {
     uint32_t clientId = payload.at("clientId").get<uint32_t>();
-    // Invasion mode: Ganondorf can never hurt Link, and Link's hits on Ganondorf don't take the Invader's hearts
-    if (GdfInvasion_IsClientGanondorf(clientId) || GdfInvasion_IsInvader()) {
-        return;
-    }
     if (!clients.contains(clientId) || clients[clientId].player == nullptr) {
         return;
     }

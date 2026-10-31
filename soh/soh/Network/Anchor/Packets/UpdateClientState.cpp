@@ -1,6 +1,5 @@
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/JsonConversions.hpp"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include <nlohmann/json.hpp>
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/randomizer/SeedContext.h"
@@ -28,7 +27,6 @@ nlohmann::json Anchor::PrepClientState() {
     payload["clientVersion"] = clientVersion;
     payload["teamId"] = CVarGetString(CVAR_REMOTE_ANCHOR("TeamId"), "default");
     payload["online"] = true;
-    GdfInvasion_WriteClientState(payload); // Invasion mode: the lobby seat
 
     if (IsSaveLoaded()) {
         payload["seed"] = IS_RANDO ? Rando::Context::GetInstance()->GetSeed() : 0;
@@ -74,6 +72,5 @@ void Anchor::HandlePacket_UpdateClientState(nlohmann::json payload) {
         clients[clientId].sceneNum = client.sceneNum;
         clients[clientId].curRoomNum = client.curRoomNum;
         clients[clientId].entranceIndex = client.entranceIndex;
-        GdfInvasion_ReadClientState(clientId, payload["state"]);
     }
 }

@@ -26,7 +26,6 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/Enhancements/Items/BeamosBlaster.h"
 #include "soh/Enhancements/randomizer/randomizer_entrance.h"
 #include "soh/Enhancements/randomizer/randomizer_grotto.h"
@@ -12340,8 +12339,6 @@ void Player_Update(Actor* thisx, PlayState* play) {
             }
             // SoH: Play as Ganondorf, his attacks replace Link's moveset
             PlayAsGanondorf_FilterInput(play, this, &input);
-            // SoH: Play as Ganondorf, Invasion mode (his Dark Arts menu, banishment, curses on a Link)
-            GdfInvasion_FilterLinkInput(play, &input);
         }
 
         if (CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f) != 1.0f &&

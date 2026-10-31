@@ -1,5 +1,4 @@
 #include "soh/Network/Anchor/Anchor.h"
-#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/Network/Anchor/JsonConversions.hpp"
 #include <nlohmann/json.hpp>
 #include "soh/OTRGlobals.h"
@@ -26,10 +25,6 @@ extern PlayState* gPlayState;
  */
 
 void Anchor::SendPacket_UpdateTeamState() {
-    // Invasion mode: the Invader's own progress isn't shared (he only receives the Hero's)
-    if (GdfInvasion_IsInvader()) {
-        return;
-    }
     if (!IsSaveLoaded() || !roomState.syncItemsAndFlags) {
         return;
     }
