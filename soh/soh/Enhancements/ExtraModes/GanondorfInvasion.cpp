@@ -94,6 +94,28 @@ static std::map<uint32_t, ClientGdf> sClients;
 static u32 sFrame = 0;
 static u32 sVeilUntil = 0; // Shadow Veil (Ganondorf): unseen and unheard by the Links
 
+// What Ganondorf's Dark Arts made in a Link's game, sent with that Link's pose so Ganondorf sees it too
+struct Mirrored {
+    Actor* actor = nullptr;
+    int key = 0;
+};
+static Mirrored sMirrored[40];
+static int sMirrorKey = 0;
+static void Mirror(Actor* a) {
+    if (a == nullptr) {
+        return;
+    }
+    for (Mirrored& m : sMirrored) {
+        if (m.actor == nullptr) {
+            m.actor = a;
+            m.key = ++sMirrorKey;
+            return;
+        }
+    }
+}
+static void WriteMirror(nlohmann::json& payload);
+static void ReadMirror(uint32_t from, const nlohmann::json& list);
+
 static void WriteGrab(nlohmann::json& g);
 static void ReadGrab(uint32_t from, const nlohmann::json& g);
 bool GdfInvasion_IsHeld();
@@ -119,6 +141,11 @@ extern "C" void GdfInvasion_NoteSfx(u16 sfxId) {
 
 void GdfInvasion_WritePose(nlohmann::json& payload) {
     GdfNetPose pose;
+
+    if (GdfInvasion_IsHero()) {
+        WriteMirror(payload);
+        return;
+    }
 
     if (!GdfInvasion_IsInvader()) {
         return;
@@ -171,6 +198,10 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
 
 void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
     ClientGdf& c = sClients[clientId];
+
+    if (payload.contains("gm") && GdfInvasion_IsInvader()) {
+        ReadMirror(clientId, payload["gm"]);
+    }
 
     c.isGanondorf = payload.value("gdfRole", 0) == GDF_INVASION_INVADER;
     if (!c.isGanondorf || !payload.contains("gdf")) {
@@ -623,7 +654,7 @@ void GdfInvasion_DrawMenu() {
     }
     if (!enabled) {
         ImGui::TextWrapped("Up to six Links play the game together while one player invades as Ganondorf to make "
-                           "it harder. Ganondorf can never hurt a Link directly.");
+                           "it harder. His attacks and Dark Arts cost magic.");
         return;
     }
     bool chat = CVarGetInteger(CVAR_INVASION("Chat"), 1) != 0;
@@ -776,35 +807,41 @@ struct DarkArt {
 };
 
 #define GDF_ART_COLS 6
-#define GDF_ART_ROWS 4
+#define GDF_ART_ROWS 5
 #define GDF_ART_COUNT (GDF_ART_COLS * GDF_ART_ROWS)
 
 // Row by row: obstacles, monsters, curses, his own. Curses are index 12 onward.
 static const DarkArt sArts[GDF_ART_COUNT] = {
-    { "Red Ice Wall", ART_OBSTACLE, 14, 8, 20, true, "A wall of red ice across Link's path. Blue Fire melts it." },
-    { "Wall of Flame", ART_OBSTACLE, 19, 10, 15, true, "A line of fire walls ahead of Link that erupt as he nears." },
-    { "Rock Fall", ART_OBSTACLE, 24, 15, 0, true, "Burning rocks crash down from the sky around Link." },
-    { "Bomb Rain", ART_OBSTACLE, 29, 30, 3, true, "Over twenty bombs rain down around Link." },
-    { "Sealed Door", ART_OBSTACLE, 19, 20, 15, true, "Red ice seals the door nearest to Link." },
-    { "Quicksand", ART_OBSTACLE, 24, 20, 15, true, "Link's feet sink: he moves at half speed." },
-    { "Ambush Ring", ART_MONSTER, 19, 15, 0, true, "Four Deku Babas rise in a ring around Link." },
-    { "Floormasters", ART_MONSTER, 29, 35, 0, true, "Three Floormasters crawl out around Link and lunge." },
-    { "Swarm", ART_MONSTER, 24, 20, 0, true, "Five Keese burst out above Link." },
-    { "Waves", ART_MONSTER, 34, 40, 0, true, "Three waves of Stalchildren, one every few seconds." },
-    { "Sentinel", ART_MONSTER, 29, 30, 0, true, "A Like Like waits on Link's path." },
-    { "Duel", ART_MONSTER, 48, 60, 40, true, "A Stalfos challenges Link (once per area)." },
-    { "Backwards Path", ART_CURSE, 19, 30, 12, true, "Link's controls are reversed." },
-    { "Frozen Ground", ART_CURSE, 14, 25, 15, true, "The ground under Link turns slippery." },
+    { "Red Ice Wall", ART_OBSTACLE, 12, 8, 20, true, "A wall of red ice across Link's path. Blue Fire melts it." },
+    { "Wall of Flame", ART_OBSTACLE, 16, 10, 15, true, "A line of fire walls ahead of Link that erupt as he nears." },
+    { "Rock Fall", ART_OBSTACLE, 20, 15, 0, true, "Burning rocks crash down from the sky around Link." },
+    { "Bomb Rain", ART_OBSTACLE, 26, 30, 3, true, "Over twenty bombs rain down around Link." },
+    { "Sealed Door", ART_OBSTACLE, 14, 20, 15, true, "Red ice seals the door nearest to Link." },
+    { "Quicksand", ART_OBSTACLE, 18, 20, 15, true, "Link's feet sink: he moves at half speed." },
+    { "Ambush Ring", ART_MONSTER, 18, 15, 0, true, "Four Deku Babas rise in a ring around Link." },
+    { "Floormasters", ART_MONSTER, 26, 35, 0, true, "Three Floormasters crawl out around Link and lunge." },
+    { "Swarm", ART_MONSTER, 20, 20, 0, true, "Five Keese burst out above Link." },
+    { "Waves", ART_MONSTER, 32, 40, 0, true, "Three waves of Stalchildren, one every few seconds." },
+    { "Sentinel", ART_MONSTER, 26, 30, 0, true, "A Like Like waits on Link's path." },
+    { "Duel", ART_MONSTER, 40, 60, 40, true, "A Stalfos challenges Link (once per area)." },
+    { "Backwards Path", ART_CURSE, 18, 30, 12, true, "Link's controls are reversed." },
+    { "Frozen Ground", ART_CURSE, 12, 25, 15, true, "The ground under Link turns slippery." },
     { "Iron Weight", ART_CURSE, 14, 25, 15, true, "Link is weighed down by iron (not in water)." },
-    { "Shrink", ART_CURSE, 19, 30, 20, true, "Link shrinks to a fraction of his size." },
-    { "Sealed Hand", ART_CURSE, 24, 40, 20, true, "One of Link's C-button items is sealed." },
-    { "Blinding Gloom", ART_CURSE, 19, 30, 25, true, "Darkness closes in around Link." },
-    { "Lost Bearings", ART_CURSE, 14, 30, 15, true, "Link can't Z-target." },
-    { "Ghostly Gale", ART_CURSE, 19, 30, 15, true, "Gusts of wind push Link about." },
-    { "Phantom Step", ART_OWN, 19, 30, 0, true, "Ganondorf vanishes and steps out somewhere out of sight." },
-    { "Eye of Ganon", ART_OWN, 10, 10, 10, true, "Watch the nearest Link from above for 10 s." },
+    { "Shrink", ART_CURSE, 16, 30, 20, true, "Link shrinks to a fraction of his size." },
+    { "Sealed Hand", ART_CURSE, 20, 40, 20, true, "One of Link's C-button items is sealed." },
+    { "Blinding Gloom", ART_CURSE, 16, 30, 25, true, "Darkness closes in around Link." },
+    { "Lost Bearings", ART_CURSE, 10, 30, 15, true, "Link can't Z-target." },
+    { "Ghostly Gale", ART_CURSE, 14, 30, 15, true, "Gusts of wind push Link about." },
+    { "Phantom Step", ART_OWN, 16, 30, 0, true, "Ganondorf vanishes and steps out somewhere out of sight." },
+    { "Eye of Ganon", ART_OWN, 8, 10, 10, true, "Watch the nearest Link from above for 10 s." },
     { "Shadow Veil", ART_OWN, 24, 45, 15, true, "Ganondorf is invisible (and silent) to the Links." },
-    { "Rupee Tithe", ART_OWN, 14, 60, 0, true, "Takes up to 20 rupees from Link (never his last 10)." },
+    { "Rupee Tithe", ART_OWN, 12, 60, 0, true, "Takes up to 20 rupees from Link (never his last 10)." },
+    { "Moblin Guard", ART_MONSTER, 30, 40, 0, true, "Two spear Moblins appear ahead of Link and charge him." },
+    { "Ammo Blight", ART_OWN, 16, 60, 0, true, "A third of one kind of Link's ammo crumbles away." },
+    { "Dark Pact", ART_OWN, 0, 120, 0, true, "Trade 30 of your Resolve for 40 magic." },
+    { "", ART_OWN, 0, 0, 0, false, "" },
+    { "", ART_OWN, 0, 0, 0, false, "" },
+    { "", ART_OWN, 0, 0, 0, false, "" },
 };
 
 #define GDF_FIRST_CURSE 12
@@ -824,6 +861,9 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
 #define GDF_ART_EYE 21
 #define GDF_ART_VEIL 22
 #define GDF_ART_TITHE 23
+#define GDF_ART_MOBLINS 24
+#define GDF_ART_AMMO 25
+#define GDF_ART_PACT 26
 static const char* sCurseMessages[8] = {
     "has reversed your path!", "has frozen the ground!",  "weighs you down with iron!", "has shrunk you!",
     "has sealed your hand!",   "has cast a blinding gloom!", "has stolen your bearings!", "summons a ghostly gale!",
@@ -871,6 +911,26 @@ static bool IsBanished() {
 
 static bool GameStarted() {
     return GdfInvasion_Role() != GDF_INVASION_OFF;
+}
+
+static void Flash(const std::string& message);
+
+extern "C" s32 GdfInvasion_PayAttack(s32 cost) {
+    if (!GdfInvasion_IsInvader() || !GameStarted() || (cost <= 0)) {
+        return true;
+    }
+    if (gSaveContext.magic < cost) {
+        Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                             &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Flash("Not enough magic");
+        return false;
+    }
+    gSaveContext.magic -= cost;
+    return true;
+}
+
+extern "C" s32 GdfInvasion_CanHurtLinks(void) {
+    return GdfInvasion_IsInvader() && GameStarted() && GdfInvasion_AdventureStarted();
 }
 
 extern "C" s32 GdfInvasion_CanAct(void) {
@@ -944,6 +1004,18 @@ static void TryCast(PlayState* play, int slot) {
         return;
     }
     // His own arts: worked here, in his game
+    if (art == GDF_ART_PACT) {
+        if (sResolve <= 31.0f) {
+            Flash("Not enough Resolve for the pact");
+            return;
+        }
+        sResolve -= 30.0f;
+        gSaveContext.magic = MIN(gSaveContext.magic + 40, gSaveContext.magicCapacity);
+        sArtReady[art] = sFrame + a.cooldown * GDF_FPS;
+        Flash("Dark Pact: 30 Resolve for 40 magic");
+        BossGanon_Player_CastPose();
+        return;
+    }
     if (art == GDF_ART_VEIL) {
         gSaveContext.magic -= a.cost;
         sArtReady[art] = sFrame + a.cooldown * GDF_FPS;
@@ -1081,6 +1153,9 @@ extern "C" s32 GdfInvasion_KaleidoHook(PlayState* play) {
     // Onto a C-button
     for (int slot = 0; slot < 3; slot++) {
         if (CHECK_BTN_ALL(input->press.button, sCButtons[slot])) {
+            if (sArts[sCursor].name[0] == '\0') {
+                continue; // an empty cell
+            }
             SetSlotArt(slot, sCursor);
             Audio_PlaySfxGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                    &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -1160,6 +1235,7 @@ static int LiveSummoned() {
 }
 
 static void Track(Actor* a) {
+    Mirror(a);
     for (int j = 0; (a != nullptr) && (j < GDF_MAX_SUMMONED); j++) {
         if (sSummoned[j] == nullptr) {
             sSummoned[j] = a;
@@ -1169,6 +1245,7 @@ static void Track(Actor* a) {
 }
 
 static void AddObstacle(Actor* a, int seconds) {
+    Mirror(a);
     for (Obstacle& o : sObstacles) {
         if ((o.actor == nullptr) || !ActorAlive(o.actor)) {
             o.actor = a;
@@ -1237,6 +1314,8 @@ static const char* ArtMessage(int art) {
         case GDF_ART_SENTINEL: return "sets a sentinel in your path!";
         case GDF_ART_DUEL: return "challenges you to a duel!";
         case GDF_ART_TITHE: return "takes his tithe!";
+        case GDF_ART_MOBLINS: return "sends his Moblin guard!";
+        case GDF_ART_AMMO: return "blights your ammo!";
     }
     return "has cursed you!";
 }
@@ -1249,6 +1328,7 @@ static int MonstersFor(int art) {
         case GDF_ART_WAVES: return 3;
         case GDF_ART_SENTINEL:
         case GDF_ART_DUEL: return 1;
+        case GDF_ART_MOBLINS: return 2;
     }
     return 0;
 }
@@ -1321,6 +1401,23 @@ static bool StartArt(PlayState* play, int art) {
             sQuicksandUntil = sFrame + 15 * GDF_FPS;
             GameInteractor::State::MovementSpeedMultiplier = 0.5f;
             break;
+        case GDF_ART_AMMO: {
+            // One kind of ammo he has, a third of it gone
+            static const s32 sKinds[] = { ITEM_STICK, ITEM_NUT, ITEM_BOMB, ITEM_BOW, ITEM_SLINGSHOT, ITEM_BOMBCHU };
+            int have[6];
+            int n = 0;
+            for (int i = 0; i < 6; i++) {
+                if (AMMO(sKinds[i]) >= 3) {
+                    have[n++] = i;
+                }
+            }
+            if (n == 0) {
+                return false;
+            }
+            s32 item = sKinds[have[(int)(Rand_ZeroOne() * (n - 0.01f))]];
+            AMMO(item) -= AMMO(item) / 3;
+            break;
+        }
         case GDF_ART_TITHE: {
             int take = CLAMP(gSaveContext.rupees - 10, 0, 20);
             if (take <= 0) {
@@ -1331,7 +1428,8 @@ static bool StartArt(PlayState* play, int art) {
             break;
         }
         default:
-            if ((art == GDF_ART_DUEL) || (monsters > 0) || (art == GDF_ART_BOMB_RAIN) || (art == GDF_ART_ROCK_FALL)) {
+            if ((art == GDF_ART_DUEL) || (art == GDF_ART_MOBLINS) || (monsters > 0) || (art == GDF_ART_BOMB_RAIN) ||
+                (art == GDF_ART_ROCK_FALL)) {
                 sSummon.art = art;
                 sSummon.start = sFrame;
                 sSummon.spawned = 0;
@@ -1423,9 +1521,10 @@ static void UpdateSummons() {
                     if (bomb != nullptr) {
                         ((EnBom*)bomb)->timer = 45 + (s16)(Rand_ZeroOne() * 25.0f);
                     }
+                    Mirror(bomb);
                 } else {
-                    Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FIRE_ROCK, p.x, p.y, p.z, 0, 0, 0,
-                                FIRE_ROCK_SPAWNED_FALLING2);
+                    Mirror(Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FIRE_ROCK, p.x, p.y, p.z, 0, 0, 0,
+                                       FIRE_ROCK_SPAWNED_FALLING2));
                 }
                 sSummon.spawned++;
             }
@@ -1466,6 +1565,32 @@ static void UpdateSummons() {
                 sSummon.art = -1;
             }
             break;
+        case GDF_ART_MOBLINS: {
+            // Two spear Moblins, ahead of him and to either side
+            if (sSummon.spotCount == 0) {
+                Vec3f c = AheadOfLink(play, 320.0f);
+                s16 across = player->actor.shape.rot.y + 0x4000;
+                for (int i = 0; i < 2; i++) {
+                    sSummon.spots[i] = c;
+                    sSummon.spots[i].x += Math_SinS(across) * (i ? 90.0f : -90.0f);
+                    sSummon.spots[i].z += Math_CosS(across) * (i ? 90.0f : -90.0f);
+                    Smoke(play, &sSummon.spots[i]);
+                }
+                sSummon.spotCount = 2;
+                sSummon.start = sFrame;
+                break;
+            }
+            if (t >= GDF_FPS) {
+                for (int i = 0; i < 2; i++) {
+                    Vec3f* p = &sSummon.spots[i];
+                    Track(Actor_Spawn(&play->actorCtx, play, ACTOR_EN_MB, p->x, p->y, p->z, 0,
+                                      Math_Vec3f_Yaw(p, &player->actor.world.pos), 0, -1)); // a spear Moblin on guard
+                }
+                sSummon.art = -1;
+                sSummon.spotCount = 0;
+            }
+            break;
+        }
         case GDF_ART_SENTINEL:
         case GDF_ART_DUEL: {
             if (sSummon.spotCount == 0) {
@@ -1837,7 +1962,8 @@ static void TickInvasion() {
     if (!IsBanished() && (gSaveContext.magicState == MAGIC_STATE_IDLE) &&
         (gSaveContext.magic < gSaveContext.magicCapacity)) {
         bool farAway = FindTargetLink(play) == 0;
-        if ((sFrame % (farAway ? GDF_FPS : (GDF_FPS * 3 / 2))) == 0) {
+        // About 1.3 a second near the Links, 2 a second away from them
+        if ((sFrame % (farAway ? (GDF_FPS / 2) : (GDF_FPS * 3 / 4))) == 0) {
             gSaveContext.magic++;
         }
     }
@@ -1943,7 +2069,7 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
     float gridH = GDF_ART_ROWS * cellH + (GDF_ART_ROWS - 1) * gap;
     float x0 = vp->Pos.x + (vp->Size.x - gridW) * 0.5f;
     float y0 = vp->Pos.y + (vp->Size.y - gridH) * 0.5f;
-    static const char* sRows[GDF_ART_ROWS] = { "Obstacles", "Monsters", "Curses", "His own" };
+    static const char* sRows[GDF_ART_ROWS] = { "Obstacles", "Monsters", "Curses", "Curses / his own", "More" };
 
     list->AddRectFilled(ImVec2(x0 - 16 * scale, y0 - 46 * scale),
                         ImVec2(x0 + gridW + 16 * scale, y0 + gridH + 52 * scale), Col(14, 4, 24, 215), 8.0f);
@@ -1954,6 +2080,14 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
     for (int i = 0; i < GDF_ART_COUNT; i++) {
         const DarkArt& a = sArts[i];
         int col = i % GDF_ART_COLS;
+        if (a.name[0] == '\0') {
+            ImVec2 e0(x0 + col * (cellW + gap), y0 + (i / GDF_ART_COLS) * (cellH + gap));
+            list->AddRectFilled(e0, ImVec2(e0.x + cellW, e0.y + cellH), Col(25, 20, 30, 120), 4.0f);
+            if (i == sCursor) {
+                list->AddRect(e0, ImVec2(e0.x + cellW, e0.y + cellH), Col(255, 220, 120, 200), 4.0f, 0, 2.0f * scale);
+            }
+            continue;
+        }
         int row = i / GDF_ART_COLS;
         ImVec2 p0(x0 + col * (cellW + gap), y0 + row * (cellH + gap));
         ImVec2 p1(p0.x + cellW, p0.y + cellH);
@@ -2241,3 +2375,115 @@ static RegisterShipInitFunc grabInitFunc(RegisterInvasionGrab, {});
 bool GdfInvasion_IsHeld() {
     return sHeld.held;
 }
+
+
+// =================================================================================================
+// Ganondorf sees his own Dark Arts: a Link's game sends what his arts made there (kind, position, facing) with its
+// pose; Ganondorf's game shows copies in the same places. The copies come up as themselves for a moment, then only
+// follow the Link's game (they don't fight). Bombs explode when the Link's do.
+// =================================================================================================
+
+static void WriteMirror(nlohmann::json& payload) {
+    nlohmann::json list = nlohmann::json::array();
+
+    for (Mirrored& m : sMirrored) {
+        if ((m.actor == nullptr) || !ActorAlive(m.actor)) {
+            m.actor = nullptr;
+            continue;
+        }
+        Actor* a = m.actor;
+        list.push_back({ m.key, a->id, a->params, a->world.pos.x, a->world.pos.y, a->world.pos.z, a->shape.rot.y });
+    }
+    if (!list.empty()) {
+        payload["gm"] = list;
+    }
+}
+
+struct Ghost {
+    Actor* actor = nullptr;
+    s16 id = 0;
+    u32 born = 0;
+    u32 seen = 0;
+};
+static std::map<std::pair<uint32_t, int>, Ghost> sGhosts;
+static std::map<std::pair<uint32_t, int>, bool> sGhostsGone; // killed in his game: not brought back
+
+static void ReadMirror(uint32_t from, const nlohmann::json& list) {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || !list.is_array()) {
+        return;
+    }
+    for (const auto& e : list) {
+        if (!e.is_array() || (e.size() < 7)) {
+            continue;
+        }
+        auto key = std::make_pair(from, e[0].get<int>());
+        if (sGhostsGone.count(key)) {
+            continue;
+        }
+        Ghost& g = sGhosts[key];
+        Vec3f pos = { e[3].get<float>(), e[4].get<float>(), e[5].get<float>() };
+        s16 rotY = (s16)e[6].get<int>();
+        if (g.actor == nullptr) {
+            g.id = (s16)e[1].get<int>();
+            g.actor = Actor_Spawn(&play->actorCtx, play, g.id, pos.x, pos.y, pos.z, 0, rotY, 0, (s16)e[2].get<int>());
+            g.born = sFrame;
+            if (g.actor == nullptr) {
+                sGhostsGone[key] = true;
+                sGhosts.erase(key);
+                continue;
+            }
+            if (g.id == ACTOR_EN_BOM) {
+                ((EnBom*)g.actor)->timer = 0x7FFF; // goes off with the Link's
+            }
+        }
+        g.seen = sFrame;
+        if (ActorAlive(g.actor)) {
+            g.actor->world.pos = pos;
+            g.actor->shape.rot.y = g.actor->world.rot.y = rotY;
+        }
+    }
+}
+
+static void UpdateGhosts() {
+    PlayState* play = gPlayState;
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+
+    for (auto it = sGhosts.begin(); it != sGhosts.end();) {
+        Ghost& g = it->second;
+        bool alive = ActorAlive(g.actor);
+        if (!alive) {
+            sGhostsGone[it->first] = true; // gone in his game (killed, area left): not brought back
+            it = sGhosts.erase(it);
+            continue;
+        }
+        if ((play == nullptr) || (sFrame - g.seen > 10)) {
+            // Gone in the Link's game
+            if (g.id == ACTOR_EN_BOM) {
+                Vec3f pos = g.actor->world.pos;
+                EffectSsBomb2_SpawnLayered(play, &pos, &zero, &zero, 100, 19);
+                SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 30, NA_SE_IT_BOMB_EXPLOSION);
+            }
+            Actor_Kill(g.actor);
+            sGhostsGone[it->first] = true;
+            it = sGhosts.erase(it);
+            continue;
+        }
+        // After coming up as themselves for a moment, they only follow (no fighting him)
+        if ((sFrame - g.born > 20) || (g.id == ACTOR_EN_BOM)) {
+            g.actor->freezeTimer = 2;
+        }
+        ++it;
+    }
+    if (sGhostsGone.size() > 2000) {
+        sGhostsGone.clear();
+    }
+}
+
+static void RegisterInvasionGhosts() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(UpdateGhosts);
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) { sGhosts.clear(); });
+}
+
+static RegisterShipInitFunc ghostInitFunc(RegisterInvasionGhosts, {});

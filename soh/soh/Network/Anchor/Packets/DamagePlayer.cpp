@@ -15,7 +15,7 @@ void func_80838280(Player* player);
  */
 
 void Anchor::SendPacket_DamagePlayer(u32 clientId, u8 damageEffect, u8 damage) {
-    if (GdfInvasion_IsInvader()) {
+    if (GdfInvasion_IsInvader() && !GdfInvasion_CanHurtLinks()) {
         return;
     }
     if (!IsSaveLoaded()) {
@@ -33,8 +33,9 @@ void Anchor::SendPacket_DamagePlayer(u32 clientId, u8 damageEffect, u8 damage) {
 
 void Anchor::HandlePacket_DamagePlayer(nlohmann::json payload) {
     uint32_t clientId = payload.at("clientId").get<uint32_t>();
-    // Invasion mode: Ganondorf can never hurt Link, and Link's hits on Ganondorf don't take the Invader's hearts
-    if (GdfInvasion_IsClientGanondorf(clientId) || GdfInvasion_IsInvader()) {
+    // Invasion mode: Ganondorf's hits only after the truce (they cost him magic), and the Links' hits on Ganondorf go
+    // to his Resolve, not his hearts
+    if (GdfInvasion_IsInvader() || (GdfInvasion_IsClientGanondorf(clientId) && !GdfInvasion_AdventureStarted())) {
         return;
     }
     if (!clients.contains(clientId) || clients[clientId].player == nullptr) {

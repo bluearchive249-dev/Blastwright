@@ -7533,6 +7533,15 @@ void BossGanon_Player_SetupSwordIdle(BossGanon* this, PlayState* play) {
 static void BossGanon_Player_SetupSwordAttack(BossGanon* this, PlayState* play, u8 attack) {
     s32 i;
 
+    // Invasion mode: his attacks cost magic (a swing 3, a big one 8)
+    if ((attack >= GDF_SWORD_ATK_COMBO1) &&
+        !GdfInvasion_PayAttack(((attack == GDF_SWORD_ATK_SPIN) || (attack == GDF_SWORD_ATK_SLAM) ||
+                                (attack == GDF_SWORD_ATK_WAVE))
+                                   ? 8
+                                   : 3)) {
+        return;
+    }
+
     for (i = 0; i < 3; i++) {
         this->playerArmFrom[i] = this->skelAnime.jointTable[1 + GDF_RIGHT_ARM_LIMB + i];
     }
@@ -8898,6 +8907,10 @@ void BossGanon_Player_Float(BossGanon* this, PlayState* play) {
 }
 
 void BossGanon_Player_SetupChargeLightBall(BossGanon* this, PlayState* play) {
+    // Invasion mode: his attacks cost magic
+    if (!GdfInvasion_PayAttack(5)) {
+        return;
+    }
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
     this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfChargeLightBallAnim);
     Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfChargeLightBallAnim, -3.0f);
@@ -8985,6 +8998,10 @@ void BossGanon_Player_Throw(BossGanon* this, PlayState* play) {
 }
 
 void BossGanon_Player_SetupChargeBigMagic(BossGanon* this, PlayState* play) {
+    // Invasion mode: his attacks cost magic
+    if (!GdfInvasion_PayAttack(15)) {
+        return;
+    }
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
     this->unk_1C2 = 0;
     this->timers[0] = 8;
@@ -9154,6 +9171,10 @@ void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play) {
 }
 
 void BossGanon_Player_SetupPound(BossGanon* this, PlayState* play) {
+    // Invasion mode: his attacks cost magic
+    if (!GdfInvasion_PayAttack(8)) {
+        return;
+    }
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
     this->unk_1C2 = 0;
     this->timers[0] = 26;
@@ -10389,6 +10410,10 @@ static void BossGanon_Player_KeepFloatRoot(BossGanon* this) {
 }
 
 void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play) {
+    // Invasion mode: his attacks cost magic
+    if (!GdfInvasion_PayAttack(20)) {
+        return;
+    }
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
     Animation_MorphToLoop(&this->skelAnime, &gGanondorfRaiseHandLoopAnim, -5.0f);
     this->actionFunc = BossGanon_Player_DarkAura;
@@ -11303,6 +11328,10 @@ static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play) {
 #define GDF_TRIDENT_HIT_RADIUS 45.0f
 
 void BossGanon_Player_SetupTridentSpin(BossGanon* this, PlayState* play) {
+    // Invasion mode: his attacks cost magic
+    if (!GdfInvasion_PayAttack(10)) {
+        return;
+    }
     if (this->playerGrounded) {
         BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
         Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -5.0f);

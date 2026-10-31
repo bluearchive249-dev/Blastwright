@@ -72,6 +72,10 @@ s32 GdfInvasion_CanGrabLinks(void);
 void GdfInvasion_NetGrabHold(u32 clientId, Vec3f* hand, f32 neck, s16 yaw);
 void GdfInvasion_NetGrabEnd(u32 clientId, s32 thrown, s16 yaw);
 
+// Invasion mode: his attacks cost magic (false: not enough, the attack doesn't start), and can hurt the Links
+s32 GdfInvasion_PayAttack(s32 cost);
+s32 GdfInvasion_CanHurtLinks(void);
+
 // Ganondorf may start an attack (not while his Dark Arts menu is open or he's pacified)
 s32 GdfInvasion_CanAct(void);
 // His C-buttons: true when a Dark Art on it was cast (or tried), so the button does nothing else

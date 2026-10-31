@@ -184,14 +184,16 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
         GdfInvasion_UpdateGanondorfDummy(actor, clientId);
         return;
     }
-    if (GdfInvasion_IsInvader()) {
+    // Ganondorf's game: his attacks can hurt the Links once the truce is over (they cost him magic), whatever the
+    // room's PvP setting
+    if (GdfInvasion_IsInvader() && !GdfInvasion_CanHurtLinks()) {
         actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
         return;
     }
 
-    if (Anchor::Instance->roomState.pvpMode == 0 ||
+    if (!GdfInvasion_IsInvader() && (Anchor::Instance->roomState.pvpMode == 0 ||
         (Anchor::Instance->roomState.pvpMode == 1 &&
-         client.teamId == CVarGetString(CVAR_REMOTE_ANCHOR("TeamId"), "default"))) {
+         client.teamId == CVarGetString(CVAR_REMOTE_ANCHOR("TeamId"), "default")))) {
         actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
         return;
     }
