@@ -2302,13 +2302,13 @@ static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
 
     // Resolve, under the hearts and magic
     float x = vp->Pos.x + 26.0f * scale;
-    float y = vp->Pos.y + 62.0f * scale;
+    float y = vp->Pos.y + 122.0f * scale; // under his Resolve meter
     float w = 110.0f * scale;
     float h = 6.0f * scale;
     float f = CLAMP(sResolve / GDF_RESOLVE_MAX, 0.0f, 1.0f);
-    list->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), Col(0, 0, 0, 120), 2.0f);
-    list->AddRectFilled(ImVec2(x, y), ImVec2(x + w * f, y + h), Col(200, 40, 70, 210), 2.0f);
-    DrawHudText(list, font * 0.8f, ImVec2(x + w + 6.0f, y - font * 0.25f), Col(230, 200, 210, 170), "Resolve");
+    // (the bar itself is drawn by the game, white, under his magic meter: Interface_DrawMagicBar)
+    (void)w;
+    (void)f;
 
     if (sFrame < sVeilUntil) {
         DrawHudText(list, font * 0.8f, ImVec2(x, y + h + 4.0f * scale), Col(200, 160, 255, 200),
@@ -2858,4 +2858,12 @@ extern "C" s32 GdfInvasion_DarkLinkPossessed(Actor* actor) {
 
 static bool ClientArmedOnce(uint32_t clientId) {
     return (clientId < 256) && sClientArmed[clientId];
+}
+
+extern "C" f32 GdfInvasion_ResolveFraction(void) {
+    return CLAMP(sResolve / GDF_RESOLVE_MAX, 0.0f, 1.0f);
+}
+
+extern "C" s32 GdfInvasion_ShowResolveMeter(void) {
+    return GdfInvasion_IsInvader() && GameStarted();
 }

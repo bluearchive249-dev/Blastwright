@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include "vt.h"
 #include "textures/parameter_static/parameter_static.h"
@@ -3700,6 +3701,40 @@ void Interface_DrawMagicBar(PlayState* play) {
             gSPWideTextureRectangle(OVERLAY_DISP++, rMagicFillX << 2, (magicBarY + 3) << 2,
                                     (rMagicFillX + gSaveContext.magic) << 2, (magicBarY + 10) << 2, G_TX_RENDERTILE, 0,
                                     0, 1 << 10, 1 << 10);
+        }
+
+        // SoH: Invasion mode, Ganondorf's Resolve: a white meter like his magic meter, just under it
+        if (GdfInvasion_ShowResolveMeter()) {
+            s16 resolveY = magicBarY + 14;
+            s16 resolveFill = (s16)(GdfInvasion_ResolveFraction() * gSaveContext.magicCapacity);
+
+            gDPPipeSync(OVERLAY_DISP++);
+            Gfx_SetupDL_39Overlay(play->state.gfxCtx);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, sMagicBorder.r, sMagicBorder.g, sMagicBorder.b,
+                            interfaceCtx->magicAlpha);
+            gDPSetEnvColor(OVERLAY_DISP++, 100, 50, 50, 255);
+            OVERLAY_DISP =
+                Gfx_TextureIA8(OVERLAY_DISP, gMagicMeterEndTex, 8, 16, PosX_Start, resolveY, 8, 16, 1 << 10, 1 << 10);
+            OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, gMagicMeterMidTex, 24, 16, PosX_MidEnd, resolveY,
+                                          gSaveContext.magicCapacity, 16, 1 << 10, 1 << 10);
+            gDPLoadTextureBlock(OVERLAY_DISP++, gMagicMeterEndTex, G_IM_FMT_IA, G_IM_SIZ_8b, 8, 16, 0,
+                                G_TX_MIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 3, G_TX_NOMASK, G_TX_NOLOD,
+                                G_TX_NOLOD);
+            gSPWideTextureRectangle(OVERLAY_DISP++, ((rMagicBarX + gSaveContext.magicCapacity) + 8) << 2,
+                                    resolveY << 2, ((rMagicBarX + gSaveContext.magicCapacity) + 16) << 2,
+                                    (resolveY + 16) << 2, G_TX_RENDERTILE, 256, 0, 1 << 10, 1 << 10);
+
+            gDPPipeSync(OVERLAY_DISP++);
+            gDPSetCombineLERP(OVERLAY_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, 0, 0, 0, PRIMITIVE,
+                              PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, 0, 0, 0, PRIMITIVE);
+            gDPSetEnvColor(OVERLAY_DISP++, 0, 0, 0, 255);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 245, 245, 245, interfaceCtx->magicAlpha);
+            gDPLoadMultiBlock_4b(OVERLAY_DISP++, gMagicMeterFillTex, 0, G_TX_RENDERTILE, G_IM_FMT_I, 16, 16, 0,
+                                 G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                                 G_TX_NOLOD, G_TX_NOLOD);
+            gSPWideTextureRectangle(OVERLAY_DISP++, rMagicFillX << 2, (resolveY + 3) << 2,
+                                    (rMagicFillX + resolveFill) << 2, (resolveY + 10) << 2, G_TX_RENDERTILE, 0, 0,
+                                    1 << 10, 1 << 10);
         }
     }
 

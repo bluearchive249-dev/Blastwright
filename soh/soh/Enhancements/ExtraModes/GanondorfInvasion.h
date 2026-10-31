@@ -107,6 +107,9 @@ s32 PlayAsGanondorf_IsGanonOut(PlayState* play);
 s32 GdfInvasion_DarkLinkInput(Actor* actor, Input* input, s16 camYaw);
 s32 GdfInvasion_DarkLinkPossessed(Actor* actor);
 s32 GdfInvasion_CanHurtLinks(void);
+// His Resolve, drawn as a white meter under his magic meter
+s32 GdfInvasion_ShowResolveMeter(void);
+f32 GdfInvasion_ResolveFraction(void);
 // Kokiri Forest's peace: a young Link who has never had both sword and shield on (0: the local Link)
 s32 GdfInvasion_LinkAtPeace(u32 clientId);
 s32 GdfInvasion_CanHurtLink(u32 clientId);
