@@ -40,6 +40,7 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 #include "src/overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
+#include "src/overlays/actors/ovl_En_Bom/z_en_bom.h"
 extern PlayState* gPlayState;
 }
 
@@ -773,11 +774,11 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Red Ice Wall", ART_OBSTACLE, 14, 8, 20, false, "A wall of red ice across a path. Melts with fire." },
     { "Wall of Flame", ART_OBSTACLE, 19, 10, 15, false, "A line of rising and falling fire." },
     { "Rolling Boulders", ART_OBSTACLE, 24, 15, 0, false, "Three boulders roll toward the marker." },
-    { "Spike Trap", ART_OBSTACLE, 14, 8, 30, false, "A sliding blade guards a spot." },
+    { "Bomb Rain", ART_OBSTACLE, 29, 30, 3, true, "Over twenty bombs rain down around Link." },
     { "Iron Bars", ART_OBSTACLE, 19, 20, 15, false, "The nearest door to Link is barred shut." },
     { "Quicksand", ART_OBSTACLE, 24, 20, 20, false, "A circle of sinking sand." },
     { "Ambush Ring", ART_MONSTER, 19, 15, 0, false, "Four small monsters rise around Link." },
-    { "Flank", ART_MONSTER, 24, 20, 0, false, "Two monsters, ahead of and behind Link." },
+    { "Floormasters", ART_MONSTER, 29, 35, 0, true, "Three Floormasters crawl out around Link and lunge." },
     { "Swarm", ART_MONSTER, 24, 20, 0, false, "Keese circle above Link, then dive." },
     { "Waves", ART_MONSTER, 34, 40, 0, false, "Three waves of three monsters." },
     { "Sentinel", ART_MONSTER, 29, 30, 0, false, "One tough monster on Link's path." },
@@ -797,6 +798,8 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
 };
 
 #define GDF_FIRST_CURSE 12
+#define GDF_ART_BOMB_RAIN 3
+#define GDF_ART_FLOORMASTERS 7
 static const char* sCurseMessages[8] = {
     "has reversed your path!", "has frozen the ground!",  "weighs you down with iron!", "has shrunk you!",
     "has sealed your hand!",   "has cast a blinding gloom!", "has stolen your bearings!", "summons a ghostly gale!",
@@ -1034,6 +1037,141 @@ static bool LinkCanBeCursed(PlayState* play) {
                                      PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE));
 }
 
+// ---- A Link's side: what Ganondorf summons around him ----
+#define GDF_MAX_SUMMONED 6
+struct Summon {
+    int art = -1;
+    u32 start = 0;
+    int spawned = 0;
+};
+static Summon sSummon;
+static Actor* sSummoned[GDF_MAX_SUMMONED];
+
+static int LiveSummoned() {
+    PlayState* play = gPlayState;
+    int n = 0;
+
+    for (int i = 0; i < GDF_MAX_SUMMONED; i++) {
+        bool alive = false;
+        if ((sSummoned[i] != nullptr) && (play != nullptr)) {
+            for (Actor* a = play->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
+                if ((a == sSummoned[i]) && (a->update != nullptr)) {
+                    alive = true;
+                }
+            }
+        }
+        if (!alive) {
+            sSummoned[i] = nullptr;
+        } else {
+            n++;
+        }
+    }
+    return n;
+}
+
+static bool StartSummon(int art) {
+    if (sSummon.art >= 0) {
+        return false; // one at a time
+    }
+    if ((art == GDF_ART_FLOORMASTERS) && (LiveSummoned() > GDF_MAX_SUMMONED - 3)) {
+        return false; // too many of his monsters about already
+    }
+    sSummon.art = art;
+    sSummon.start = sFrame;
+    sSummon.spawned = 0;
+    Audio_PlaySfxGeneral(NA_SE_EN_GANON_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                         &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Notification::Emit({ .prefix = "Ganondorf",
+                         .message = (art == GDF_ART_BOMB_RAIN) ? "rains bombs upon you!" : "sends the Floormasters!" });
+    return true;
+}
+
+// A spot on the ground near Link (at least `minDist` from him)
+static bool GroundSpot(PlayState* play, float minDist, float maxDist, Vec3f* out) {
+    Player* player = GET_PLAYER(play);
+
+    for (int tries = 0; tries < 8; tries++) {
+        s16 yaw = (s16)(Rand_ZeroOne() * 0x10000);
+        float d = minDist + Rand_ZeroOne() * (maxDist - minDist);
+        Vec3f p = player->actor.world.pos;
+        p.x += Math_SinS(yaw) * d;
+        p.z += Math_CosS(yaw) * d;
+        p.y += 80.0f;
+        CollisionPoly* poly;
+        s32 bgId;
+        float floorY = BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &p);
+        if ((floorY > BGCHECK_Y_MIN) && (fabsf(floorY - player->actor.world.pos.y) < 120.0f)) {
+            p.y = floorY;
+            *out = p;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void UpdateSummons() {
+    PlayState* play = gPlayState;
+
+    if (sSummon.art < 0) {
+        return;
+    }
+    if ((play == nullptr) || !GdfInvasion_IsHero() || (sFrame - sSummon.start > 6 * GDF_FPS)) {
+        sSummon.art = -1;
+        return;
+    }
+    Player* player = GET_PLAYER(play);
+    u32 t = sFrame - sSummon.start;
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+
+    if (sSummon.art == GDF_ART_BOMB_RAIN) {
+        // 24 bombs over three seconds, falling from above, in a ring around him and on him
+        while ((sSummon.spawned < 24) && (sSummon.spawned < (int)(t * 24 / (3 * GDF_FPS)) + 1)) {
+            s16 yaw = (s16)(Rand_ZeroOne() * 0x10000);
+            float d = Rand_ZeroOne() * 260.0f;
+            Vec3f p = player->actor.world.pos;
+            p.x += Math_SinS(yaw) * d;
+            p.z += Math_CosS(yaw) * d;
+            p.y += 350.0f + Rand_ZeroOne() * 150.0f;
+            Actor* bomb = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, p.x, p.y, p.z, 0, 0, 0, BOMB_BODY);
+            if (bomb != nullptr) {
+                ((EnBom*)bomb)->timer = 45 + (s16)(Rand_ZeroOne() * 25.0f);
+            }
+            sSummon.spawned++;
+        }
+        if (sSummon.spawned >= 24) {
+            sSummon.art = -1;
+        }
+        return;
+    }
+    if (sSummon.art == GDF_ART_FLOORMASTERS) {
+        // A second's warning (dark smoke where they'll come up), then three of them
+        static Vec3f sSpots[3];
+        if (t == 0) {
+            for (int i = 0; i < 3; i++) {
+                if (!GroundSpot(play, 220.0f, 360.0f, &sSpots[i])) {
+                    sSpots[i] = player->actor.world.pos;
+                    sSpots[i].x += 250.0f * Math_SinS(i * 0x5555);
+                    sSpots[i].z += 250.0f * Math_CosS(i * 0x5555);
+                }
+                EffectSsDeadDb_Spawn(play, &sSpots[i], &zero, &zero, 140, 0, 60, 0, 90, 255, 30, 0, 60, 1, 9, true);
+            }
+        }
+        if (t == GDF_FPS) {
+            for (int i = 0; i < 3; i++) {
+                Actor* a = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FLOORMAS, sSpots[i].x, sSpots[i].y,
+                                       sSpots[i].z, 0, Math_Vec3f_Yaw(&sSpots[i], &player->actor.world.pos), 0, 0);
+                for (int j = 0; (a != nullptr) && (j < GDF_MAX_SUMMONED); j++) {
+                    if (sSummoned[j] == nullptr) {
+                        sSummoned[j] = a;
+                        break;
+                    }
+                }
+            }
+            sSummon.art = -1;
+        }
+    }
+}
+
 static void SetCurse(int curse, bool on) {
     PlayState* play = gPlayState;
 
@@ -1072,8 +1210,21 @@ static void SetCurse(int curse, bool on) {
     }
 }
 
+static bool StartSummon(int art);
+
 static void HandleCurse(const nlohmann::json& payload) {
     PlayState* play = gPlayState;
+    int art = payload.value("art", -1);
+    if ((art == GDF_ART_BOMB_RAIN) || (art == GDF_ART_FLOORMASTERS)) {
+        bool ok = GdfInvasion_IsHero() && LinkCanBeCursed(play) && StartSummon(art);
+        nlohmann::json ack;
+        ack["type"] = GDF_PKT_CURSE_ACK;
+        ack["targetClientId"] = payload.value("clientId", 0u);
+        ack["ok"] = ok;
+        ack["art"] = art;
+        Anchor::Instance->SendJsonToRemote(ack);
+        return;
+    }
     int curse = payload.value("curse", -1);
     int duration = payload.value("duration", 10);
     uint32_t from = payload.value("clientId", 0u);
@@ -1316,6 +1467,7 @@ static void TickInvasion() {
     PlayState* play = gPlayState;
 
     UpdateCurses();
+    UpdateSummons();
     if (!GdfInvasion_IsInvader() || (play == nullptr) || !GameStarted()) {
         return;
     }
