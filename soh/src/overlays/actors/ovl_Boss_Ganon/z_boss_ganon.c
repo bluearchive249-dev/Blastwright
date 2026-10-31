@@ -6712,7 +6712,8 @@ static s32 BossGanon_Player_ShouldHide(BossGanon* this, PlayState* play) {
 }
 
 static s32 BossGanon_Player_CanStartAttack(BossGanon* this, PlayState* play) {
-    return !this->playerHidden && BossGanon_Player_LinkCanAttack(play);
+    // Invasion mode: not while his Dark Arts menu is open or he's been pacified
+    return !this->playerHidden && BossGanon_Player_LinkCanAttack(play) && GdfInvasion_CanAct();
 }
 
 // Also used by Ganon: Link is in a state where an attack can start
@@ -6750,6 +6751,10 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
     u8 bigMagicEnabled = CVarGetInteger(CVAR_PLAY_AS_GDF("BigMagic"), 1);
 
     if (!BossGanon_Player_CanStartAttack(this, play)) {
+        return;
+    }
+    // Invasion mode: C-buttons with a Dark Art on them cast it
+    if (GdfInvasion_HandleCButtons(play)) {
         return;
     }
     // The ocarina is out: the D-pad controls the song player
@@ -7638,6 +7643,10 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
     BossGanon_Player_ApplyJump(this, play);
 
     if (!BossGanon_Player_CanStartAttack(this, play)) {
+        return;
+    }
+    // Invasion mode: C-buttons with a Dark Art on them cast it
+    if (GdfInvasion_HandleCButtons(play)) {
         return;
     }
 
@@ -12456,6 +12465,57 @@ void BossGanon_PuppetBall_Init(BossGanon* this, PlayState* play) {
     thisx->draw = NULL; // set by the puppet
     this->fwork[GDF_FWORK_1] = 255.0f;
     Collider_InitCylinder(play, &this->collider);
+}
+
+// ---- Invasion mode: the Links' hits on him, and his casting ----
+s32 BossGanon_Player_IsBlockingNet(void) {
+    return (sPlayerGanondorf != NULL) && (sPlayerGanondorf->actor.update != NULL) &&
+           (sPlayerGanondorf->actionFunc == BossGanon_Player_Block);
+}
+
+// A Link's hit landed: he flashes and grunts (his Resolve is kept by GanondorfInvasion.cpp)
+void BossGanon_Player_NetHurt(s32 heavy) {
+    BossGanon* this = sPlayerGanondorf;
+
+    if ((this == NULL) || (this->actor.update == NULL)) {
+        return;
+    }
+    Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, heavy ? 16 : 8);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(heavy ? NA_SE_EN_GANON_DAMAGE2 : NA_SE_EN_GANON_DAMAGE1));
+}
+
+// Casting a Dark Art: his laugh (when he's free to)
+void BossGanon_Player_CastPose(void) {
+    BossGanon* this = sPlayerGanondorf;
+
+    if ((this == NULL) || (this->actor.update == NULL) || (gPlayState == NULL)) {
+        return;
+    }
+    if ((this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_SwordIdle)) {
+        BossGanon_Player_SetupLaugh(this, gPlayState);
+    } else {
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+    }
+}
+
+// Pacified: his voice cracks and he goes up in dark smoke
+void BossGanon_Player_NetPacified(void) {
+    BossGanon* this = sPlayerGanondorf;
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    Vec3f pos;
+    s32 i;
+
+    if ((this == NULL) || (this->actor.update == NULL) || (gPlayState == NULL)) {
+        return;
+    }
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DEAD));
+    for (i = 0; i < 12; i++) {
+        pos = this->actor.world.pos;
+        pos.x += Rand_CenteredFloat(80.0f);
+        pos.y += Rand_ZeroFloat(140.0f);
+        pos.z += Rand_CenteredFloat(80.0f);
+        EffectSsDeadDb_Spawn(gPlayState, &pos, &zero, &zero, 160, 0, 60, 0, 90, 255, 30, 0, 60, 1, 9, false);
+    }
 }
 
 void BossGanon_Puppet_Init(BossGanon* this, PlayState* play) {
