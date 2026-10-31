@@ -39,6 +39,16 @@
 #include "soh/Enhancements/savestate_serialize.h"
 #include <libultraship/bridge/resourcebridge.h>
 
+// SoH: "Play as Ganondorf", Invasion mode: every sound the player's Ganondorf (or his light balls) makes is also noted
+// for the other players, who hear it from his puppet (see GanondorfInvasion.cpp)
+static void BossGanon_PlayActorSfx(Actor* actor, u16 sfxId) {
+    Audio_PlayActorSound2(actor, sfxId);
+    if ((actor != NULL) && (actor->id == ACTOR_BOSS_GANON) && BossGanon_IsPlayerAttack(actor)) {
+        GdfInvasion_NoteSfx(sfxId);
+    }
+}
+#define Audio_PlayActorSound2 BossGanon_PlayActorSfx
+
 #include <string.h>
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -86,6 +96,10 @@ s32 BossGanon_CheckFallingPlatforms(BossGanon* this, PlayState* play, Vec3f* che
 #define GDF_IS_PLAYER(dorf) (((dorf)->actor.params == GDF_PARAMS_PLAYER) || ((dorf)->actor.params == GDF_PARAMS_PUPPET))
 void BossGanon_Puppet_Init(BossGanon* this, PlayState* play);
 void BossGanon_Puppet_Update(Actor* thisx, PlayState* play);
+void BossGanon_PuppetBall_Init(BossGanon* this, PlayState* play);
+static struct BossGanon* sPuppetBalls[GDF_NET_BALLS]; // Invasion mode: his projectiles on the others' screens
+void BossGanon_LightBall_Draw(Actor* thisx, PlayState* play);
+void func_808E324C(Actor* thisx, PlayState* play);
 // The arena floor is at y = 0. Outside the arena, use the floor under Link.
 #define GDF_FLOOR_Y(dorf) (GDF_IS_PLAYER(dorf) ? (dorf)->playerFloorY : 0.0f)
 // How far below the floor his organ starts and goes back to
@@ -479,6 +493,10 @@ static void BossGanon_Init_Impl(Actor* thisx, PlayState* play2) {
         BossGanon_Puppet_Init(this, play);
         return;
     }
+    if (thisx->params == GDF_PARAMS_PUPPET_BALL) {
+        BossGanon_PuppetBall_Init(this, play);
+        return;
+    }
     if ((thisx->params >= GDF_PARAMS_PLAYER_LIGHT_BALL) &&
         (thisx->params < GDF_PARAMS_PLAYER_BIG_MAGIC + GDF_PLAYER_BIG_MAGIC_COUNT)) {
         BossGanon_PlayerProjectile_Init(this, play);
@@ -622,7 +640,24 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
 
     // SoH: "Play as Ganondorf"
     if (this->actor.params == GDF_PARAMS_PUPPET) {
+        s32 b;
+
         GdfInvasion_PuppetDestroyed(&this->actor);
+        for (b = 0; b < GDF_NET_BALLS; b++) {
+            if ((sPuppetBalls[b] != NULL) && (sPuppetBalls[b]->actor.update != NULL)) {
+                Actor_Kill(&sPuppetBalls[b]->actor);
+            }
+            sPuppetBalls[b] = NULL;
+        }
+    }
+    if (this->actor.params == GDF_PARAMS_PUPPET_BALL) {
+        s32 b;
+
+        for (b = 0; b < GDF_NET_BALLS; b++) {
+            if (sPuppetBalls[b] == this) {
+                sPuppetBalls[b] = NULL;
+            }
+        }
     }
     if (GDF_IS_PLAYER(this)) {
         if (this->playerPgReady) {
@@ -6413,6 +6448,7 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
                     u16 sfx = NA_SE_PL_WALK_GROUND + player->floorSfxOffset + player->ageProperties->unk_94;
 
                     func_800F4010(&player->actor.projectedPos, sfx, speed * 0.6f);
+                    GdfInvasion_NoteSfx(sfx);
                     if (this->playerSprintWeight > 0.5f) {
                         Audio_PlayActorSound2(&this->actor, NA_SE_PL_WALK_HEAVYBOOTS);
                     }
@@ -12195,6 +12231,144 @@ static s32 BossGanon_GetOwner(BossGanon* this) {
 // player-controlled one (cape, sword, hands), but all he does is take his pose from the network every frame.
 // ------------------------------------------------------------------------------------------------
 
+// What his cape, glows, aura and organ are doing, packed into numbers (and back), in this order
+#define GDF_FX_SHOCK 48 // 18 shock sizes from here
+static void BossGanon_Puppet_PackFx(BossGanon* this, EnGanonMant* cape, f32* fx) {
+    s32 i;
+
+    memset(fx, 0, GDF_NET_FX * sizeof(f32));
+    if (cape != NULL) {
+        fx[0] = cape->backPush;
+        fx[1] = cape->backSwayMagnitude;
+        fx[2] = cape->sideSwayMagnitude;
+        fx[3] = cape->minDist;
+        fx[4] = cape->minY;
+        fx[5] = cape->attachLeftArmTimer;
+        fx[6] = cape->attachRightArmTimer;
+        fx[7] = cape->attachShouldersTimer;
+        fx[47] = cape->gravity;
+    }
+    fx[8] = this->shockGlow;
+    fx[9] = this->unk_2E6;
+    fx[10] = this->unk_2E8;
+    fx[11] = this->handLightBallScale;
+    fx[12] = this->unk_258;
+    fx[13] = this->unk_260.x;
+    fx[14] = this->unk_260.y;
+    fx[15] = this->unk_260.z;
+    fx[16] = this->unk_278.x;
+    fx[17] = this->unk_278.y;
+    fx[18] = this->unk_278.z;
+    fx[19] = this->unk_284;
+    fx[20] = this->unk_288;
+    fx[21] = this->unk_28C;
+    fx[22] = this->unk_290;
+    fx[23] = this->unk_1AA;
+    fx[24] = this->unk_2D0;
+    for (i = 0; i < GDF_FWORK_MAX; i++) {
+        fx[25 + i] = this->fwork[i];
+    }
+    fx[35] = this->triforcePos.x;
+    fx[36] = this->triforcePos.y;
+    fx[37] = this->triforcePos.z;
+    fx[38] = this->triforceType;
+    fx[39] = this->csState;
+    fx[40] = this->playerAuraScale;
+    fx[41] = this->playerAuraAlpha;
+    fx[42] = this->playerOrganSink;
+    fx[43] = this->playerOrganPos.x;
+    fx[44] = this->playerOrganPos.y;
+    fx[45] = this->playerOrganPos.z;
+    fx[46] = this->playerOrganYaw;
+    for (i = 0; i < 18; i++) {
+        fx[GDF_FX_SHOCK + i] = this->unk_49C[i];
+    }
+}
+
+static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const f32* fx) {
+    s32 i;
+
+    if (cape != NULL) {
+        cape->backPush = fx[0];
+        cape->backSwayMagnitude = fx[1];
+        cape->sideSwayMagnitude = fx[2];
+        cape->minDist = fx[3];
+        cape->minY = fx[4];
+        cape->attachLeftArmTimer = fx[5];
+        cape->attachRightArmTimer = fx[6];
+        cape->attachShouldersTimer = fx[7];
+        cape->gravity = (fx[47] != 0.0f) ? fx[47] : -3.0f;
+    }
+    this->shockGlow = (u8)fx[8];
+    this->unk_2E6 = (s16)fx[9];
+    this->unk_2E8 = (s16)fx[10];
+    this->handLightBallScale = fx[11];
+    this->unk_258 = fx[12];
+    this->unk_260.x = fx[13];
+    this->unk_260.y = fx[14];
+    this->unk_260.z = fx[15];
+    this->unk_278.x = fx[16];
+    this->unk_278.y = fx[17];
+    this->unk_278.z = fx[18];
+    this->unk_284 = fx[19];
+    this->unk_288 = fx[20];
+    this->unk_28C = fx[21];
+    this->unk_290 = fx[22];
+    this->unk_1AA = (s16)fx[23];
+    this->unk_2D0 = fx[24];
+    for (i = 0; i < GDF_FWORK_MAX; i++) {
+        this->fwork[i] = fx[25 + i];
+    }
+    this->triforcePos.x = fx[35];
+    this->triforcePos.y = fx[36];
+    this->triforcePos.z = fx[37];
+    this->triforceType = (s16)fx[38];
+    this->csState = (s16)fx[39];
+    this->playerAuraScale = fx[40];
+    this->playerAuraAlpha = fx[41];
+    this->playerOrganSink = fx[42];
+    this->playerOrganPos.x = fx[43];
+    this->playerOrganPos.y = fx[44];
+    this->playerOrganPos.z = fx[45];
+    this->playerOrganYaw = (s16)fx[46];
+    for (i = 0; i < 18; i++) {
+        this->unk_49C[i] = fx[GDF_FX_SHOCK + i];
+    }
+}
+
+// His light balls and Big Magic in flight
+static void BossGanon_Puppet_PackBalls(BossGanon* this, GdfNetPose* out) {
+    PlayState* play = gPlayState;
+    s32 cat;
+    Actor* actor;
+
+    out->ballCount = 0;
+    if (play == NULL) {
+        return;
+    }
+    for (cat = 0; cat < ACTORCAT_MAX; cat++) {
+        for (actor = play->actorCtx.actorLists[cat].head; actor != NULL; actor = actor->next) {
+            BossGanon* ball = (BossGanon*)actor;
+            GdfNetBall* b;
+
+            if ((actor->id != ACTOR_BOSS_GANON) || (actor->update == NULL) ||
+                (actor->params < GDF_PARAMS_PLAYER_LIGHT_BALL) ||
+                (actor->params >= GDF_PARAMS_PLAYER_BIG_MAGIC + GDF_PLAYER_BIG_MAGIC_COUNT) ||
+                (out->ballCount >= GDF_NET_BALLS)) {
+                continue;
+            }
+            b = &out->balls[out->ballCount++];
+            b->kind = (actor->params == GDF_PARAMS_PLAYER_LIGHT_BALL) ? 0 : 1;
+            b->pos = actor->world.pos;
+            b->rot = actor->world.rot;
+            b->scale = actor->scale.x;
+            b->fwork0 = ball->fwork[GDF_FWORK_0];
+            b->fwork1 = ball->fwork[GDF_FWORK_1];
+            b->floorY = actor->floorHeight;
+        }
+    }
+}
+
 // The local player's Ganondorf, as sent to the others
 s32 BossGanon_Player_GetNetPose(GdfNetPose* out) {
     BossGanon* this = sPlayerGanondorf;
@@ -12211,7 +12385,77 @@ s32 BossGanon_Player_GetNetPose(GdfNetPose* out) {
     out->floorY = this->playerFloorY;
     n = MIN(this->skelAnime.limbCount, GDF_NET_JOINTS);
     memcpy(out->joints, this->skelAnime.jointTable, n * sizeof(Vec3s));
+    BossGanon_Puppet_PackFx(this, sPlayerCape, out->fx);
+    out->fxCount = GDF_NET_FX;
+    BossGanon_Puppet_PackBalls(this, out);
     return true;
+}
+
+// His light balls and Big Magic on the others' screens: just for show (they don't hit anything here, he can't hurt
+// the Links), each one placed where his is
+static void BossGanon_PuppetBall_Update(Actor* thisx, PlayState* play) {
+    // Moved by the puppet
+}
+
+static void BossGanon_Puppet_UpdateBalls(BossGanon* this, PlayState* play, GdfNetPose* pose) {
+    s32 i;
+    s32 j;
+
+    for (i = 0; i < GDF_NET_BALLS; i++) {
+        BossGanon* ball = sPuppetBalls[i];
+
+        if ((ball != NULL) && (ball->actor.update == NULL)) {
+            ball = sPuppetBalls[i] = NULL;
+        }
+        if (i >= pose->ballCount) {
+            if (ball != NULL) {
+                Actor_Kill(&ball->actor);
+                sPuppetBalls[i] = NULL;
+            }
+            continue;
+        }
+        GdfNetBall* b = &pose->balls[i];
+        if (ball == NULL) {
+            ball = (BossGanon*)Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_GANON, b->pos.x, b->pos.y, b->pos.z,
+                                           b->rot.x, b->rot.y, b->rot.z, GDF_PARAMS_PUPPET_BALL);
+            if (ball == NULL) {
+                continue;
+            }
+            sPuppetBalls[i] = ball;
+            for (j = 0; j < 15; j++) {
+                ball->unk_2EC[j] = b->pos;
+                ball->unk_3C4[j].x = BINANG_TO_RAD(b->rot.x);
+                ball->unk_3C4[j].y = BINANG_TO_RAD(b->rot.y);
+            }
+        }
+        ball->actor.draw = (b->kind == 0) ? BossGanon_LightBall_Draw : func_808E324C;
+        ball->actor.world.pos = b->pos;
+        ball->actor.world.rot = ball->actor.shape.rot = b->rot;
+        Actor_SetScale(&ball->actor, b->scale);
+        ball->actor.floorHeight = b->floorY;
+        ball->fwork[GDF_FWORK_0] = b->fwork0;
+        ball->fwork[GDF_FWORK_1] = b->fwork1;
+        ball->unk_1A2++;
+        // Big Magic's trail
+        if (++ball->unk_1A6 >= 15) {
+            ball->unk_1A6 = 0;
+        }
+        ball->unk_2EC[ball->unk_1A6] = b->pos;
+        ball->unk_3C4[ball->unk_1A6].x = BINANG_TO_RAD(b->rot.x);
+        ball->unk_3C4[ball->unk_1A6].y = BINANG_TO_RAD(b->rot.y);
+    }
+}
+
+void BossGanon_PuppetBall_Init(BossGanon* this, PlayState* play) {
+    Actor* thisx = &this->actor;
+
+    thisx->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    thisx->flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
+    thisx->room = -1;
+    thisx->update = BossGanon_PuppetBall_Update;
+    thisx->draw = NULL; // set by the puppet
+    this->fwork[GDF_FWORK_1] = 255.0f;
+    Collider_InitCylinder(play, &this->collider);
 }
 
 void BossGanon_Puppet_Init(BossGanon* this, PlayState* play) {
@@ -12284,9 +12528,19 @@ void BossGanon_Puppet_Update_Impl(Actor* thisx, PlayState* play) {
     // Used for the cape's sway
     thisx->velocity.x = thisx->world.pos.x - thisx->prevPos.x;
     thisx->velocity.z = thisx->world.pos.z - thisx->prevPos.z;
+    // His cape moves as his does (its physics run here, with his settings), and his glows, aura and organ show
+    this->unk_1A2++;
+    this->unk_1A4++;
+    if (pose.fxCount >= GDF_NET_FX) {
+        BossGanon_Puppet_UnpackFx(this, sCape, pose.fx);
+    } else if (sCape != NULL) {
+        sCape->gravity = -3.0f;
+        sCape->minY = pose.floorY + 2.0f;
+    }
     if (sCape != NULL) {
         sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
     }
+    BossGanon_Puppet_UpdateBalls(this, play, &pose);
 }
 
 BOSS_GANON_CONTEXT_ENTRY(BossGanon_Init)

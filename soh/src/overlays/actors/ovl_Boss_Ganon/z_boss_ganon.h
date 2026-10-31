@@ -12,6 +12,7 @@ typedef void (*BossGanonActionFunc)(struct BossGanon*, PlayState*);
 // Vanilla uses 0/1 for Ganondorf himself and 0x64-0x190 for his projectiles.
 #define GDF_PARAMS_PLAYER 0x10
 #define GDF_PARAMS_PUPPET 0x11 // another player's Ganondorf (Invasion mode), posed from the network
+#define GDF_PARAMS_PUPPET_BALL 0x12 // his light balls and Big Magic on the other players' screens (just for show)
 #define GDF_PARAMS_PLAYER_LIGHT_BALL 0x1F4
 #define GDF_PARAMS_PLAYER_BIG_MAGIC 0x1F5 // 0x1F5 - 0x1F9, one per ball
 #define GDF_PLAYER_BIG_MAGIC_COUNT 5
