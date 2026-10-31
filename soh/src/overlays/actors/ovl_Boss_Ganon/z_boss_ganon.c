@@ -41,6 +41,8 @@
 
 // SoH: "Play as Ganondorf", Invasion mode: every sound the player's Ganondorf (or his light balls) makes is also noted
 // for the other players, who hear it from his puppet (see GanondorfInvasion.cpp)
+s32 PlayAsGanondorf_KeepItems(void);
+
 static void BossGanon_PlayActorSfx(Actor* actor, u16 sfxId) {
     Audio_PlayActorSound2(actor, sfxId);
     if ((actor != NULL) && (actor->id == ACTOR_BOSS_GANON) && BossGanon_IsPlayerAttack(actor)) {
@@ -6750,7 +6752,7 @@ static void BossGanon_Player_StartAttack(BossGanon* this, u16 button) {
 
 static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
     Input* input = &play->state.input[0];
-    u8 useCButtons = !CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0);
+    u8 useCButtons = !PlayAsGanondorf_KeepItems();
     u8 bigMagicEnabled = CVarGetInteger(CVAR_PLAY_AS_GDF("BigMagic"), 1);
 
     if (!BossGanon_Player_CanStartAttack(this, play)) {
@@ -7606,19 +7608,17 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
     if (!CVarGetInteger(CVAR_PLAY_AS_GDF("SwordStance"), 1) || !CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
         return false;
     }
-    // Insta-kill dark aura mode: D-Pad Left toggles it, then B (held) unleashes the aura
-    if (CVarGetInteger(CVAR_PLAY_AS_GDF("DPadLeftMode"), 0) == 0) {
-        sPlayerDarkAuraMode = !sPlayerDarkAuraMode;
-        if (sPlayerDarkAuraMode) {
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
-            BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
-            BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
-        } else {
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
-        }
+    // D-Pad Left cycles: once the insta-kill dark aura (B, held, unleashes it), twice the trident stance, a third
+    // time back to normal (from the stance, in BossGanon_Player_SwordIdle)
+    if (!sPlayerDarkAuraMode && (sPlayerSwordState == GDF_SWORD_OFF)) {
+        sPlayerDarkAuraMode = true;
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+        BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
+        BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
         return true;
     }
+    sPlayerDarkAuraMode = false;
     if (sPlayerSwordState == GDF_SWORD_OFF) {
         sPlayerSwordState = GDF_SWORD_SHEATHED;
         Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
@@ -7665,7 +7665,7 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
     // Phantom Ganon: B slashes (B, B, then a stab), stick + R and B a lunging stab, R + B or C-Left a ball of light.
     // No Big Magic and no sword skills. D-Pad Left still toggles the dark aura (so no boss can leave him stuck).
     if (BossGanon_Player_IsPhantom()) {
-        u8 useCButtons = !CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0);
+        u8 useCButtons = !PlayAsGanondorf_KeepItems();
 
         if (GanondorfSongs_IsOcarinaOut()) {
             return;
@@ -7702,15 +7702,12 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
         return;
     }
 
-    // D-Pad Left: blade back into the sheath, or the sword away
+    // D-Pad Left (the third press of the cycle): the trident away, back to normal
     if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
-        if (sPlayerSwordState == GDF_SWORD_DRAWN) {
-            BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_SHEATHE);
-        } else {
-            sPlayerSwordState = GDF_SWORD_OFF;
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
-            BossGanon_Player_SetupFloat(this, play);
-        }
+        sPlayerSwordState = GDF_SWORD_OFF;
+        sPlayerDarkAuraMode = false;
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+        BossGanon_Player_SetupFloat(this, play);
         return;
     }
 

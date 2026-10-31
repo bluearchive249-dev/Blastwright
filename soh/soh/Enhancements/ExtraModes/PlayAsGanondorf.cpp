@@ -79,6 +79,11 @@ static bool IsStandingOnGround() {
 
 static bool sSprinting = false; // holding A on the ground: Ganondorf sprints
 
+// Ganondorf: Invasion has no Ganondorf menu: he always keeps Link's C-button items
+extern "C" s32 PlayAsGanondorf_KeepItems(void) {
+    return true;
+}
+
 static bool IsEnabled() {
     return CVarGetInteger(CVAR_PLAY_AS_GDF_ENABLED, 1) != 0;
 }
@@ -620,7 +625,7 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
         blocked |= BTN_DLEFT;
     }
     // Ganon's claws can't hold items
-    if ((ganon != NULL) || !CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0)) {
+    if ((ganon != NULL) || !PlayAsGanondorf_KeepItems()) {
         blocked |= BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT;
     }
 
