@@ -5883,6 +5883,8 @@ void BossGanon_Player_SetupHurt(BossGanon* this, PlayState* play);
 void BossGanon_Player_Hurt(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupDowned(BossGanon* this, PlayState* play);
 void BossGanon_Player_Downed(BossGanon* this, PlayState* play);
+static void BossGanon_Player_Pacified(BossGanon* this, PlayState* play);
+static void BossGanon_Player_SetupPacified(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play);
 static void BossGanon_Player_KeepFloatRoot(BossGanon* this);
 static s32 BossGanon_Player_UsesSpear(void);
@@ -9782,7 +9784,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         this->playerOrganOcarina = false;
     }
 
-    this->playerHidden = BossGanon_Player_ShouldHide(this, play);
+    this->playerHidden = BossGanon_Player_ShouldHide(this, play) || GdfInvasion_IsVanished();
     if (sCape->actor.update != NULL) {
         sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
     }
@@ -9796,8 +9798,12 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
-    // React to Link getting hurt or dying
-    if (BossGanon_Player_IsLinkDead(play)) {
+    // Invasion mode: pacified
+    if (GdfInvasion_IsPacified()) {
+        if (this->actionFunc != BossGanon_Player_Pacified) {
+            BossGanon_Player_SetupPacified(this, play);
+        }
+    } else if (BossGanon_Player_IsLinkDead(play)) {
         if (this->actionFunc != BossGanon_Player_Downed) {
             BossGanon_Player_SetupDowned(this, play);
         }
@@ -12594,12 +12600,50 @@ void BossGanon_Player_NetPacified(void) {
         return;
     }
     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DEAD));
-    for (i = 0; i < 12; i++) {
-        pos = this->actor.world.pos;
-        pos.x += Rand_CenteredFloat(80.0f);
-        pos.y += Rand_ZeroFloat(140.0f);
-        pos.z += Rand_CenteredFloat(80.0f);
-        EffectSsDeadDb_Spawn(gPlayState, &pos, &zero, &zero, 160, 0, 60, 0, 90, 255, 30, 0, 60, 1, 9, false);
+    // He kneels (BossGanon_Player_Update starts it), then vanishes in smoke (BossGanon_Player_Pacified)
+    (void)zero;
+    (void)pos;
+    (void)i;
+}
+
+// Invasion mode, pacified: down on one knee as when he's beaten, then gone in a burst of smoke until he's back
+static void BossGanon_Player_SetupPacified(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+    BossGanon_Player_CancelMagic(this);
+    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfDefeatedStartAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfDefeatedStartAnim, -5.0f);
+    this->actionFunc = BossGanon_Player_Pacified;
+    this->unk_1C2 = 0;
+    this->actor.velocity.y = 0.0f;
+}
+
+static void BossGanon_Player_Pacified(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    Vec3f pos;
+    s32 i;
+
+    SkelAnime_Update(&this->skelAnime);
+    // Down to the ground under him
+    Math_ApproachF(&this->actor.world.pos.y, player->actor.world.pos.y, 0.3f, 12.0f);
+    if ((this->unk_1C2 == 0) && Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
+        BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+        Animation_MorphToLoop(&this->skelAnime, &gGanondorfDefeatedLoopAnim, 0.0f);
+        this->unk_1C2 = 1;
+    }
+    if ((this->unk_1C2 < 2) && GdfInvasion_IsVanished()) {
+        this->unk_1C2 = 2;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_LAUGH);
+        for (i = 0; i < 16; i++) {
+            pos = this->actor.world.pos;
+            pos.x += Rand_CenteredFloat(100.0f);
+            pos.y += Rand_ZeroFloat(150.0f);
+            pos.z += Rand_CenteredFloat(100.0f);
+            EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 180, 0, 60, 0, 90, 255, 30, 0, 60, 1, 9, false);
+        }
+    }
+    if (!GdfInvasion_IsPacified()) {
+        BossGanon_Player_SetupFloat(this, play);
     }
 }
 

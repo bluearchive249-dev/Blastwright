@@ -8,6 +8,16 @@
 #include "objects/object_geff/object_geff.h"
 #include "soh/frame_interpolation.h"
 #include "soh/OTRGlobals.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
+
+// Invasion mode: the player's Ganon's sounds, heard on the others' screens too
+static void BossGanon2_PlayActorSfx(Actor* actor, u16 sfxId) {
+    Audio_PlayActorSound2(actor, sfxId);
+    if ((actor != NULL) && (actor->id == ACTOR_BOSS_GANON2) && (actor->params == GANON2_PARAMS_PLAYER)) {
+        GdfInvasion_NoteSfx(sfxId);
+    }
+}
+#define Audio_PlayActorSound2 BossGanon2_PlayActorSfx
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
@@ -176,6 +186,9 @@ void func_808FD27C(PlayState* play, Vec3f* position, Vec3f* velocity, f32 scale)
 
 static u8 hasFoundMasterSword;
 
+static void BossGanon2_Puppet_Init(BossGanon2* this, PlayState* play);
+static void BossGanon2_Player_Forget(BossGanon2* this);
+
 void BossGanon2_Init(Actor* thisx, PlayState* play) {
     BossGanon2* this = (BossGanon2*)thisx;
     s32 pad;
@@ -184,6 +197,10 @@ void BossGanon2_Init(Actor* thisx, PlayState* play) {
     // SoH: "Play as Ganondorf", Ganon form
     if (thisx->params == GANON2_PARAMS_PLAYER) {
         BossGanon2_Player_Init(this, play);
+        return;
+    }
+    if (thisx->params == GANON2_PARAMS_PUPPET) {
+        BossGanon2_Puppet_Init(this, play);
         return;
     }
 
@@ -221,6 +238,10 @@ void BossGanon2_Destroy(Actor* thisx, PlayState* play) {
 
     if (thisx->params == GANON2_PARAMS_PLAYER) {
         Collider_DestroyCylinder(play, &this->playerCollider);
+        BossGanon2_Player_Forget(this);
+    }
+    if (thisx->params == GANON2_PARAMS_PUPPET) {
+        GdfInvasion_GanonPuppetDestroyed(thisx);
     }
 }
 
@@ -3238,6 +3259,7 @@ static void BossGanon2_Player_Downed(BossGanon2* this, PlayState* play);
 static void BossGanon2_Player_Revert(BossGanon2* this, PlayState* play);
 static void BossGanon2_Player_Update(Actor* thisx, PlayState* play);
 static void BossGanon2_Player_Draw(Actor* thisx, PlayState* play);
+static BossGanon2* sNetGanon = NULL; // the player's Ganon, whose pose goes to the other players
 
 static ColliderJntSphElementInit sPlayerSwordElementsInit[] = {
     {
@@ -3829,6 +3851,7 @@ static void BossGanon2_Player_Update(Actor* thisx, PlayState* play) {
     this->unk_312 = 0;
     this->unk_19C++;
     this->playerTimer++;
+    sNetGanon = this;
     Actor_SetScale(thisx, 0.01f);
     this->playerHidden = BossGanon_Player_ShouldHideAnyForm(play);
 
@@ -4145,4 +4168,107 @@ void BossGanon2_Player_UpdateGuardShield(Actor* thisx, PlayState* play) {
     Matrix_RotateY(BINANG_TO_RAD((s16)(yaw + 0x8000)), MTXMODE_APPLY);
     Matrix_Get(&player->shieldMf);
     Matrix_Pop();
+}
+
+// ---- Invasion mode: the player's Ganon on the others' screens ---------------------------------
+
+static void BossGanon2_Player_Forget(BossGanon2* this) {
+    if (sNetGanon == this) {
+        sNetGanon = NULL;
+    }
+}
+
+s32 BossGanon2_Player_GetNetPose(GdfNetGanon* out) {
+    BossGanon2* this = sNetGanon;
+    s32 i;
+
+    if ((this == NULL) || (this->actor.update == NULL) || (this->skelAnime.jointTable == NULL)) {
+        return false;
+    }
+    out->valid = true;
+    out->form = this->unk_337;
+    out->hidden = this->playerHidden;
+    out->swords = this->unk_312;
+    out->eye = (u8)this->unk_310;
+    out->pos = this->actor.world.pos;
+    out->rotY = this->actor.shape.rot.y;
+    out->yOffset = this->actor.shape.yOffset;
+    out->glow = this->unk_30C;
+    out->jointCount = (u8)MIN(this->skelAnime.limbCount, GDF_NET_GANON_JOINTS);
+    for (i = 0; i < out->jointCount; i++) {
+        out->joints[i] = this->skelAnime.jointTable[i];
+    }
+    return true;
+}
+
+static void BossGanon2_Puppet_Update(Actor* thisx, PlayState* play);
+
+static void BossGanon2_Puppet_Init(BossGanon2* this, PlayState* play) {
+    Actor* thisx = &this->actor;
+
+    thisx->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    thisx->flags |= ACTOR_FLAG_UPDATE_DURING_OCARINA | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
+    thisx->update = BossGanon2_Puppet_Update;
+    thisx->draw = BossGanon2_Player_Draw;
+    thisx->gravity = 0.0f;
+    thisx->room = -1;
+    Actor_ChangeCategory(play, &play->actorCtx, thisx, ACTORCAT_MISC);
+    Actor_SetScale(thisx, 0.01f);
+    // The limb code writes the spheres' positions (nothing collides)
+    Collider_InitJntSph(play, &this->unk_424);
+    Collider_SetJntSph(play, &this->unk_424, thisx, &sJntSphInit1, this->unk_464);
+    Collider_InitJntSph(play, &this->unk_444);
+    Collider_SetJntSph(play, &this->unk_444, thisx, &sPlayerSwordInit, this->unk_864);
+    SkelAnime_InitFlex(play, &this->skelAnime, &gGanondorfSkel, NULL, NULL, NULL, 0);
+    this->unk_337 = 0;
+    this->unk_228 = 1.0f;
+    this->unk_224 = 1.0f;
+    this->playerHidden = true; // until his first pose
+}
+
+static void BossGanon2_Puppet_Update(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+    GdfNetGanon pose;
+    f32 phi_f2;
+    s16 i;
+
+    if (!GdfInvasion_GetGanonPose(thisx, &pose)) {
+        Actor_Kill(thisx);
+        return;
+    }
+    if ((pose.form != 0) != (this->unk_337 != 0)) {
+        // Ganondorf's skeleton while he transforms, Ganon's once he's out
+        SkelAnime_Free(&this->skelAnime, play);
+        SkelAnime_InitFlex(play, &this->skelAnime, (pose.form != 0) ? &gGanonSkel : &gGanondorfSkel, NULL, NULL,
+                           NULL, 0);
+    }
+    this->unk_337 = pose.form;
+    this->unk_19C++;
+    thisx->world.pos = pose.pos;
+    thisx->shape.rot.y = thisx->world.rot.y = pose.rotY;
+    thisx->shape.yOffset = pose.yOffset;
+    this->unk_30C = pose.glow;
+    this->unk_310 = pose.eye;
+    this->unk_312 = pose.swords;
+    this->playerHidden = pose.hidden;
+    for (i = 0; (i < pose.jointCount) && (i < this->skelAnime.limbCount); i++) {
+        this->skelAnime.jointTable[i] = pose.joints[i];
+    }
+    thisx->focus.pos = thisx->world.pos;
+    thisx->focus.pos.y += 250.0f;
+
+    // His tail swaying (as in BossGanon2_Player_Update)
+    this->unk_360.y = 14000.0f;
+    Math_ApproachF(&this->unk_360.x, 2000.0f, 0.1f, 100.0f);
+    this->unk_370.y = 12000.0f;
+    Math_ApproachF(&this->unk_370.x, 1500.0f, 0.1f, 100.0f);
+    Math_ApproachF(&this->unk_360.z, 3000.0f, 0.1f, 100.0f);
+    Math_ApproachF(&this->unk_370.z, 3000.0f, 0.1f, 100.0f);
+    this->unk_35C += this->unk_360.x;
+    this->unk_36C += this->unk_370.x;
+    for (i = 0; i < ARRAY_COUNT(this->unk_348); i++) {
+        phi_f2 = (i == 0) ? 0.2f : (i == 1) ? 0.5f : 1.0f;
+        this->unk_348[i] = Math_SinS(((s16)this->unk_35C + (i * (s16)this->unk_360.y))) * phi_f2 * this->unk_360.z;
+        this->unk_352[i] = Math_SinS(((s16)this->unk_36C + (i * (s16)this->unk_370.y))) * phi_f2 * this->unk_370.z;
+    }
 }

@@ -120,6 +120,8 @@ typedef struct BossGanon2 {
 } BossGanon2;
 
 #define GANON2_PARAMS_PLAYER 0x10
+// SoH: Invasion mode, the Invader's Ganon on another player's screen (follows his pose)
+#define GANON2_PARAMS_PUPPET 0x11
 
 // SoH: "Play as Ganondorf", Ganon form
 s32 BossGanon2_Player_IsBusy(Actor* thisx);

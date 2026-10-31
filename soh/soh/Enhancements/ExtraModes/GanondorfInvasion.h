@@ -76,6 +76,33 @@ void GdfInvasion_NetGrabEnd(u32 clientId, s32 thrown, s16 yaw);
 s32 GdfInvasion_PayAttack(s32 cost);
 // Made by a Dark Art (or its copy in his game): stays put by day and away from its home (Stalchildren)
 s32 GdfInvasion_IsSummoned(Actor* actor);
+// Pacified: he kneels as if beaten, then is gone in a burst of smoke until he's back
+s32 GdfInvasion_IsPacified(void);
+s32 GdfInvasion_IsVanished(void);
+// Ganon form costs Resolve and magic up front and drains magic while he's out (false: he can't, or it ran dry)
+s32 GdfInvasion_PayGanonForm(void);
+s32 GdfInvasion_GanonFormUpkeep(void);
+// Ganon (the Invader's Ganon form) as sent to the Links, and his puppet on their screens (BossGanon2 puppet)
+#define GDF_NET_GANON_JOINTS 80
+typedef struct {
+    u8 valid;
+    u8 form; // 0: Ganondorf transforming, 1/2: Ganon
+    u8 hidden;
+    u8 swords;
+    u8 eye;
+    u8 jointCount;
+    Vec3f pos;
+    s16 rotY;
+    f32 yOffset;
+    f32 glow;
+    Vec3s joints[GDF_NET_GANON_JOINTS];
+} GdfNetGanon;
+s32 BossGanon2_Player_GetNetPose(GdfNetGanon* out);
+s32 GdfInvasion_GetGanonPose(Actor* puppet, GdfNetGanon* out);
+void GdfInvasion_GanonPuppetDestroyed(Actor* puppet);
+// PlayAsGanondorf.cpp: Ganon's battle theme (on for the Links while the Invader's Ganon is about)
+void PlayAsGanondorf_SetGanonMusic(PlayState* play, s32 on);
+s32 PlayAsGanondorf_IsGanonOut(PlayState* play);
 // Dark Link driven by Ganondorf: his input in place of Dark Link's own (false when he isn't driving him)
 s32 GdfInvasion_DarkLinkInput(Actor* actor, Input* input, s16 camYaw);
 s32 GdfInvasion_DarkLinkPossessed(Actor* actor);

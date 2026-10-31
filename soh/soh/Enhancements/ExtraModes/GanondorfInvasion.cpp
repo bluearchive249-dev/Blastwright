@@ -40,6 +40,7 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 #include "src/overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
+#include "src/overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 #include "src/overlays/actors/ovl_En_Bom/z_en_bom.h"
 #include "src/overlays/actors/ovl_Bg_Ice_Shelter/z_bg_ice_shelter.h"
 #include "src/overlays/actors/ovl_En_Fire_Rock/z_en_fire_rock.h"
@@ -88,11 +89,19 @@ struct ClientGdf {
     u32 lastFrame = 0; // when the last pose came in
     bool isGanondorf = false;
     Actor* puppet = nullptr;
+    GdfNetGanon ganon = {}; // his Ganon form, while he's in it
+    u32 ganonFrame = 0;
+    Actor* ganonPuppet = nullptr;
 };
 
 static std::map<uint32_t, ClientGdf> sClients;
 static u32 sFrame = 0;
 static u32 sVeilUntil = 0; // Shadow Veil (Ganondorf): unseen and unheard by the Links
+static u32 sPacifiedFrame = 0;     // Ganondorf: when he was pacified
+static u32 sHeroPacifiedFrame = 0; // a Link: when word came that he was
+static bool GanonFresh(const ClientGdf& c) {
+    return c.ganon.valid && (sFrame - c.ganonFrame < 10);
+}
 // Dark Link: Ganondorf drives him in the Link's game for a minute (his own Ganondorf stands still meanwhile)
 static u32 sPossessStart = 0;
 static u32 sPossessUntil = 0;
@@ -167,6 +176,24 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
     if (sFrame < sPossessUntil) {
         payload["dl"] = nlohmann::json::array({ (int)sDlYaw, (int)sDlTilt, (int)sDlButtons });
     }
+    // His Ganon form
+    GdfNetGanon ganon;
+    if (BossGanon2_Player_GetNetPose(&ganon)) {
+        std::vector<int> j;
+        j.reserve(ganon.jointCount * 3);
+        for (int i = 0; i < ganon.jointCount; i++) {
+            j.insert(j.end(), { ganon.joints[i].x, ganon.joints[i].y, ganon.joints[i].z });
+        }
+        payload["gn"] = { { "f", ganon.form },
+                          { "h", ganon.hidden || (sFrame < sVeilUntil) },
+                          { "w", ganon.swords },
+                          { "e", ganon.eye },
+                          { "p", { ganon.pos.x, ganon.pos.y, ganon.pos.z } },
+                          { "r", ganon.rotY },
+                          { "y", ganon.yOffset },
+                          { "g", ganon.glow },
+                          { "j", j } };
+    }
     if (!BossGanon_Player_GetNetPose(&pose)) {
         return;
     }
@@ -225,6 +252,30 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
         sDlTilt = (s16)payload["dl"][1].get<int>();
         sDlButtons = (u16)payload["dl"][2].get<int>();
         sDlHeard = sFrame;
+    }
+    if (c.isGanondorf && payload.contains("gn")) {
+        try {
+            const nlohmann::json& n = payload["gn"];
+            std::vector<float> p = n.value("p", std::vector<float>{ 0.0f, 0.0f, 0.0f });
+            std::vector<int> j = n.value("j", std::vector<int>{});
+            p.resize(3);
+            c.ganon.form = (u8)n.value("f", 0);
+            c.ganon.hidden = n.value("h", false) ? 1 : 0;
+            c.ganon.swords = (u8)n.value("w", 0);
+            c.ganon.eye = (u8)n.value("e", 0);
+            c.ganon.pos = { p[0], p[1], p[2] };
+            c.ganon.rotY = (s16)n.value("r", 0);
+            c.ganon.yOffset = n.value("y", 0.0f);
+            c.ganon.glow = n.value("g", 0.0f);
+            c.ganon.jointCount = (u8)MIN((int)(j.size() / 3), GDF_NET_GANON_JOINTS);
+            for (int i = 0; i < c.ganon.jointCount; i++) {
+                c.ganon.joints[i] = { (s16)j[i * 3], (s16)j[i * 3 + 1], (s16)j[i * 3 + 2] };
+            }
+            c.ganon.valid = true;
+            c.ganonFrame = sFrame;
+        } catch (...) {
+            c.ganon.valid = false;
+        }
     }
     if (!c.isGanondorf || !payload.contains("gdf")) {
         c.pose.valid = false;
@@ -295,6 +346,17 @@ bool GdfInvasion_UpdateDummy(Actor* dummy, uint32_t clientId, bool inScene) {
     ClientGdf& c = it->second;
     bool fresh = c.pose.valid && (sFrame - c.lastFrame < 60);
 
+    // His Ganon form
+    if (inScene && GanonFresh(c)) {
+        if (c.ganonPuppet == nullptr) {
+            c.ganonPuppet = Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_GANON2, c.ganon.pos.x, c.ganon.pos.y,
+                                        c.ganon.pos.z, 0, c.ganon.rotY, 0, GANON2_PARAMS_PUPPET);
+        }
+    } else if (c.ganonPuppet != nullptr) {
+        Actor_Kill(c.ganonPuppet);
+        c.ganonPuppet = nullptr;
+    }
+
     if (!inScene || !fresh) {
         if (c.puppet != nullptr) {
             Actor_Kill(c.puppet);
@@ -317,6 +379,24 @@ extern "C" s32 GdfInvasion_GetPuppetPose(Actor* puppet, GdfNetPose* out) {
         }
     }
     return false;
+}
+
+extern "C" s32 GdfInvasion_GetGanonPose(Actor* puppet, GdfNetGanon* out) {
+    for (auto& [clientId, c] : sClients) {
+        if (c.ganonPuppet == puppet) {
+            *out = c.ganon;
+            return GanonFresh(c);
+        }
+    }
+    return false;
+}
+
+extern "C" void GdfInvasion_GanonPuppetDestroyed(Actor* puppet) {
+    for (auto& [clientId, c] : sClients) {
+        if (c.ganonPuppet == puppet) {
+            c.ganonPuppet = nullptr;
+        }
+    }
 }
 
 extern "C" void GdfInvasion_PuppetDestroyed(Actor* puppet) {
@@ -930,6 +1010,51 @@ static void SetSlotArt(int slot, int art) {
 
 static bool IsBanished() {
     return sFrame < sBanishedUntil;
+}
+
+extern "C" s32 GdfInvasion_IsPacified(void) {
+    return GdfInvasion_IsInvader() && IsBanished();
+}
+
+extern "C" s32 GdfInvasion_IsVanished(void) {
+    return GdfInvasion_IsPacified() && (sFrame - sPacifiedFrame >= 3 * GDF_FPS);
+}
+
+static void Flash(const std::string& message);
+
+// Ganon form: 25 Resolve and 40 magic to become him, then 2 magic a second while he's out
+#define GDF_GANON_RESOLVE 25.0f
+#define GDF_GANON_MAGIC 40
+extern "C" s32 GdfInvasion_PayGanonForm(void) {
+    if (!GdfInvasion_IsInvader() || (GdfInvasion_Role() == GDF_INVASION_OFF)) {
+        return true;
+    }
+    if (gSaveContext.magic < GDF_GANON_MAGIC) {
+        Flash("Ganon form needs 40 magic");
+    } else if (sResolve <= GDF_GANON_RESOLVE + 1.0f) {
+        Flash("Ganon form needs more Resolve");
+    } else {
+        gSaveContext.magic -= GDF_GANON_MAGIC;
+        sResolve -= GDF_GANON_RESOLVE;
+        return true;
+    }
+    Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                         &gSfxDefaultReverb);
+    return false;
+}
+
+extern "C" s32 GdfInvasion_GanonFormUpkeep(void) {
+    if (!GdfInvasion_IsInvader() || (GdfInvasion_Role() == GDF_INVASION_OFF)) {
+        return true;
+    }
+    if ((sFrame % (GDF_FPS / 2)) == 0) {
+        if (gSaveContext.magic <= 0) {
+            Flash("Out of magic: Ganon fades");
+            return false;
+        }
+        gSaveContext.magic--;
+    }
+    return true;
 }
 
 static bool GameStarted() {
@@ -1914,6 +2039,7 @@ static void HandleHit(const nlohmann::json& payload) {
     sLastPacifyFrame = sFrame;
     int seconds = (sPacifyCount == 1) ? 30 : (sPacifyCount == 2) ? 45 : 60;
     sBanishedUntil = sFrame + seconds * GDF_FPS;
+    sPacifiedFrame = sFrame;
     sResolve = GDF_RESOLVE_MAX;
     sMenuOpen = false;
     BossGanon_Player_NetPacified();
@@ -1984,6 +2110,7 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
         }
     } else if (type == GDF_PKT_PACIFIED) {
         if (GdfInvasion_IsHero()) {
+            sHeroPacifiedFrame = sFrame;
             Notification::Emit({ .prefix = "Invasion",
                                  .message = payload.value("by", std::string("A Link")) +
                                             " pacified Ganondorf! He's gone for " +
@@ -2008,6 +2135,26 @@ static void TickInvasion() {
 
     UpdateCurses();
     UpdateSummons();
+    if (GdfInvasion_IsHero() && (play != nullptr)) {
+        bool ganonOut = false;
+        for (auto& [clientId, c] : sClients) {
+            ganonOut |= (c.ganonPuppet != nullptr) && GanonFresh(c) && (c.ganon.form != 0);
+            // Pacified: his puppet kneels (his pose), then vanishes in smoke
+            if ((sHeroPacifiedFrame != 0) && (sFrame - sHeroPacifiedFrame == 3 * GDF_FPS) && (c.puppet != nullptr)) {
+                Vec3f zero = { 0.0f, 0.0f, 0.0f };
+                for (int i = 0; i < 16; i++) {
+                    Vec3f pos = c.puppet->world.pos;
+                    pos.x += Rand_CenteredFloat(100.0f);
+                    pos.y += Rand_ZeroFloat(150.0f);
+                    pos.z += Rand_CenteredFloat(100.0f);
+                    EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 180, 0, 60, 0, 90, 255, 30, 0, 60, 1, 9, false);
+                }
+                Audio_PlayActorSound2(c.puppet, NA_SE_EN_GANON_LAUGH);
+            }
+        }
+        // Ganon's battle theme while the Invader's Ganon is here
+        PlayAsGanondorf_SetGanonMusic(play, ganonOut);
+    }
     if (!GdfInvasion_IsInvader() || (play == nullptr) || !GameStarted()) {
         return;
     }
@@ -2076,7 +2223,7 @@ static void TickInvasion() {
         gSaveContext.magicFillTarget = 0x60;
         gSaveContext.magicCapacity = 0x60;
     }
-    if (!IsBanished() && (gSaveContext.magicState == MAGIC_STATE_IDLE) &&
+    if (!IsBanished() && (gSaveContext.magicState == MAGIC_STATE_IDLE) && !PlayAsGanondorf_IsGanonOut(play) &&
         (gSaveContext.magic < gSaveContext.magicCapacity)) {
         bool farAway = FindTargetLink(play) == 0;
         // About 1.3 a second near the Links, 2 a second away from them

@@ -111,8 +111,7 @@ static BossGanon2* FindPlayerGanon(PlayState* play) {
 }
 
 static bool IsGanonFormEnabled() {
-    // Not in Invasion mode yet: the other players' games can't show Ganon (he was invisible to them)
-    return (CVarGetInteger(CVAR_PLAY_AS_GDF("GanonForm"), 1) != 0) && !GdfInvasion_IsInvader();
+    return CVarGetInteger(CVAR_PLAY_AS_GDF("GanonForm"), 1) != 0;
 }
 
 // Ganon is too big for houses, shops, grottos and other interiors. Dungeons and temples (and their bosses) are fine,
@@ -444,7 +443,9 @@ static void UpdateGanon(PlayState* play, Player* player, BossGanon* dorf) {
         }
 
         // Not on horseback (he comes back once Link gets off)
-        if ((sWantGanon && !(player->stateFlags1 & PLAYER_STATE1_ON_HORSE)) || (toggle && canTransform)) {
+        // Invasion mode: becoming Ganon costs Resolve and magic (coming back in a new area doesn't)
+        if ((sWantGanon && !(player->stateFlags1 & PLAYER_STATE1_ON_HORSE)) ||
+            (toggle && canTransform && GdfInvasion_PayGanonForm())) {
             // home.rot.z = 1: already Ganon (a new area), no transformation
             Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_GANON2, player->actor.world.pos.x,
                         player->actor.world.pos.y, player->actor.world.pos.z, 0, player->actor.shape.rot.y,
@@ -458,6 +459,19 @@ static void UpdateGanon(PlayState* play, Player* player, BossGanon* dorf) {
     }
 
     UpdateGanonMusic(play, BossGanon2_Player_IsGanonForm(&ganon->actor));
+
+    // Invasion mode: pacified, Ganondorf kneels (Ganon is gone); his magic running dry turns him back
+    if (GdfInvasion_IsPacified()) {
+        BossGanon2_Player_Remove(&ganon->actor, play);
+        sWantGanon = false;
+        UpdateGanonMusic(play, false);
+        return;
+    }
+    if (BossGanon2_Player_IsGanonForm(&ganon->actor) && !BossGanon2_Player_IsReverting(&ganon->actor) &&
+        !GdfInvasion_GanonFormUpkeep() && BossGanon2_Player_CanAct(&ganon->actor)) {
+        BossGanon2_Player_StartRevert(&ganon->actor, play);
+        sWantGanon = false;
+    }
 
     if (BossGanon2_Player_IsReverting(&ganon->actor)) {
         sWantGanon = false;
@@ -883,3 +897,7 @@ static void RegisterPlayAsGanondorf() {
 }
 
 static RegisterShipInitFunc initFunc(RegisterPlayAsGanondorf, {});
+
+extern "C" void PlayAsGanondorf_SetGanonMusic(PlayState* play, s32 on) {
+    UpdateGanonMusic(play, on != 0);
+}
