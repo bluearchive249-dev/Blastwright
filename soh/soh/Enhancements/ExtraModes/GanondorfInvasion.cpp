@@ -348,6 +348,7 @@ static std::map<uint32_t, int> sClientSeats; // what each other player took
 static int sAppliedStart = -1;                // the room's start count we last acted on
 static int sRoomStart = 0;                    // the room's start count (0 = in the lobby)
 static u32 sLastClientStateFrame = 0;
+static int sStartToSend = 0; // what this player, as host, puts in the room state (not saved: a new room starts in the lobby)
 
 static int OwnSeat() {
     return CVarGetInteger(CVAR_INVASION("Seat"), GDF_SEAT_NONE);
@@ -371,7 +372,7 @@ void GdfInvasion_ReadClientState(uint32_t clientId, const nlohmann::json& state)
 }
 
 void GdfInvasion_WriteRoomState(nlohmann::json& state) {
-    state["gdfStart"] = CVarGetInteger(CVAR_INVASION("StartCount"), 0);
+    state["gdfStart"] = sStartToSend;
 }
 
 // Who holds a seat: the player with the lowest id who took it (two taking it at once, the other is bumped)
@@ -389,6 +390,31 @@ static uint32_t SeatHolder(int seat) {
         }
     }
     return holder;
+}
+
+// The lobby's host: the room's owner while he's here; otherwise (he left, or the room was made in an earlier session)
+// the player with the lowest id, so there's always someone who can start the game
+static bool IsLobbyHost() {
+    uint32_t owner = Anchor::Instance->roomState.ownerClientId;
+    uint32_t lowest = 0;
+
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (!client.online) {
+            continue;
+        }
+        if (clientId == owner) {
+            return owner == Anchor::Instance->ownClientId;
+        }
+        if ((lowest == 0) || (clientId < lowest)) {
+            lowest = clientId;
+        }
+    }
+    return lowest == Anchor::Instance->ownClientId;
+}
+
+// Players on a different build can't play together (Anchor ignores most of their packets)
+static bool SameBuild(const AnchorClient& client) {
+    return client.self || (client.clientVersion == Anchor::clientVersion);
 }
 
 static void SendOwnState() {
@@ -470,15 +496,13 @@ static void UpdateLobby() {
     }
 }
 
-static void SeatButton(int seat) {
+static void SeatButton(int seat, float w) {
     uint32_t holder = SeatHolder(seat);
     bool mine = (holder != 0) && (holder == Anchor::Instance->ownClientId);
     bool taken = (holder != 0) && !mine;
     const SeatInfo& info = sSeats[seat];
     std::string who = mine ? "You" : taken ? Anchor::Instance->clients[holder].name : "Free";
     ImVec4 col(info.color.r / 255.0f, info.color.g / 255.0f, info.color.b / 255.0f, 1.0f);
-    float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-
     ImGui::PushID(seat);
     ImGui::ColorButton("##swatch", col, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
                        ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight()));
@@ -559,10 +583,9 @@ void GdfInvasion_DrawMenu() {
                 SaveCVars();
             }
         }
-        if (Anchor::Instance->roomState.ownerClientId == Anchor::Instance->ownClientId) {
+        if (IsLobbyHost()) {
             if (ImGui::Button("Back to the lobby (everyone)")) {
-                CVarSetInteger(CVAR_INVASION("StartCount"), 0);
-                SaveCVars();
+                sStartToSend = 0;
                 Anchor::Instance->SendPacket_UpdateRoomState();
             }
         }
@@ -570,32 +593,48 @@ void GdfInvasion_DrawMenu() {
     }
 
     ImGui::Text("Lobby: %d / %d players", online, GDF_MAX_PLAYERS);
+    // Who's in the room, and anyone on another build
+    bool mismatch = false;
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (!client.online) {
+            continue;
+        }
+        if (!SameBuild(client)) {
+            mismatch = true;
+            ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s is on a different build of the game",
+                               client.name.c_str());
+        }
+    }
+    if (mismatch) {
+        ImGui::TextWrapped("Everyone needs the exact same build (download it from the same place, the same run).");
+    }
     ImGui::TextDisabled("Take a seat: one Ganondorf and up to six Links.");
-    SeatButton(GDF_SEAT_GANONDORF);
+    // Two seats to a row, all the same width
+    float seatWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    SeatButton(GDF_SEAT_GANONDORF, seatWidth);
     for (int seat = GDF_SEAT_FIRST_LINK; seat < GDF_SEAT_COUNT; seat++) {
-        SeatButton(seat);
+        SeatButton(seat, seatWidth);
         if (((seat - GDF_SEAT_FIRST_LINK) % 2) == 0) {
             ImGui::SameLine();
         }
     }
-    ImGui::NewLine();
 
     if (online > GDF_MAX_PLAYERS) {
         ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "Too many players: at most %d (1 Ganondorf + 6 Links).",
                            GDF_MAX_PLAYERS);
     }
-    bool ready = ganondorf && (links > 0) && (seated == online) && (online <= GDF_MAX_PLAYERS);
-    if (Anchor::Instance->roomState.ownerClientId == Anchor::Instance->ownClientId) {
+    bool ready = ganondorf && (links > 0) && (seated == online) && (online <= GDF_MAX_PLAYERS) && !mismatch;
+    if (IsLobbyHost()) {
         if (!ready) {
-            ImGui::TextDisabled(!ganondorf    ? "Waiting for someone to be Ganondorf..."
-                                : (links == 0) ? "Waiting for at least one Link..."
+            ImGui::TextDisabled(mismatch           ? "Everyone needs the same build to start."
+                                : !ganondorf        ? "Waiting for someone to be Ganondorf..."
+                                : (links == 0)      ? "Waiting for at least one Link..."
                                 : (seated < online) ? "Waiting for everyone to take a seat..."
                                                     : "Too many players.");
         }
         ImGui::BeginDisabled(!ready);
         if (ImGui::Button("Start the game", ImVec2(-1.0f, 0.0f))) {
-            CVarSetInteger(CVAR_INVASION("StartCount"), CVarGetInteger(CVAR_INVASION("StartCount"), 0) + 1);
-            SaveCVars();
+            sStartToSend = MAX(sRoomStart, sAppliedStart) + 1;
             Anchor::Instance->SendPacket_UpdateRoomState();
         }
         ImGui::EndDisabled();
