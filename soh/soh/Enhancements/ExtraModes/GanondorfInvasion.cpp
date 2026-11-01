@@ -2892,8 +2892,9 @@ static void UpdateGhosts() {
             it = sGhosts.erase(it);
             continue;
         }
-        // After coming up as themselves for a moment, they only follow (no fighting him)
-        if (((sFrame - g.born > 20) || (g.id == ACTOR_EN_BOM)) && (g.id != ACTOR_EN_TORCH2)) {
+        // They run as themselves (animating) and follow the Link's game: they can't hurt him or go after him (monsters
+        // in his game leave him alone), so nothing needs freezing. Only the bombs wait for the Link's to go off.
+        if (g.id == ACTOR_EN_BOM) {
             g.actor->freezeTimer = 2;
         }
         ++it;
