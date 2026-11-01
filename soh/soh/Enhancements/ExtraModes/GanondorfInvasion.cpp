@@ -2337,14 +2337,14 @@ static void TickInvasion() {
         // Reviving a fallen Link: stand by him for a few seconds
         Player* self = GET_PLAYER(play);
         for (auto& [clientId, c] : sClients) {
-            bool near = false;
+            bool closeBy = false;
             if ((c.downLeft > 0) && (sFrame - c.downFrame < 10) && !IsDowned() && (self != nullptr) &&
                 (gSaveContext.health > 0) && Anchor::Instance->clients.count(clientId) &&
                 (Anchor::Instance->clients[clientId].sceneNum == play->sceneNum)) {
-                near = Math_Vec3f_DistXYZ(&self->actor.world.pos, &Anchor::Instance->clients[clientId].posRot.pos) <
+                closeBy = Math_Vec3f_DistXYZ(&self->actor.world.pos, &Anchor::Instance->clients[clientId].posRot.pos) <
                        100.0f;
             }
-            c.reviveProgress = near ? (c.reviveProgress + 1) : 0;
+            c.reviveProgress = closeBy ? (c.reviveProgress + 1) : 0;
             if (c.reviveProgress >= GDF_REVIVE_SECONDS * GDF_FPS) {
                 c.reviveProgress = 0;
                 nlohmann::json out;
