@@ -920,6 +920,36 @@ static RegisterShipInitFunc lobbyInitFunc(RegisterGanondorfInvasionLobby, {});
 #define GDF_PKT_CURSE_ACK "GDF_CURSE_ACK"
 #define GDF_PKT_PACIFIED "GDF_PACIFIED"
 #define GDF_PKT_CHAT "GDF_CHAT"
+#define GDF_PKT_DUNGEON_DONE "GDF_DUNGEON_DONE"
+
+// A dungeon (its rooms and its boss's room), and where outside it Ganondorf is put once a Link has beaten it
+struct DungeonExit {
+    s16 scene;
+    s16 bossScene;
+    s32 exit;
+};
+static const DungeonExit sDungeonExits[] = {
+    { SCENE_DEKU_TREE, SCENE_DEKU_TREE_BOSS, ENTR_KOKIRI_FOREST_OUTSIDE_DEKU_TREE },
+    { SCENE_DODONGOS_CAVERN, SCENE_DODONGOS_CAVERN_BOSS, ENTR_DEATH_MOUNTAIN_TRAIL_OUTSIDE_DODONGOS_CAVERN },
+    { SCENE_JABU_JABU, SCENE_JABU_JABU_BOSS, ENTR_ZORAS_FOUNTAIN_OUTSIDE_JABU_JABU },
+    { SCENE_FOREST_TEMPLE, SCENE_FOREST_TEMPLE_BOSS, ENTR_SACRED_FOREST_MEADOW_OUTSIDE_TEMPLE },
+    { SCENE_FIRE_TEMPLE, SCENE_FIRE_TEMPLE_BOSS, ENTR_DEATH_MOUNTAIN_CRATER_OUTSIDE_TEMPLE },
+    { SCENE_WATER_TEMPLE, SCENE_WATER_TEMPLE_BOSS, ENTR_LAKE_HYLIA_OUTSIDE_TEMPLE },
+    { SCENE_SPIRIT_TEMPLE, SCENE_SPIRIT_TEMPLE_BOSS, ENTR_DESERT_COLOSSUS_OUTSIDE_TEMPLE },
+    { SCENE_SHADOW_TEMPLE, SCENE_SHADOW_TEMPLE_BOSS, ENTR_GRAVEYARD_OUTSIDE_TEMPLE },
+};
+
+static int DungeonOf(s16 scene) {
+    for (int i = 0; i < (int)ARRAY_COUNT(sDungeonExits); i++) {
+        if ((sDungeonExits[i].scene == scene) || (sDungeonExits[i].bossScene == scene)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int sPendingDungeonExit = -1; // Ganondorf: a Link beat this dungeon, out he goes
+static void UpdateDungeonExit(PlayState* play);
 
 enum DarkArtKind { ART_OBSTACLE, ART_MONSTER, ART_CURSE, ART_OWN };
 
@@ -2202,6 +2232,11 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
                                             " pacified Ganondorf! He's gone for " +
                                             std::to_string(payload.value("seconds", 30)) + " seconds." });
         }
+    } else if (type == GDF_PKT_DUNGEON_DONE) {
+        int dungeon = payload.value("dungeon", -1);
+        if (GdfInvasion_IsInvader() && (dungeon >= 0) && (dungeon < (int)ARRAY_COUNT(sDungeonExits))) {
+            sPendingDungeonExit = dungeon;
+        }
     } else if (type == GDF_PKT_CHAT) {
         std::string name = payload.value("name", std::string("?"));
         Color_RGB8 color = { 255, 255, 255 };
@@ -2252,6 +2287,7 @@ static void TickInvasion() {
     if (gSaveContext.gameMode != GAMEMODE_NORMAL) {
         return;
     }
+    UpdateDungeonExit(play);
     // Eye of Ganon: the camera hangs over the Link he's watching
     if ((sFrame < sEyeUntil) && Anchor::Instance->clients.count(sEyeTarget) &&
         (Anchor::Instance->clients[sEyeTarget].sceneNum == play->sceneNum)) {
@@ -2347,7 +2383,47 @@ static void TickInvasion() {
     sWasBanished = IsBanished();
 }
 
+// A Link beat a dungeon's boss: everyone hears, and Ganondorf, if he's in that dungeon, is thrown out of it
+static void OnInvasionBossDefeat(void* bossActor) {
+    PlayState* play = gPlayState;
+
+    if (!GdfInvasion_IsHero() || (play == nullptr) || !AnchorOn()) {
+        return;
+    }
+    int dungeon = DungeonOf(play->sceneNum);
+    if (dungeon < 0) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["type"] = GDF_PKT_DUNGEON_DONE;
+    payload["dungeon"] = dungeon;
+    Anchor::Instance->SendJsonToRemote(payload);
+}
+
+// Ganondorf: put outside the dungeon a Link has just beaten (as soon as nothing's in the way)
+static void UpdateDungeonExit(PlayState* play) {
+    if (sPendingDungeonExit < 0) {
+        return;
+    }
+    if (DungeonOf(play->sceneNum) != sPendingDungeonExit) {
+        sPendingDungeonExit = -1; // he isn't in it
+        return;
+    }
+    if ((play->transitionTrigger != TRANS_TRIGGER_OFF) || (play->msgCtx.msgMode != MSGMODE_NONE)) {
+        return;
+    }
+    play->nextEntranceIndex = sDungeonExits[sPendingDungeonExit].exit;
+    play->transitionTrigger = TRANS_TRIGGER_START;
+    play->transitionType = TRANS_TYPE_FADE_BLACK;
+    gSaveContext.respawnFlag = 0;
+    gSaveContext.cutsceneIndex = 0;
+    sPendingDungeonExit = -1;
+    sMenuOpen = false;
+    Notification::Emit({ .prefix = "Invasion", .message = "A Link has conquered this dungeon: you're cast out of it." });
+}
+
 static void RegisterInvasionPlay() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnBossDefeat>(OnInvasionBossDefeat);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(TickInvasion);
 }
 
