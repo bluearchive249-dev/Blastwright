@@ -2059,7 +2059,12 @@ bool GdfInvasion_UpdateGanondorfDummy(Actor* actor, uint32_t clientId) {
     PlayState* play = gPlayState;
     Player* dummy = (Player*)actor;
     auto it = sClients.find(clientId);
-    bool hittable = (it != sClients.end()) && it->second.pose.valid && !it->second.pose.hidden && GameStarted();
+    // Ganondorf, or his Ganon form (bigger)
+    bool ganon = (it != sClients.end()) && GanonFresh(it->second) && !it->second.ganon.hidden;
+    bool hittable =
+        (it != sClients.end()) && ((it->second.pose.valid && !it->second.pose.hidden) || ganon) && GameStarted();
+    float radius = ganon ? 85.0f : 40.0f;
+    float height = ganon ? 260.0f : 125.0f;
 
     actor->shape.shadowAlpha = 0;
     if (!hittable) {
@@ -2069,8 +2074,8 @@ bool GdfInvasion_UpdateGanondorfDummy(Actor* actor, uint32_t clientId) {
     actor->flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED; // Links can lock on to him
     actor->colChkInfo.damageTable = (DamageTable*)&sResolveTable;
     dummy->cylinder.info.bumperFlags &= ~BUMP_NO_HITMARK;
-    dummy->cylinder.dim.radius = 40;
-    dummy->cylinder.dim.height = 125;
+    dummy->cylinder.dim.radius = (s16)radius;
+    dummy->cylinder.dim.height = (s16)height;
 
     if ((dummy->cylinder.base.acFlags & AC_HIT) && (sFrame >= sHitCooldown[clientId])) {
         nlohmann::json payload;
@@ -2082,8 +2087,8 @@ bool GdfInvasion_UpdateGanondorfDummy(Actor* actor, uint32_t clientId) {
         sHitCooldown[clientId] = sFrame + 8;
     }
     Collider_UpdateCylinder(actor, &dummy->cylinder);
-    dummy->cylinder.dim.radius = 40;
-    dummy->cylinder.dim.height = 125;
+    dummy->cylinder.dim.radius = (s16)radius;
+    dummy->cylinder.dim.height = (s16)height;
     CollisionCheck_SetAC(play, &play->colChkCtx, &dummy->cylinder.base);
     Collider_ResetCylinderAC(play, &dummy->cylinder.base);
     return true;

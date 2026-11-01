@@ -2717,12 +2717,22 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                         f32 yDist = actor->yDistToPlayer;
                         f32 distSq = actor->xyzDistToPlayerSq;
 
+                        Vec3f himPos = player->actor.world.pos;
+                        Vec3f himFocus = player->actor.focus.pos;
+
                         if (ignoreHim) {
+                            // (and to those that look straight at where he is, he's far below the world)
+                            player->actor.world.pos.y -= 30000.0f;
+                            player->actor.focus.pos.y -= 30000.0f;
                             actor->xzDistToPlayer = 30000.0f;
                             actor->yDistToPlayer = 30000.0f;
                             actor->xyzDistToPlayerSq = SQ(30000.0f) * 2.0f;
                         }
                         actor->update(actor, play);
+                        if (ignoreHim) {
+                            player->actor.world.pos = himPos;
+                            player->actor.focus.pos = himFocus;
+                        }
                         if (ignoreHim && (actor->update != NULL)) {
                             actor->xzDistToPlayer = xzDist;
                             actor->yDistToPlayer = yDist;

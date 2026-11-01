@@ -645,6 +645,7 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
         s32 b;
 
         GdfInvasion_PuppetDestroyed(&this->actor);
+        BossGanon_Player_StopOrganMusic(this, play);
         for (b = 0; b < GDF_NET_BALLS; b++) {
             if ((sPuppetBalls[b] != NULL) && (sPuppetBalls[b]->actor.update != NULL)) {
                 Actor_Kill(&sPuppetBalls[b]->actor);
@@ -5997,6 +5998,7 @@ static ColliderCylinderInit sPlayerPoundCylinderInit = {
 #define GDF_GRAB_FLYING 2
 #define GDF_GRAB_DOWN 3
 static Actor* sGdfGrabActor = NULL;
+static u32 sGdfGrabBusyFrame = 0; // the last frame he held someone (Invasion mode's grab cooldown)
 static u8 sGdfGrabState = GDF_GRAB_NONE;
 static u8 sGdfGrabIsEnemy = false;
 static f32 sGdfGrabNeck = 0.0f;
@@ -9795,6 +9797,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         }
     }
 
+    if (sGdfGrabState != GDF_GRAB_NONE) {
+        sGdfGrabBusyFrame = play->gameplayFrames;
+    }
     // Invasion mode: pacified
     if (GdfInvasion_IsPacified()) {
         if (this->actionFunc != BossGanon_Player_Pacified) {
@@ -11613,6 +11618,11 @@ s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play) {
     if ((sGdfGrabState != GDF_GRAB_NONE) || this->playerHidden || GanondorfSongs_IsOcarinaOut()) {
         return false;
     }
+    // Invasion mode: 6 s after he lets go before he can grab again
+    if ((GdfInvasion_Role() != GDF_INVASION_OFF) && (play->gameplayFrames - sGdfGrabBusyFrame < 6 * 20)) {
+        Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
+        return false;
+    }
     target = BossGanon_Player_FindGrabTarget(this, play);
     if (target == NULL) {
         return false;
@@ -12379,6 +12389,7 @@ static void BossGanon_Puppet_PackFx(BossGanon* this, EnGanonMant* cape, f32* fx)
     fx[68] = sGdfTridentPos.y;
     fx[69] = sGdfTridentPos.z;
     fx[70] = sGdfTridentSpin;
+    fx[71] = this->playerOrganMusic; // his organ's music, heard by the Links too
 }
 
 static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const f32* fx) {
@@ -12730,6 +12741,12 @@ void BossGanon_Puppet_Update_Impl(Actor* thisx, PlayState* play) {
     this->unk_1A4++;
     if (pose.fxCount >= GDF_NET_FX) {
         BossGanon_Puppet_UnpackFx(this, sCape, pose.fx);
+        // His organ's music (Ganon's Tower theme)
+        if ((pose.fx[71] != 0.0f) && !this->playerOrganMusic) {
+            BossGanon_Player_StartOrganMusic(this);
+        } else if ((pose.fx[71] == 0.0f) && this->playerOrganMusic) {
+            BossGanon_Player_StopOrganMusic(this, play);
+        }
     } else if (sCape != NULL) {
         sCape->gravity = -3.0f;
         sCape->minY = pose.floorY + 2.0f;
