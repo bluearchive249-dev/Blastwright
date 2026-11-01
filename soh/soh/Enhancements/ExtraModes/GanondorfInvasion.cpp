@@ -937,7 +937,7 @@ struct DarkArt {
 
 // Row by row: obstacles, monsters, curses, his own. Curses are index 12 onward.
 static const DarkArt sArts[GDF_ART_COUNT] = {
-    { "Red Ice Wall", ART_OBSTACLE, 12, 8, 20, true, "A wall of red ice across Link's path. Blue Fire melts it." },
+    { "Beamos Watch", ART_OBSTACLE, 18, 25, 25, true, "A Beamos rises ahead of Link and burns him with its eye." },
     { "Wall of Flame", ART_OBSTACLE, 16, 10, 15, true, "A line of fire walls ahead of Link that erupt as he nears." },
     { "Rock Fall", ART_OBSTACLE, 20, 15, 0, true, "Burning rocks crash down from the sky around Link." },
     { "Bomb Rain", ART_OBSTACLE, 26, 30, 3, true, "Over twenty bombs rain down around Link." },
@@ -954,7 +954,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Iron Weight", ART_CURSE, 14, 25, 15, true, "Link is weighed down by iron (not in water)." },
     { "Shrink", ART_CURSE, 16, 30, 20, true, "Link shrinks to a fraction of his size." },
     { "Sealed Hand", ART_CURSE, 20, 40, 20, true, "One of Link's C-button items is sealed." },
-    { "Blinding Gloom", ART_CURSE, 16, 30, 25, true, "Darkness closes in around Link." },
+    { "Withering", ART_CURSE, 16, 35, 15, true, "Link can't heal, and loses a quarter heart every 3 s (never his last)." },
     { "Lost Bearings", ART_CURSE, 10, 30, 15, true, "Link can't Z-target." },
     { "Ghostly Gale", ART_CURSE, 14, 30, 15, true, "Gusts of wind push Link about." },
     { "Phantom Step", ART_OWN, 16, 30, 0, true, "Ganondorf vanishes and steps out somewhere out of sight." },
@@ -1488,7 +1488,7 @@ static void Smoke(PlayState* play, Vec3f* pos) {
 
 static const char* ArtMessage(int art) {
     switch (art) {
-        case GDF_ART_RED_ICE: return "bars your way with red ice!";
+        case GDF_ART_RED_ICE: return "sets a Beamos to watch you!";
         case GDF_ART_FLAME_WALL: return "raises a wall of flame!";
         case GDF_ART_ROCK_FALL: return "brings the sky down on you!";
         case GDF_ART_BOMB_RAIN: return "rains bombs upon you!";
@@ -1546,13 +1546,15 @@ static bool StartArt(PlayState* play, int art) {
     }
     switch (art) {
         case GDF_ART_RED_ICE: {
-            Vec3f p = AheadOfLink(play, 120.0f);
-            Actor* ice = Actor_Spawn(&play->actorCtx, play, ACTOR_BG_ICE_SHELTER, p.x, p.y, p.z, 0,
-                                     player->actor.shape.rot.y, 0, (RED_ICE_WALL << 8) | 0x40 | 0x3F);
-            if (ice == nullptr) {
+            // Beamos Watch (it took the Red Ice Wall's place): one on Link's path, its eye sweeping for him
+            Vec3f p = AheadOfLink(play, 260.0f);
+            Smoke(play, &p);
+            Actor* beamos = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_VM, p.x, p.y, p.z, 0,
+                                        Math_Vec3f_Yaw(&p, &player->actor.world.pos), 0, (0x0C << 8) | 0);
+            if (beamos == nullptr) {
                 return false;
             }
-            AddObstacle(ice, 20);
+            AddObstacle(beamos, 25);
             break;
         }
         case GDF_ART_SEALED_DOOR: {
@@ -1848,6 +1850,8 @@ static void UpdateSummons() {
     }
 }
 
+static s16 sWitherHealth = 0; // Withering: his health may only go down
+
 static void SetCurse(int curse, bool on) {
     PlayState* play = gPlayState;
 
@@ -1875,7 +1879,8 @@ static void SetCurse(int curse, bool on) {
             sSealedButton = on ? sCButtons[(int)(Rand_ZeroOne() * 2.99f)] : 0;
             break;
         case 5:
-            // Drawn by the HUD (the darkness)
+            // Withering (UpdateCurses): no healing, and his hearts slowly drain
+            sWitherHealth = gSaveContext.health;
             break;
         case 6:
             GameInteractor::State::DisableZTargetingActive = on;
@@ -1929,6 +1934,19 @@ static void HandleCurse(const nlohmann::json& payload) {
 }
 
 static void UpdateCurses() {
+    // Withering: whatever would heal him doesn't, and a quarter heart goes every 3 s (never his last heart)
+    if (sCurses[5].active && GdfInvasion_IsHero() && (gSaveContext.health > 0)) {
+        gSaveContext.healthAccumulator = 0;
+        if (gSaveContext.health > sWitherHealth) {
+            gSaveContext.health = sWitherHealth;
+        }
+        if (((sFrame % (3 * GDF_FPS)) == 0) && (gSaveContext.health > 16)) {
+            gSaveContext.health = MAX(gSaveContext.health - 4, 16);
+            Audio_PlaySfxGeneral(NA_SE_EN_GANON_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+        sWitherHealth = gSaveContext.health;
+    }
     for (int i = 0; i < 8; i++) {
         if (sCurses[i].active && ((sFrame >= sCurses[i].until) || !GdfInvasion_IsHero())) {
             sCurses[i].active = false;
@@ -2422,8 +2440,8 @@ static void DrawHeroHud(ImGuiViewport* vp, float scale) {
     ImDrawList* list = ImGui::GetForegroundDrawList(vp);
     float font = ImGui::GetFontSize() * 0.8f * fmaxf(scale, 1.0f);
 
-    if (sCurses[5].active) {
-        // Darkness closing in from the edges
+    if (false) {
+        // (was Blinding Gloom: darkness closing in from the edges)
         float w = vp->Size.x;
         float h = vp->Size.y;
         ImVec2 o = vp->Pos;

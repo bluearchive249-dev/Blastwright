@@ -63,7 +63,8 @@ static bool sCapeShielding = false; // the cape is up and works as Link's shield
 static bool sForcedIronBoots = false; // Link wears Iron Boots because Ganondorf is in water
 
 static bool sWantGanon = false; // Ganon form, kept across areas where he's allowed
-static bool sGanonMusic = false; // Ganon's battle theme is playing instead of the area music
+static bool sGanonMusic = false;
+static bool sRemoteGanonMusic = false; // Invasion mode, a Link: the Invader's Ganon is about // Ganon's battle theme is playing instead of the area music
 static bool sGanonMusicNewArea = false;
 static u16 sPrevBgm = 0;
 static s16 sPrevBgmScene = -1;
@@ -530,7 +531,8 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
             KillPlayerGanondorf(play, dorf);
         }
         SetLinkShadowHidden(player, false);
-        UpdateGanonMusic(play, false);
+        // (a Link: on while the Invader's Ganon is about, see PlayAsGanondorf_SetGanonMusic)
+        UpdateGanonMusic(play, sRemoteGanonMusic);
         sWantGanon = false;
         UpdateCapeShield(play, player, NULL);
         UpdateWaterBoots(play, player, false);
@@ -904,5 +906,6 @@ static void RegisterPlayAsGanondorf() {
 static RegisterShipInitFunc initFunc(RegisterPlayAsGanondorf, {});
 
 extern "C" void PlayAsGanondorf_SetGanonMusic(PlayState* play, s32 on) {
-    UpdateGanonMusic(play, on != 0);
+    sRemoteGanonMusic = on != 0;
+    UpdateGanonMusic(play, sRemoteGanonMusic);
 }

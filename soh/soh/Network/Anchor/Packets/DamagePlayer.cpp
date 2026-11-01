@@ -57,6 +57,14 @@ void Anchor::HandlePacket_DamagePlayer(nlohmann::json payload) {
 
     self->actor.colChkInfo.damage = damage * 8; // Arbitrary number currently, need to fine tune
 
+    // Invasion mode: Ganondorf hits a Link with fewer heart containers less hard (full force at 20 hearts), and no
+    // single hit of his (the dark aura included) takes more than a third of his hearts
+    if (GdfInvasion_IsClientGanondorf(clientId)) {
+        s32 dmg = (s32)(damage * 8) * gSaveContext.healthCapacity / (20 * 16);
+        dmg = CLAMP(dmg, 4, MAX(gSaveContext.healthCapacity / 3, 4));
+        self->actor.colChkInfo.damage = (u8)MIN(dmg, 255);
+    }
+
     if (damageEffect == DUMMY_PLAYER_HIT_RESPONSE_FIRE) {
         for (int i = 0; i < ARRAY_COUNT(self->bodyFlameTimers); i++) {
             self->bodyFlameTimers[i] = static_cast<uint8_t>(Rand_S16Offset(0, 200));

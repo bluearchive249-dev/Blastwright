@@ -12373,6 +12373,12 @@ static void BossGanon_Puppet_PackFx(BossGanon* this, EnGanonMant* cape, f32* fx)
     for (i = 0; i < 18; i++) {
         fx[GDF_FX_SHOCK + i] = this->unk_49C[i];
     }
+    // The trident spun overhead or thrown
+    fx[66] = sGdfTridentState;
+    fx[67] = sGdfTridentPos.x;
+    fx[68] = sGdfTridentPos.y;
+    fx[69] = sGdfTridentPos.z;
+    fx[70] = sGdfTridentSpin;
 }
 
 static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const f32* fx) {
@@ -12414,6 +12420,11 @@ static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const 
     this->triforcePos.z = fx[37];
     this->triforceType = (s16)fx[38];
     this->csState = (s16)fx[39];
+    sGdfTridentState = (u8)fx[66];
+    sGdfTridentPos.x = fx[67];
+    sGdfTridentPos.y = fx[68];
+    sGdfTridentPos.z = fx[69];
+    sGdfTridentSpin = (s16)fx[70];
     this->playerAuraScale = fx[40];
     this->playerAuraAlpha = fx[41];
     this->playerOrganSink = fx[42];
