@@ -2747,7 +2747,23 @@ static void DrawChat(ImGuiViewport* vp, float scale) {
     }
     for (const ShownLine& sl : shown) {
         const ChatLine& line = *sl.line;
-        DrawHudText(list, font, ImVec2(x, y), Col(line.color.r, line.color.g, line.color.b, sl.alpha), line.name + ": ");
+        // The name with an outline that sets it off: white around a dark name (Black Link), black around a pale one
+        // (White Link)
+        {
+            std::string name = line.name + ": ";
+            int lum = (line.color.r * 299 + line.color.g * 587 + line.color.b * 114) / 1000;
+            ImU32 edge = (lum < 110) ? Col(255, 255, 255, sl.alpha) : Col(0, 0, 0, sl.alpha);
+            float o = fmaxf(1.0f, 1.2f * scale);
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    if ((dx != 0) || (dy != 0)) {
+                        list->AddText(imFont, font, ImVec2(x + dx * o, y + dy * o), edge, name.c_str());
+                    }
+                }
+            }
+            list->AddText(imFont, font, ImVec2(x, y), Col(line.color.r, line.color.g, line.color.b, sl.alpha),
+                          name.c_str());
+        }
         for (size_t r = 0; r < sl.rows.size(); r++) {
             DrawHudText(list, font, ImVec2(x + ((r == 0) ? sl.nameW : 0.0f), y), Col(240, 240, 240, sl.alpha),
                         sl.rows[r]);
