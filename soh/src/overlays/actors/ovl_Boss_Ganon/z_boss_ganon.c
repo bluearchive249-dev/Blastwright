@@ -6596,6 +6596,38 @@ static Actor* BossGanon_Player_FindTarget(PlayState* play, Vec3f* from, s16 faci
         }
     }
 
+    // Invasion mode: the Links (their dummies here) are his first targets, ahead of any monster
+    if (GdfInvasion_CanHurtLinks()) {
+        Actor* actor;
+
+        for (actor = play->actorCtx.actorLists[ACTORCAT_NPC].head; actor != NULL; actor = actor->next) {
+            u32 clientId = GdfInvasion_DummyClientId(actor);
+            Vec3f at;
+            f32 dist;
+            f32 score;
+            s16 yawDiff;
+
+            if ((actor->update == NULL) || (clientId == 0) || !GdfInvasion_CanHurtLink(clientId)) {
+                continue;
+            }
+            at = actor->world.pos;
+            at.y += 40.0f;
+            if (Math_Vec3f_DistXYZ(&actor->focus.pos, &at) > 60.0f) {
+                actor->focus.pos = at; // (aimed at by the light balls and the trident)
+            }
+            dist = Math_Vec3f_DistXYZ(from, &at);
+            yawDiff = Math_Vec3f_Yaw(from, &at) - facingYaw;
+            if ((dist >= maxDist * 1.3f) || (ABS(yawDiff) > maxAngle + 0x800)) {
+                continue;
+            }
+            score = ((f32)ABS(yawDiff) + (dist * 12.0f)) * 0.5f;
+            if ((best == NULL) || (score < bestScore) || (GdfInvasion_DummyClientId(best) == 0)) {
+                best = actor;
+                bestScore = score;
+            }
+        }
+    }
+
     return best;
 }
 
