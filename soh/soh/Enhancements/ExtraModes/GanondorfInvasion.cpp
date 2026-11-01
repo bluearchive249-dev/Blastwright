@@ -688,7 +688,8 @@ static void ApplyStart() {
     CVarSetInteger(CVAR_INVASION("Role"), role);
     // Everyone in one team: the Links share their progress (and Ganondorf receives it)
     CVarSetString(CVAR_REMOTE_ANCHOR("TeamId"), "invasion");
-    CVarSetInteger(CVAR_INVASION("Armed"), 0); // a new game: Kokiri Forest is at peace until he takes up sword and shield
+    CVarSetInteger(CVAR_INVASION("Armed"), 0);
+    CVarSetInteger(CVAR_INVASION("FullResolve"), 0); // and his Resolve is half until every Link has grown up // a new game: Kokiri Forest is at peace until he takes up sword and shield
     SaveCVars();
     SendOwnState();
     Notification::Emit({
@@ -1001,6 +1002,33 @@ static const char* sCNames[3] = { "C-Left", "C-Down", "C-Right" };
 
 // ---- Ganondorf's side ----
 static float sResolve = GDF_RESOLVE_MAX;
+
+// His Resolve is half as deep while the Links are young; once every Link is an adult it's full for good (until a new
+// game)
+static float ResolveMax() {
+    return CVarGetInteger(CVAR_INVASION("FullResolve"), 0) ? GDF_RESOLVE_MAX : (GDF_RESOLVE_MAX * 0.5f);
+}
+
+static void UpdateResolveMax() {
+    if (CVarGetInteger(CVAR_INVASION("FullResolve"), 0) || (Anchor::Instance == nullptr)) {
+        return;
+    }
+    int links = 0;
+    int adults = 0;
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (client.self || !client.online || !client.isSaveLoaded || GdfInvasion_IsClientGanondorf(clientId)) {
+            continue;
+        }
+        links++;
+        adults += (client.linkAge == LINK_AGE_ADULT) ? 1 : 0;
+    }
+    if ((links > 0) && (adults == links)) {
+        CVarSetInteger(CVAR_INVASION("FullResolve"), 1);
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        sResolve = GDF_RESOLVE_MAX;
+        Notification::Emit({ .prefix = "Invasion", .message = "Every Link has grown up: your Resolve is whole." });
+    }
+}
 static u32 sLastHitFrame = 0;
 static u32 sBanishedUntil = 0;
 static u32 sStunnedUntil = 0;
@@ -2093,7 +2121,7 @@ static void HandleHit(const nlohmann::json& payload) {
     int seconds = (sPacifyCount == 1) ? 30 : (sPacifyCount == 2) ? 45 : 60;
     sBanishedUntil = sFrame + seconds * GDF_FPS;
     sPacifiedFrame = sFrame;
-    sResolve = GDF_RESOLVE_MAX;
+    sResolve = ResolveMax();
     sMenuOpen = false;
     BossGanon_Player_NetPacified();
     nlohmann::json out;
@@ -2297,8 +2325,10 @@ static void TickInvasion() {
         }
     }
     // Resolve refills once he hasn't been hit for 5 s
-    if (!IsBanished() && (sResolve < GDF_RESOLVE_MAX) && (sFrame - sLastHitFrame > 5 * GDF_FPS)) {
-        sResolve = MIN(GDF_RESOLVE_MAX, sResolve + 2.0f / GDF_FPS);
+    UpdateResolveMax();
+    sResolve = MIN(sResolve, ResolveMax());
+    if (!IsBanished() && (sResolve < ResolveMax()) && (sFrame - sLastHitFrame > 5 * GDF_FPS)) {
+        sResolve = MIN(ResolveMax(), sResolve + 2.0f / GDF_FPS);
     }
     // Back from banishment: at the area's entrance
     static bool sWasBanished = false;
@@ -2933,6 +2963,11 @@ static bool ClientArmedOnce(uint32_t clientId) {
 
 extern "C" f32 GdfInvasion_ResolveFraction(void) {
     return CLAMP(sResolve / GDF_RESOLVE_MAX, 0.0f, 1.0f);
+}
+
+// How long his Resolve meter is (half while the Links are young)
+extern "C" f32 GdfInvasion_ResolveMeterLength(void) {
+    return ResolveMax() / GDF_RESOLVE_MAX;
 }
 
 extern "C" s32 GdfInvasion_ShowResolveMeter(void) {

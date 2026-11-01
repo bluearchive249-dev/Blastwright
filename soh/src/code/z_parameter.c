@@ -3706,6 +3706,8 @@ void Interface_DrawMagicBar(PlayState* play) {
         // SoH: Invasion mode, Ganondorf's Resolve: a white meter like his magic meter, just under it
         if (GdfInvasion_ShowResolveMeter()) {
             s16 resolveY = magicBarY + 14;
+            // Half as long while the Links are young
+            s16 resolveLen = (s16)(GdfInvasion_ResolveMeterLength() * gSaveContext.magicCapacity);
             s16 resolveFill = (s16)(GdfInvasion_ResolveFraction() * gSaveContext.magicCapacity);
 
             gDPPipeSync(OVERLAY_DISP++);
@@ -3716,12 +3718,12 @@ void Interface_DrawMagicBar(PlayState* play) {
             OVERLAY_DISP =
                 Gfx_TextureIA8(OVERLAY_DISP, gMagicMeterEndTex, 8, 16, PosX_Start, resolveY, 8, 16, 1 << 10, 1 << 10);
             OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, gMagicMeterMidTex, 24, 16, PosX_MidEnd, resolveY,
-                                          gSaveContext.magicCapacity, 16, 1 << 10, 1 << 10);
+                                          resolveLen, 16, 1 << 10, 1 << 10);
             gDPLoadTextureBlock(OVERLAY_DISP++, gMagicMeterEndTex, G_IM_FMT_IA, G_IM_SIZ_8b, 8, 16, 0,
                                 G_TX_MIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 3, G_TX_NOMASK, G_TX_NOLOD,
                                 G_TX_NOLOD);
-            gSPWideTextureRectangle(OVERLAY_DISP++, ((rMagicBarX + gSaveContext.magicCapacity) + 8) << 2,
-                                    resolveY << 2, ((rMagicBarX + gSaveContext.magicCapacity) + 16) << 2,
+            gSPWideTextureRectangle(OVERLAY_DISP++, ((rMagicBarX + resolveLen) + 8) << 2,
+                                    resolveY << 2, ((rMagicBarX + resolveLen) + 16) << 2,
                                     (resolveY + 16) << 2, G_TX_RENDERTILE, 256, 0, 1 << 10, 1 << 10);
 
             gDPPipeSync(OVERLAY_DISP++);
