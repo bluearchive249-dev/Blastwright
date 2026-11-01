@@ -2509,37 +2509,74 @@ static void DrawChat(ImGuiViewport* vp, float scale) {
         u32 age = sFrame - line.frame;
         return sChatOpen ? 230 : (age < 10 * GDF_FPS) ? 220 : (age < 12 * GDF_FPS) ? 220 - (int)(age - 10 * GDF_FPS) * 5 : 0;
     };
-    // A dark box behind the lines shown, so they read over any scene; it fades with them
-    {
-        float boxW = 0.0f;
-        int lines = 0;
-        int boxAlpha = 0;
-        for (const ChatLine& line : sChat) {
-            int alpha = lineAlpha(line);
-            if (alpha <= 0) {
-                continue;
+    // Long messages wrap onto more rows to fit the screen (the first row after the name, the rest from the left)
+    ImFont* imFont = ImGui::GetFont();
+    float maxW = vp->Size.x - 32.0f * scale;
+    float lineH = font * 1.15f;
+    auto wrap = [&](const std::string& text, float firstW) {
+        std::vector<std::string> rows;
+        const char* p = text.c_str();
+        const char* end = p + text.size();
+        float w = firstW;
+        while (p < end) {
+            const char* cut = imFont->CalcWordWrapPositionA(font / imFont->FontSize, p, end, fmaxf(w, font));
+            if (cut == p) {
+                cut = p + 1; // a single character wider than the row
             }
-            std::string all = line.name + ": " + line.text;
-            boxW = fmaxf(boxW, ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, all.c_str()).x);
-            boxAlpha = std::max(boxAlpha, alpha);
-            lines++;
+            rows.emplace_back(p, cut);
+            p = cut;
+            while ((p < end) && (*p == ' ')) {
+                p++;
+            }
+            w = maxW;
         }
-        if (lines > 0) {
-            float pad = 6.0f * scale;
-            list->AddRectFilled(ImVec2(x - pad, y - pad), ImVec2(x + boxW + pad, y + lines * font * 1.15f + pad * 0.6f),
-                                Col(0, 0, 0, boxAlpha * 200 / 230), 4.0f * scale);
+        if (rows.empty()) {
+            rows.emplace_back();
         }
-    }
+        return rows;
+    };
+    struct ShownLine {
+        const ChatLine* line;
+        int alpha;
+        float nameW;
+        std::vector<std::string> rows;
+    };
+    std::vector<ShownLine> shown;
+    float boxW = 0.0f;
+    int rowCount = 0;
+    int boxAlpha = 0;
     for (const ChatLine& line : sChat) {
         int alpha = lineAlpha(line);
         if (alpha <= 0) {
             continue;
         }
         std::string name = line.name + ": ";
-        ImVec2 nsz = ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, name.c_str());
-        DrawHudText(list, font, ImVec2(x, y), Col(line.color.r, line.color.g, line.color.b, alpha), name);
-        DrawHudText(list, font, ImVec2(x + nsz.x, y), Col(240, 240, 240, alpha), line.text);
-        y += font * 1.15f;
+        float nameW = imFont->CalcTextSizeA(font, FLT_MAX, 0.0f, name.c_str()).x;
+        ShownLine sl = { &line, alpha, nameW, wrap(line.text, maxW - nameW) };
+        for (size_t r = 0; r < sl.rows.size(); r++) {
+            float rw = imFont->CalcTextSizeA(font, FLT_MAX, 0.0f, sl.rows[r].c_str()).x + ((r == 0) ? nameW : 0.0f);
+            boxW = fmaxf(boxW, rw);
+        }
+        rowCount += (int)sl.rows.size();
+        boxAlpha = std::max(boxAlpha, alpha);
+        shown.push_back(std::move(sl));
+    }
+    // Kept above the bottom of the screen however many rows there are
+    y = fminf(y, vp->Pos.y + vp->Size.y * 0.84f - rowCount * lineH);
+    // A dark box behind the lines shown, so they read over any scene; it fades with them
+    if (rowCount > 0) {
+        float pad = 6.0f * scale;
+        list->AddRectFilled(ImVec2(x - pad, y - pad), ImVec2(x + boxW + pad, y + rowCount * lineH + pad * 0.6f),
+                            Col(0, 0, 0, boxAlpha * 200 / 230), 4.0f * scale);
+    }
+    for (const ShownLine& sl : shown) {
+        const ChatLine& line = *sl.line;
+        DrawHudText(list, font, ImVec2(x, y), Col(line.color.r, line.color.g, line.color.b, sl.alpha), line.name + ": ");
+        for (size_t r = 0; r < sl.rows.size(); r++) {
+            DrawHudText(list, font, ImVec2(x + ((r == 0) ? sl.nameW : 0.0f), y), Col(240, 240, 240, sl.alpha),
+                        sl.rows[r]);
+            y += lineH;
+        }
     }
 
     if (!sChatOpen) {
