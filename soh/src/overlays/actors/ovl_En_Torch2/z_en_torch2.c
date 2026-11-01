@@ -78,6 +78,7 @@ static u8 sZTargetFlag = false;
 static u8 sDeathFlag = false;
 
 static Input sInput;
+static u16 sPossessedPrevButtons = 0; // Invasion mode: Ganondorf's buttons last frame
 static u8 sSwordJumpState;
 static Vec3f sSpawnPoint;
 static u8 sJumpslashTimer;
@@ -255,6 +256,7 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
     u32 pad54;
     f32 sp50;
     s16 sp4E;
+    u8 possessed;
 
     sp5A = player->actor.shape.rot.y - this->actor.shape.rot.y;
     input->cur.button = 0;
@@ -596,9 +598,7 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
     }
 
     // Invasion mode: Ganondorf's controller in place of his own (not while he's dying)
-    if (sActionState != ENTORCH2_DEATH) {
-        GdfInvasion_DarkLinkInput(thisx, input, camera->camDir.y);
-    }
+    possessed = (sActionState != ENTORCH2_DEATH) && GdfInvasion_DarkLinkInput(thisx, input, camera->camDir.y);
 
     // Updates Dark Link's "controller". The conditional seems to cause him to
     // stop targeting and hold shield if he's been holding it long enough.
@@ -610,6 +610,13 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
     }
     input->rel.button = input->prev.button & pad54;
     input->prev.button = input->cur.button & (u16) ~(BTN_A | BTN_B);
+    // Invasion mode: a player's buttons press once per push (the AI's A and B press again every frame they're held)
+    if (possessed) {
+        input->press.button = input->cur.button & (u16)~sPossessedPrevButtons;
+        input->rel.button = sPossessedPrevButtons & (u16)~input->cur.button;
+        sPossessedPrevButtons = input->cur.button;
+        input->prev.button = input->cur.button;
+    }
     PadUtils_UpdateRelXY(input);
 
     if (CVarGetInteger(CVAR_ENHANCEMENT("MirroredWorld"), 0)) {

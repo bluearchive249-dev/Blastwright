@@ -151,6 +151,7 @@ static u32 sPossessStart = 0;
 static u32 sPossessUntil = 0;
 static s16 sPossessCam = -1;
 static s16 sPossessYaw = 0;  // the way his camera looks
+static uint32_t sPossessTarget = 0; // the Link whose game Dark Link is in
 static s16 sDlYaw = 0;       // his stick, as a direction in the world
 static s16 sDlTilt = 0;
 static u16 sDlButtons = 0;
@@ -1253,6 +1254,7 @@ static void TryCast(PlayState* play, int slot) {
     payload["curse"] = art - GDF_FIRST_CURSE;
     if (art == GDF_ART_DARKLINK) {
         sPossessStart = sFrame;
+        sPossessTarget = target;
         sPossessUntil = sFrame + (a.duration + 1) * GDF_FPS;
         Flash("You are Dark Link for a minute");
     }
@@ -1958,12 +1960,14 @@ static void UpdateCurses() {
 extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
     // Ganondorf as Dark Link: his controller drives Dark Link, not himself
     if (GdfInvasion_IsInvader() && (sFrame < sPossessUntil)) {
-        float sx = input->cur.stick_x;
-        float sy = input->cur.stick_y;
+        // From the controller itself: his own moveset has already taken B, R and Z out of the input
+        Input* raw = &play->state.input[0];
+        float sx = raw->cur.stick_x;
+        float sy = raw->cur.stick_y;
         float tilt = sqrtf(sx * sx + sy * sy);
         sDlTilt = (tilt < 8.0f) ? 0 : (s16)fminf(tilt, 127.0f);
         sDlYaw = sPossessYaw - (s16)(atan2f(sx, sy) * (32768.0f / 3.14159265f));
-        sDlButtons = input->cur.button & (BTN_A | BTN_B | BTN_R | BTN_Z);
+        sDlButtons = raw->cur.button & (BTN_A | BTN_B | BTN_R | BTN_Z);
         memset(input, 0, sizeof(*input));
         return;
     }
@@ -2249,8 +2253,20 @@ static void TickInvasion() {
             Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
             Play_ChangeCameraStatus(play, sPossessCam, CAM_STAT_ACTIVE);
             sPossessYaw = dl->shape.rot.y;
+            if (Anchor::Instance->clients.count(sPossessTarget)) {
+                sPossessYaw = Math_Vec3f_Yaw(&dl->world.pos, &Anchor::Instance->clients[sPossessTarget].posRot.pos);
+            }
         }
-        Math_SmoothStepToS(&sPossessYaw, dl->shape.rot.y, 12, 0x300, 0x20);
+        // From behind Dark Link toward the Link he's fighting (not his own facing, which turned the camera with every
+        // step he took and the stick with it)
+        s16 wantYaw = dl->shape.rot.y;
+        if (Anchor::Instance->clients.count(sPossessTarget)) {
+            Vec3f linkPos = Anchor::Instance->clients[sPossessTarget].posRot.pos;
+            if (Math_Vec3f_DistXZ(&dl->world.pos, &linkPos) > 40.0f) {
+                wantYaw = Math_Vec3f_Yaw(&dl->world.pos, &linkPos);
+            }
+        }
+        Math_SmoothStepToS(&sPossessYaw, wantYaw, 10, 0x400, 0x20);
         Vec3f at = dl->world.pos;
         at.y += 45.0f;
         Vec3f eye = at;
