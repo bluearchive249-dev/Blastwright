@@ -9592,7 +9592,8 @@ void func_80843AE8(PlayState* play, Player* this) {
                     LinkAnimation_Change(play, &this->skelAnime, &gPlayerAnim_link_derth_rebirth, 1.0f, 99.0f,
                                          Animation_GetLastFrame(&gPlayerAnim_link_derth_rebirth), ANIMMODE_ONCE, 0.0f);
                 }
-                gSaveContext.healthAccumulator = MAX_HEALTH;
+                // (Invasion mode: revived by another Link, he comes back with 3 hearts)
+                gSaveContext.healthAccumulator = GdfInvasion_ReviveHealth(MAX_HEALTH);
                 this->av2.actionVar2 = -1;
             }
         } else if (gSaveContext.healthAccumulator == 0) {
@@ -9611,6 +9612,8 @@ void func_80843AE8(PlayState* play, Player* this) {
         Player_SpawnFairy(play, this, &this->actor.world.pos, &D_808545E4, FAIRY_REVIVE_DEATH);
         Player_PlaySfx(this, NA_SE_EV_FIATY_HEAL - SFX_FLAG);
         OnePointCutscene_Init(play, 9908, 125, &this->actor, CAM_ID_MAIN);
+    } else if (GdfInvasion_HoldDowned(play, this)) {
+        // Invasion mode: down, not out: another Link can revive him for a while before it's Game Over
     } else if (play->gameOverCtx.state == GAMEOVER_DEATH_WAIT_GROUND) {
         play->gameOverCtx.state = GAMEOVER_DEATH_DELAY_MENU;
     }

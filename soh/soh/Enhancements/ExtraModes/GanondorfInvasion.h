@@ -107,6 +107,9 @@ s32 PlayAsGanondorf_IsGanonOut(PlayState* play);
 s32 GdfInvasion_DarkLinkInput(Actor* actor, Input* input, s16 camYaw);
 s32 GdfInvasion_DarkLinkPossessed(Actor* actor);
 s32 GdfInvasion_CanHurtLinks(void);
+// Revival: a fallen Link is down for a while, and another Link standing by him brings him back (3 hearts)
+s32 GdfInvasion_HoldDowned(PlayState* play, Player* player);
+s32 GdfInvasion_ReviveHealth(s32 full);
 // His Resolve, drawn as a white meter under his magic meter
 s32 GdfInvasion_ShowResolveMeter(void);
 f32 GdfInvasion_ResolveFraction(void);

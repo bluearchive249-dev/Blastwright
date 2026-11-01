@@ -141,10 +141,23 @@ struct ClientGdf {
     float resolve = -1.0f; // his Resolve (and how deep it is), for the Links' HUD
     float resolveMax = 0.0f;
     u32 hurtFrame = 0;
+    int downLeft = 0; // a fallen Link: seconds left to revive him
+    u32 downFrame = 0;
+    int reviveProgress = 0; // this Link standing by him
 };
 
 static std::map<uint32_t, ClientGdf> sClients;
 static u32 sFrame = 0;
+#define GDF_DOWN_SECONDS 30
+#define GDF_REVIVE_SECONDS 3
+#define GDF_PKT_REVIVE "GDF_REVIVE"
+static u32 sDownedSince = 0;      // this Link: when he fell
+static u32 sDownSeen = 0;         // the last frame he lay there
+static bool sReviveCalled = false; // another Link has revived him
+static bool sRevivedByAlly = false;
+static bool IsDowned() {
+    return (sDownSeen != 0) && (sFrame - sDownSeen <= 5);
+}
 static u32 sVeilUntil = 0; // Shadow Veil (Ganondorf): unseen and unheard by the Links
 static u32 sPacifiedFrame = 0;     // Ganondorf: when he was pacified
 static u32 sHeroPacifiedFrame = 0; // a Link: when word came that he was
@@ -220,6 +233,9 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
 
     if (GdfInvasion_IsHero()) {
         payload["gArmed"] = OwnArmedOnce();
+        if (IsDowned()) {
+            payload["gDown"] = MAX(1, (int)(GDF_DOWN_SECONDS - (sFrame - sDownedSince) / 20)); // (20 frames a second)
+        }
         WriteMirror(payload);
         if (IsWorldHost()) {
             WriteWorld(payload);
@@ -303,6 +319,12 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
 void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
     ClientGdf& c = sClients[clientId];
 
+    if (payload.contains("gDown")) {
+        c.downLeft = payload.value("gDown", 0);
+        c.downFrame = sFrame;
+    } else {
+        c.downLeft = 0;
+    }
     if (payload.contains("gArmed") && (clientId < 256)) {
         sClientArmed[clientId] |= payload.value("gArmed", false); // once armed, for good
     }
@@ -2260,6 +2282,12 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
                                             " pacified Ganondorf! He's gone for " +
                                             std::to_string(payload.value("seconds", 30)) + " seconds." });
         }
+    } else if (type == GDF_PKT_REVIVE) {
+        if (GdfInvasion_IsHero() && IsDowned()) {
+            sReviveCalled = true;
+            std::string by = Anchor::Instance->clients.count(from) ? Anchor::Instance->clients[from].name : "A Link";
+            Notification::Emit({ .prefix = "Invasion", .message = by + " revived you!" });
+        }
     } else if (type == GDF_PKT_WORLD_HIT) {
         HandleWorldHit(payload);
     } else if (type == GDF_PKT_DUNGEON_DONE) {
@@ -2305,6 +2333,28 @@ static void TickInvasion() {
         }
         // Ganon's battle theme while the Invader's Ganon is here
         PlayAsGanondorf_SetGanonMusic(play, ganonOut);
+
+        // Reviving a fallen Link: stand by him for a few seconds
+        Player* self = GET_PLAYER(play);
+        for (auto& [clientId, c] : sClients) {
+            bool near = false;
+            if ((c.downLeft > 0) && (sFrame - c.downFrame < 10) && !IsDowned() && (self != nullptr) &&
+                (gSaveContext.health > 0) && Anchor::Instance->clients.count(clientId) &&
+                (Anchor::Instance->clients[clientId].sceneNum == play->sceneNum)) {
+                near = Math_Vec3f_DistXYZ(&self->actor.world.pos, &Anchor::Instance->clients[clientId].posRot.pos) <
+                       100.0f;
+            }
+            c.reviveProgress = near ? (c.reviveProgress + 1) : 0;
+            if (c.reviveProgress >= GDF_REVIVE_SECONDS * GDF_FPS) {
+                c.reviveProgress = 0;
+                nlohmann::json out;
+                out["type"] = GDF_PKT_REVIVE;
+                out["targetClientId"] = clientId;
+                Anchor::Instance->SendJsonToRemote(out);
+                Audio_PlaySfxGeneral(NA_SE_EV_FIATY_HEAL - SFX_FLAG, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+        }
     }
     if (!GdfInvasion_IsInvader() || (play == nullptr) || !GameStarted()) {
         return;
@@ -2596,6 +2646,32 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
 static void DrawHeroHud(ImGuiViewport* vp, float scale) {
     ImDrawList* list = ImGui::GetForegroundDrawList(vp);
     float font = ImGui::GetFontSize() * 0.8f * fmaxf(scale, 1.0f);
+
+    // Revival: this Link down, or another Link down nearby
+    {
+        std::string t;
+        if (IsDowned()) {
+            int left = MAX(0, (int)(GDF_DOWN_SECONDS - (sFrame - sDownedSince) / GDF_FPS));
+            t = "You're down! Another Link can revive you by standing at your side: " + std::to_string(left) + " s";
+        } else {
+            for (auto& [clientId, c] : sClients) {
+                if ((c.downLeft > 0) && (sFrame - c.downFrame < 10) && Anchor::Instance->clients.count(clientId)) {
+                    std::string who = Anchor::Instance->clients[clientId].name;
+                    t = (c.reviveProgress > 0)
+                            ? ("Reviving " + who + "... " +
+                               std::to_string(c.reviveProgress * 100 / (GDF_REVIVE_SECONDS * GDF_FPS)) + "%")
+                            : (who + " is down! Stand at their side to revive them (" + std::to_string(c.downLeft) +
+                               " s)");
+                    break;
+                }
+            }
+        }
+        if (!t.empty()) {
+            ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(font * 1.1f, FLT_MAX, 0.0f, t.c_str());
+            DrawHudText(list, font * 1.1f, ImVec2(vp->Pos.x + (vp->Size.x - sz.x) * 0.5f, vp->Pos.y + vp->Size.y * 0.3f),
+                        Col(255, 230, 150, 235), t);
+        }
+    }
 
     // Ganondorf's Resolve: a white bar over his head when he's been hurt, fading away a few seconds later
     PlayState* play = gPlayState;
@@ -3350,3 +3426,43 @@ static void RegisterInvasionWorld() {
 }
 
 static RegisterShipInitFunc worldInitFunc(RegisterInvasionWorld, {});
+
+// ---- Revival ----
+
+static bool OtherLinksOnline() {
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (!client.self && client.online && client.isSaveLoaded && !GdfInvasion_IsClientGanondorf(clientId)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// From Link's death (his "fairy or Game Over" moment): true keeps him down a while longer
+extern "C" s32 GdfInvasion_HoldDowned(PlayState* play, Player* player) {
+    if (!GdfInvasion_IsHero() || (Anchor::Instance == nullptr) || !OtherLinksOnline()) {
+        return false;
+    }
+    if (!IsDowned()) {
+        sDownedSince = sFrame; // just fell
+        sReviveCalled = false;
+    }
+    sDownSeen = sFrame;
+    if (sReviveCalled) {
+        // Back up, as from a fairy, with 3 hearts
+        sReviveCalled = false;
+        sRevivedByAlly = true;
+        sDownSeen = 0;
+        player->av2.actionVar2 = 20;
+        return true;
+    }
+    return (sFrame - sDownedSince) < (u32)(GDF_DOWN_SECONDS * GDF_FPS);
+}
+
+extern "C" s32 GdfInvasion_ReviveHealth(s32 full) {
+    if (sRevivedByAlly) {
+        sRevivedByAlly = false;
+        return 3 * 16;
+    }
+    return full;
+}
