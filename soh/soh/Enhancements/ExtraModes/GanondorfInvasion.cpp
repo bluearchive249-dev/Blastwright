@@ -14,6 +14,7 @@
 //  - A small HUD for the Invader: where the Hero is (his area, and an arrow toward him in the same area).
 // See the project doc "PlayAsGanondorf-InvasionMode" for the rest of the plan (Resolve, the Dark Arts menu, ...).
 
+#include <algorithm>
 #include <cmath>
 #include <deque>
 #include <map>
@@ -182,6 +183,10 @@ static void Mirror(Actor* a) {
 }
 static void WriteMirror(nlohmann::json& payload);
 static void ReadMirror(uint32_t from, const nlohmann::json& list);
+// The shared world: the host Link's monsters and NPCs, for everyone in his area
+static bool IsWorldHost();
+static void WriteWorld(nlohmann::json& payload);
+static void ReadWorld(uint32_t from, const nlohmann::json& world);
 
 static void WriteGrab(nlohmann::json& g);
 static void ReadGrab(uint32_t from, const nlohmann::json& g);
@@ -212,6 +217,9 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
     if (GdfInvasion_IsHero()) {
         payload["gArmed"] = OwnArmedOnce();
         WriteMirror(payload);
+        if (IsWorldHost()) {
+            WriteWorld(payload);
+        }
         return;
     }
 
@@ -293,6 +301,9 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
     }
     if (payload.contains("gm") && GdfInvasion_IsInvader()) {
         ReadMirror(clientId, payload["gm"]);
+    }
+    if (payload.contains("gw") && !IsWorldHost()) {
+        ReadWorld(clientId, payload["gw"]);
     }
 
     c.isGanondorf = payload.value("gdfRole", 0) == GDF_INVASION_INVADER;
@@ -921,6 +932,8 @@ static RegisterShipInitFunc lobbyInitFunc(RegisterGanondorfInvasionLobby, {});
 #define GDF_PKT_PACIFIED "GDF_PACIFIED"
 #define GDF_PKT_CHAT "GDF_CHAT"
 #define GDF_PKT_DUNGEON_DONE "GDF_DUNGEON_DONE"
+#define GDF_PKT_WORLD_HIT "GDF_WORLD_HIT"
+static void HandleWorldHit(const nlohmann::json& payload);
 
 // A dungeon (its rooms and its boss's room), and where outside it Ganondorf is put once a Link has beaten it
 struct DungeonExit {
@@ -2232,6 +2245,8 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
                                             " pacified Ganondorf! He's gone for " +
                                             std::to_string(payload.value("seconds", 30)) + " seconds." });
         }
+    } else if (type == GDF_PKT_WORLD_HIT) {
+        HandleWorldHit(payload);
     } else if (type == GDF_PKT_DUNGEON_DONE) {
         int dungeon = payload.value("dungeon", -1);
         if (GdfInvasion_IsInvader() && (dungeon >= 0) && (dungeon < (int)ARRAY_COUNT(sDungeonExits))) {
@@ -2907,7 +2922,11 @@ struct Ghost {
     s16 id = 0;
     u32 born = 0;
     u32 seen = 0;
+    bool world = false; // the host Link's (the shared world), not one of Ganondorf's arts
+    u8 hostHp = 0;      // its health in the host's game
 };
+#define GDF_WORLD_KEY 1000000 // the shared world's keys, apart from the arts' ones
+static void SendWorldHit(uint32_t host, int key, u8 hp);
 static std::map<std::pair<uint32_t, int>, Ghost> sGhosts;
 static std::map<std::pair<uint32_t, int>, bool> sGhostsGone; // killed in his game: not brought back
 
@@ -2957,11 +2976,19 @@ static void UpdateGhosts() {
         Ghost& g = it->second;
         bool alive = ActorAlive(g.actor);
         if (!alive) {
+            if (g.world) {
+                SendWorldHit(it->first.first, it->first.second, 0); // killed here: killed for everyone
+            }
             sGhostsGone[it->first] = true; // gone in his game (killed, area left): not brought back
             it = sGhosts.erase(it);
             continue;
         }
-        if ((play == nullptr) || (sFrame - g.seen > 10)) {
+        if (g.world && (g.actor->colChkInfo.health < g.hostHp)) {
+            // Hurt here: hurt in the host's game too
+            g.hostHp = g.actor->colChkInfo.health;
+            SendWorldHit(it->first.first, it->first.second, g.hostHp);
+        }
+        if ((play == nullptr) || (sFrame - g.seen > (g.world ? 30u : 10u))) {
             // Gone in the Link's game
             if (g.id == ACTOR_EN_BOM) {
                 Vec3f pos = g.actor->world.pos;
@@ -3055,3 +3082,205 @@ extern "C" f32 GdfInvasion_ResolveMeterLength(void) {
 extern "C" s32 GdfInvasion_ShowResolveMeter(void) {
     return GdfInvasion_IsInvader() && GameStarted();
 }
+
+
+// =================================================================================================
+// The shared world. The host is Green Link (or the first Link seated, without him): in the area he's in, everyone
+// else (Ganondorf too) sees his monsters and NPCs instead of their own. Their own in his rooms are removed; his are
+// shown as copies that move where his do and fight as themselves. Damage and kills on a copy are sent to his game,
+// and his health for each comes back, so they're shared.
+// =================================================================================================
+
+static uint32_t WorldHostClient() {
+    if (Anchor::Instance == nullptr) {
+        return 0;
+    }
+    int bestSeat = GDF_SEAT_COUNT;
+    uint32_t best = 0;
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        int seat = client.self ? OwnSeat() : (sClientSeats.count(clientId) ? sClientSeats[clientId] : GDF_SEAT_NONE);
+        if ((seat >= GDF_SEAT_FIRST_LINK) && (seat < bestSeat) && client.online) {
+            bestSeat = seat;
+            best = clientId;
+        }
+    }
+    return best;
+}
+
+static bool IsWorldHost() {
+    uint32_t host = WorldHostClient();
+    return GdfInvasion_IsHero() && (host != 0) && Anchor::Instance->clients.count(host) &&
+           Anchor::Instance->clients[host].self;
+}
+
+static bool IsWorldActorKind(Actor* a) {
+    return (a->category == ACTORCAT_ENEMY) || (a->category == ACTORCAT_NPC);
+}
+
+static bool SkipForWorld(Actor* a) {
+    if ((a->update == nullptr) || (a->id == ACTOR_PLAYER) || (a->id == ACTOR_BOSS_GANON) ||
+        (a->id == ACTOR_BOSS_GANON2) || (a->id == ACTOR_EN_TORCH2) || (Anchor::Instance->GetDummyPlayerClientId(a) != 0)) {
+        return true;
+    }
+    for (Mirrored& m : sMirrored) {
+        if (m.actor == a) {
+            return true; // his arts' own (sent apart)
+        }
+    }
+    return false;
+}
+
+static std::map<Actor*, int> sWorldKeys;
+static int sWorldNextKey = GDF_WORLD_KEY;
+
+static void WriteWorld(nlohmann::json& payload) {
+    PlayState* play = gPlayState;
+
+    if (play == nullptr) {
+        return;
+    }
+    nlohmann::json list = nlohmann::json::array();
+    std::map<Actor*, int> keep;
+    for (int cat : { ACTORCAT_ENEMY, ACTORCAT_NPC }) {
+        for (Actor* a = play->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
+            if (SkipForWorld(a)) {
+                continue;
+            }
+            auto it = sWorldKeys.find(a);
+            int key = (it != sWorldKeys.end()) ? it->second : sWorldNextKey++;
+            keep[a] = key;
+            list.push_back({ key, a->id, a->params, a->world.pos.x, a->world.pos.y, a->world.pos.z, a->shape.rot.y,
+                             a->colChkInfo.health });
+        }
+    }
+    sWorldKeys.swap(keep);
+    payload["gw"] = { { "r", { play->roomCtx.curRoom.num, play->roomCtx.prevRoom.num } }, { "a", list } };
+}
+
+static u32 sWorldHeard = 0;
+static uint32_t sWorldFrom = 0;
+static std::vector<s8> sWorldRooms;
+
+static void ReadWorld(uint32_t from, const nlohmann::json& world) {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || (from != WorldHostClient()) || !world.is_object() ||
+        !Anchor::Instance->clients.count(from) || (Anchor::Instance->clients[from].sceneNum != play->sceneNum)) {
+        return;
+    }
+    sWorldHeard = sFrame;
+    sWorldFrom = from;
+    sWorldRooms.clear();
+    for (const auto& r : world.value("r", nlohmann::json::array())) {
+        sWorldRooms.push_back((s8)r.get<int>());
+    }
+    for (const auto& e : world.value("a", nlohmann::json::array())) {
+        if (!e.is_array() || (e.size() < 8)) {
+            continue;
+        }
+        auto key = std::make_pair(from, e[0].get<int>());
+        if (sGhostsGone.count(key)) {
+            continue;
+        }
+        Ghost& g = sGhosts[key];
+        Vec3f pos = { e[3].get<float>(), e[4].get<float>(), e[5].get<float>() };
+        s16 rotY = (s16)e[6].get<int>();
+        u8 hp = (u8)e[7].get<int>();
+        if (g.actor == nullptr) {
+            g.id = (s16)e[1].get<int>();
+            g.world = true;
+            g.actor = Actor_Spawn(&play->actorCtx, play, g.id, pos.x, pos.y, pos.z, 0, rotY, 0, (s16)e[2].get<int>());
+            g.born = sFrame;
+            if (g.actor == nullptr) {
+                sGhostsGone[key] = true;
+                sGhosts.erase(key);
+                continue;
+            }
+            g.actor->room = -1; // kept whichever room this player is in
+            g.hostHp = hp;
+        }
+        g.seen = sFrame;
+        if (ActorAlive(g.actor)) {
+            g.actor->world.pos = pos;
+            g.actor->shape.rot.y = g.actor->world.rot.y = rotY;
+            // Hurt in the host's game (or by another player): hurt here too
+            if (hp < g.actor->colChkInfo.health) {
+                g.actor->colChkInfo.health = hp;
+            }
+            g.hostHp = MIN(g.hostHp, hp);
+        }
+    }
+}
+
+static void SendWorldHit(uint32_t host, int key, u8 hp) {
+    if (key < GDF_WORLD_KEY) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["type"] = GDF_PKT_WORLD_HIT;
+    payload["targetClientId"] = host;
+    payload["key"] = key;
+    payload["hp"] = hp;
+    Anchor::Instance->SendJsonToRemote(payload);
+}
+
+// The host: another player hurt or killed one of his monsters (or NPCs)
+static void HandleWorldHit(const nlohmann::json& payload) {
+    PlayState* play = gPlayState;
+    int key = payload.value("key", 0);
+    int hp = payload.value("hp", 255);
+
+    if ((play == nullptr) || !IsWorldHost()) {
+        return;
+    }
+    for (auto& [actor, k] : sWorldKeys) {
+        if ((k != key) || !ActorAlive(actor)) {
+            continue;
+        }
+        if (hp < actor->colChkInfo.health) {
+            actor->colChkInfo.health = (u8)hp;
+        }
+        if (hp <= 0) {
+            Vec3f zero = { 0.0f, 0.0f, 0.0f };
+            Vec3f pos = actor->world.pos;
+            if (actor->category == ACTORCAT_ENEMY) {
+                EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 100, 0, 255, 255, 255, 255, 0, 0, 255, 1, 9, true);
+                Item_DropCollectibleRandom(play, nullptr, &pos, 0x10);
+                Enemy_StartFinishingBlow(play, actor);
+            }
+            Actor_Kill(actor);
+        }
+        return;
+    }
+}
+
+// Not the host, in his area: this game's own monsters and NPCs in the rooms he has loaded give way to his
+static void SuppressLocalWorld() {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || IsWorldHost() || (GdfInvasion_Role() == GDF_INVASION_OFF) || (sWorldHeard == 0) ||
+        (sFrame - sWorldHeard > 30) || !Anchor::Instance->clients.count(sWorldFrom) ||
+        (Anchor::Instance->clients[sWorldFrom].sceneNum != play->sceneNum)) {
+        return;
+    }
+    for (int cat : { ACTORCAT_ENEMY, ACTORCAT_NPC }) {
+        for (Actor* a = play->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
+            if (SkipForWorld(a) || GdfInvasion_IsSummoned(a) || (a->room < 0)) {
+                continue;
+            }
+            if (std::find(sWorldRooms.begin(), sWorldRooms.end(), a->room) != sWorldRooms.end()) {
+                Actor_Kill(a);
+            }
+        }
+    }
+}
+
+static void RegisterInvasionWorld() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(SuppressLocalWorld);
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) {
+        sWorldKeys.clear();
+        sWorldHeard = 0;
+    });
+}
+
+static RegisterShipInitFunc worldInitFunc(RegisterInvasionWorld, {});
