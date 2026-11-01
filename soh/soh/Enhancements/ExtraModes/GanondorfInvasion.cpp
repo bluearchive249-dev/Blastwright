@@ -129,6 +129,7 @@ extern "C" s32 GdfInvasion_LinkAtPeace(uint32_t clientId) {
 
 // ---- Ganondorf's pose over the network ----
 
+#define GDF_NET_RESOLVE_FULL 120.0f // (GDF_RESOLVE_MAX)
 struct ClientGdf {
     GdfNetPose pose = {};
     u32 lastFrame = 0; // when the last pose came in
@@ -137,6 +138,9 @@ struct ClientGdf {
     GdfNetGanon ganon = {}; // his Ganon form, while he's in it
     u32 ganonFrame = 0;
     Actor* ganonPuppet = nullptr;
+    float resolve = -1.0f; // his Resolve (and how deep it is), for the Links' HUD
+    float resolveMax = 0.0f;
+    u32 hurtFrame = 0;
 };
 
 static std::map<uint32_t, ClientGdf> sClients;
@@ -288,6 +292,9 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
         }
     }
     g["s2"] = sfx;
+    // His Resolve, shown to the Links
+    g["rv"] = GdfInvasion_ResolveFraction() * GDF_NET_RESOLVE_FULL;
+    g["rm"] = GdfInvasion_ResolveMeterLength() * GDF_NET_RESOLVE_FULL;
     sSfxQueue.clear();
     WriteGrab(g);
     payload["gdf"] = g;
@@ -376,6 +383,14 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
         }
         c.pose.valid = true;
         c.lastFrame = sFrame;
+        {
+            float r = g.value("rv", -1.0f);
+            if ((c.resolve >= 0.0f) && (r >= 0.0f) && (r < c.resolve - 0.01f)) {
+                c.hurtFrame = sFrame; // he's just been hurt: his bar shows over him
+            }
+            c.resolve = r;
+        }
+        c.resolveMax = g.value("rm", 0.0f);
         // Whether he has this player's Link by the throat
         ReadGrab(clientId, g);
         // His sounds, from his puppet
@@ -2581,6 +2596,41 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
 static void DrawHeroHud(ImGuiViewport* vp, float scale) {
     ImDrawList* list = ImGui::GetForegroundDrawList(vp);
     float font = ImGui::GetFontSize() * 0.8f * fmaxf(scale, 1.0f);
+
+    // Ganondorf's Resolve: a white bar over his head when he's been hurt, fading away a few seconds later
+    PlayState* play = gPlayState;
+    for (auto& [clientId, c] : sClients) {
+        Actor* him = (c.ganonPuppet != nullptr) ? c.ganonPuppet : c.puppet;
+        u32 since = sFrame - c.hurtFrame;
+        if ((play == nullptr) || !c.isGanondorf || (him == nullptr) || (c.resolve < 0.0f) || (c.resolveMax <= 0.0f) ||
+            (c.hurtFrame == 0) || (since > 4 * GDF_FPS)) {
+            continue;
+        }
+        int alpha = (since < 3 * GDF_FPS) ? 255 : 255 - (int)((since - 3 * GDF_FPS) * 255 / GDF_FPS);
+        // Over his head, on the screen
+        Vec3f top = him->world.pos;
+        top.y += (c.ganonPuppet != nullptr) ? 330.0f : 170.0f;
+        MtxF* m = &play->viewProjectionMtxF;
+        float cx = m->xx * top.x + m->xy * top.y + m->xz * top.z + m->xw;
+        float cy = m->yx * top.x + m->yy * top.y + m->yz * top.z + m->yw;
+        float cw = m->wx * top.x + m->wy * top.y + m->wz * top.z + m->ww;
+        if (cw <= 1.0f) {
+            continue; // behind the camera
+        }
+        float sx = vp->Pos.x + (cx / cw * 0.5f + 0.5f) * vp->Size.x;
+        float sy = vp->Pos.y + (0.5f - cy / cw * 0.5f) * vp->Size.y;
+        float w = 90.0f * scale * (c.resolveMax / GDF_NET_RESOLVE_FULL);
+        float h = 6.0f * scale;
+        float bx = sx - w * 0.5f;
+        float by = sy - h;
+        float f = CLAMP(c.resolve / c.resolveMax, 0.0f, 1.0f);
+        list->AddRectFilled(ImVec2(bx - 2.0f * scale, by - 2.0f * scale), ImVec2(bx + w + 2.0f * scale, by + h + 2.0f * scale),
+                            Col(20, 10, 30, alpha * 200 / 255), 3.0f * scale);
+        list->AddRectFilled(ImVec2(bx, by), ImVec2(bx + w * f, by + h), Col(245, 245, 245, alpha * 235 / 255),
+                            2.0f * scale);
+        list->AddRect(ImVec2(bx - 2.0f * scale, by - 2.0f * scale), ImVec2(bx + w + 2.0f * scale, by + h + 2.0f * scale),
+                      Col(200, 170, 120, alpha * 220 / 255), 3.0f * scale, 0, 1.2f * scale);
+    }
 
     if (false) {
         // (was Blinding Gloom: darkness closing in from the edges)
