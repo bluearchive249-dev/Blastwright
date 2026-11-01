@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "vt.h"
 
 #include "overlays/actors/ovl_Arms_Hook/z_arms_hook.h"
@@ -2707,7 +2708,26 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                         actor->colorFilterTimer--;
                     }
                     if (GameInteractor_ShouldActorUpdate(actor)) {
+                        // Invasion mode: the monsters and bosses in Ganondorf's game don't go after him (the Links
+                        // are his enemies): to them he's far out of reach while they think (his own targeting
+                        // still sees them where they are)
+                        u8 ignoreHim = GdfInvasion_IsInvader() && ((i == ACTORCAT_ENEMY) || (i == ACTORCAT_BOSS)) &&
+                                       (actor->id != ACTOR_BOSS_GANON) && (actor->id != ACTOR_BOSS_GANON2);
+                        f32 xzDist = actor->xzDistToPlayer;
+                        f32 yDist = actor->yDistToPlayer;
+                        f32 distSq = actor->xyzDistToPlayerSq;
+
+                        if (ignoreHim) {
+                            actor->xzDistToPlayer = 30000.0f;
+                            actor->yDistToPlayer = 30000.0f;
+                            actor->xyzDistToPlayerSq = SQ(30000.0f) * 2.0f;
+                        }
                         actor->update(actor, play);
+                        if (ignoreHim && (actor->update != NULL)) {
+                            actor->xzDistToPlayer = xzDist;
+                            actor->yDistToPlayer = yDist;
+                            actor->xyzDistToPlayerSq = distSq;
+                        }
                         GameInteractor_ExecuteOnActorUpdate(actor);
                     }
                     func_8003F8EC(play, &play->colCtx.dyna, actor);
