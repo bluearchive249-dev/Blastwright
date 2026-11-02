@@ -1058,7 +1058,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "The Haunting", ART_CURSE, 34, 90, 20, true, "Darkness swallows Link and two ReDeads rise behind him, for 20 s." },
     { "Lava Floor", ART_CURSE, 28, 60, 30, true, "The floor burns Link for 30 s, or until he defeats an enemy." },
     { "Bomb Flower Hat", ART_CURSE, 40, 120, 30, true, "A bomb flower on a random Link's head: 30 s to hit you, or it blows." },
-    { "", ART_OWN, 0, 0, 0, false, "" },
+    { "Earthquake", ART_CURSE, 36, 90, 10, true, "Every Link is thrown off his feet for 10 s as boulders rain down (they don't hurt)." },
 };
 
 #define GDF_FIRST_CURSE 12
@@ -1089,6 +1089,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
 #define GDF_ART_HAUNTING 32
 #define GDF_ART_LAVA 33
 #define GDF_ART_BOMB_HAT 34
+#define GDF_ART_EARTHQUAKE 35
 static const char* sCurseMessages[8] = {
     "has reversed your path!", "has frozen the ground!",  "weighs you down with iron!", "has shrunk you!",
     "has sealed your hand!",   "has cast a blinding gloom!", "has stolen your bearings!", "summons a ghostly gale!",
@@ -1397,6 +1398,16 @@ static void TryCast(PlayState* play, int slot) {
     payload["art"] = art;
     payload["duration"] = a.duration;
     Anchor::Instance->SendJsonToRemote(payload);
+    if (art == GDF_ART_EARTHQUAKE) {
+        // Every other Link too
+        for (auto& [clientId, client] : Anchor::Instance->clients) {
+            if ((clientId != target) && !client.self && client.online && client.isSaveLoaded &&
+                !GdfInvasion_IsClientGanondorf(clientId)) {
+                payload["targetClientId"] = clientId;
+                Anchor::Instance->SendJsonToRemote(payload);
+            }
+        }
+    }
     BossGanon_Player_CastPose();
     Flash(std::string(a.name) + " on " + Anchor::Instance->clients[target].name);
 }
@@ -1646,6 +1657,7 @@ static const char* ArtMessage(int art) {
         case GDF_ART_IRON_KNUCKLE: return "sends an Iron Knuckle!";
         case GDF_ART_FIRE_PILLAR: return "traps you in fire!";
         case GDF_ART_LAVA: return "turns the floor to lava!";
+        case GDF_ART_EARTHQUAKE: return "shakes the earth!";
         case GDF_ART_AERO: return "turns the air to water!";
         case GDF_ART_HAUNTING: return "...something is behind you.";
         case GDF_ART_BOMB_HAT: return "crowns you with a bomb flower! Hit him within 30 s!";
@@ -1676,6 +1688,9 @@ static u32 sLavaUntil = 0;
 static u32 sAeroUntil = 0;
 static u32 sHauntUntil = 0;
 static u32 sDisarmUntil = 0;
+static u32 sQuakeUntil = 0;
+static u32 sQuakeNextFall = 0;
+static std::vector<Actor*> sQuakeRocks;
 static Actor* sBombHat = nullptr;
 static u32 sBombHatUntil = 0;
 
@@ -1702,6 +1717,47 @@ static void DisarmBombHat() {
 
 static void UpdateElements(PlayState* play) {
     Player* player = (play != nullptr) ? GET_PLAYER(play) : nullptr;
+
+    // Earthquake: thrown off his feet again and again, the ground rumbling, harmless boulders raining down
+    if ((sQuakeUntil != 0) && (player != nullptr)) {
+        if (sFrame >= sQuakeUntil) {
+            sQuakeUntil = 0;
+        } else {
+            if ((sFrame % 20) == 0) {
+                Actor_RequestQuakeAndRumble(&player->actor, play, 5, 25);
+            }
+            Audio_PlaySfxGeneral(NA_SE_EV_EARTHQUAKE - SFX_FLAG, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            if ((sFrame >= sQuakeNextFall) && (gSaveContext.health > 0) &&
+                !(player->stateFlags1 & (PLAYER_STATE1_IN_WATER | PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_DEAD))) {
+                player->actor.colChkInfo.damage = 0;
+                func_80837C0C(play, player, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 0.0f, 4.0f,
+                              player->actor.shape.rot.y + 0x8000, 0);
+                sQuakeNextFall = sFrame + 50;
+            }
+            if ((sFrame % 4) == 0) {
+                Vec3f p = player->actor.world.pos;
+                p.x += Rand_CenteredFloat(600.0f);
+                p.z += Rand_CenteredFloat(600.0f);
+                p.y += 400.0f;
+                Actor* rock = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FIRE_ROCK, p.x, p.y, p.z, 0, 0, 0,
+                                          FIRE_ROCK_SPAWNED_FALLING2);
+                if (rock != nullptr) {
+                    sQuakeRocks.push_back(rock);
+                }
+            }
+        }
+    }
+    // The boulders never hurt
+    for (auto it = sQuakeRocks.begin(); it != sQuakeRocks.end();) {
+        if (!ActorAlive(*it)) {
+            it = sQuakeRocks.erase(it);
+            continue;
+        }
+        ((EnFireRock*)*it)->collider.base.atFlags &= ~AT_ON;
+        ((EnFireRock*)*it)->collider.base.acFlags &= ~AC_ON;
+        ++it;
+    }
 
     if ((sElementTimerUntil != 0) && (sFrame >= sElementTimerUntil)) {
         sElementTimerUntil = 0;
@@ -1851,6 +1907,12 @@ static bool StartArt(PlayState* play, int art) {
             sAeroUntil = sFrame + 30 * GDF_FPS;
             StartZeldaTimer(30);
             sElementTimerUntil = sAeroUntil;
+            break;
+        case GDF_ART_EARTHQUAKE:
+            sQuakeUntil = sFrame + 10 * GDF_FPS;
+            sQuakeNextFall = sFrame;
+            StartZeldaTimer(10);
+            sElementTimerUntil = sQuakeUntil;
             break;
         case GDF_ART_LAVA:
             sLavaUntil = sFrame + 30 * GDF_FPS;
@@ -2271,6 +2333,11 @@ extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
         memset(input, 0, sizeof(*input));
         return;
     }
+    // A Link in the earthquake: down, he can't get going
+    if (GdfInvasion_IsHero() && (sQuakeUntil != 0) && (sFrame < sQuakeUntil)) {
+        memset(input, 0, sizeof(*input));
+        return;
+    }
     // A Link disarmed: no sword
     if (GdfInvasion_IsHero() && (sFrame < sDisarmUntil)) {
         input->cur.button &= ~BTN_B;
@@ -2453,7 +2520,7 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
             Rupees_ChangeBy((s16)payload.value("rupees", 0)); // his tithe
             Flash("Took " + std::to_string(payload.value("rupees", 0)) + " rupees");
         }
-        if (!payload.value("ok", false) && (art >= 0) && (art < GDF_ART_COUNT)) {
+        if (!payload.value("ok", false) && (art >= 0) && (art < GDF_ART_COUNT) && (art != GDF_ART_EARTHQUAKE)) {
             // Refused (that Link was in a cutscene, talking, ...): the magic comes back, and the cooldown resets
             gSaveContext.magic = MIN(gSaveContext.magic + sArts[art].cost, gSaveContext.magicCapacity);
             sArtReady[art] = sFrame;

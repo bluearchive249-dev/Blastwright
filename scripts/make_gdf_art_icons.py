@@ -402,6 +402,16 @@ def _(i):
         i.poly([(x - 1, 9), (x + 1, 9), (x, 5)], 'E')
 
 
+@icon('Earthquake')
+def _(i):
+    i.rect(0, 11, 15, 15, 'n'); i.rect(0, 11, 15, 11, 'N')
+    i.line(7, 11, 5, 13, 'k'); i.line(5, 13, 8, 15, 'k'); i.line(9, 11, 11, 14, 'k')
+    for cx, cy in ((3, 3), (11, 2), (7, 6)):
+        i.disc(cx, cy, 1.6, 'g'); i.px(cx - 1, cy - 1, 'G')
+    for y in (4, 7):
+        i.px(0, y, 'y'); i.px(15, y + 1, 'y')
+
+
 def main():
     names = [n for n, _ in ICONS]
     sheet = Image.new('RGBA', (len(ICONS) * 17 * 6, 17 * 6), (60, 50, 70, 255))
