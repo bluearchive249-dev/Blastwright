@@ -1048,7 +1048,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Shadow Veil", ART_OWN, 24, 45, 15, true, "Ganondorf is invisible (and silent) to the Links." },
     { "Rupee Tithe", ART_OWN, 12, 60, 0, true, "Takes up to 20 rupees from Link (never his last 10)." },
     { "Moblin Guard", ART_MONSTER, 30, 40, 0, true, "Two spear Moblins appear ahead of Link and charge him." },
-    { "Ammo Blight", ART_OWN, 16, 60, 0, true, "A third of one kind of Link's ammo crumbles away." },
+    { "Disarm", ART_CURSE, 24, 60, 15, true, "Link's sword is knocked from his hand: no sword for 15 s." },
     { "Dark Pact", ART_OWN, 0, 120, 0, true, "Trade 30 of your Resolve for 40 magic." },
     { "Dark Link", ART_MONSTER, 40, 120, 60, true, "Dark Link rises before Link, and you control him for a minute." },
     { "Wallmaster", ART_MONSTER, 24, 30, 0, true, "A Wallmaster drops on Link and drags him back to the entrance (2 at most)." },
@@ -1640,7 +1640,7 @@ static const char* ArtMessage(int art) {
         case GDF_ART_DUEL: return "challenges you to a duel!";
         case GDF_ART_TITHE: return "takes his tithe!";
         case GDF_ART_MOBLINS: return "sends his Moblin guard!";
-        case GDF_ART_AMMO: return "blights your ammo!";
+        case GDF_ART_AMMO: return "knocks the sword from your hand!";
         case GDF_ART_DARKLINK: return "sends your shadow against you!";
         case GDF_ART_WALLMASTER: return "sends a Wallmaster for you!";
         case GDF_ART_IRON_KNUCKLE: return "sends an Iron Knuckle!";
@@ -1675,6 +1675,7 @@ static u32 sElementTimerUntil = 0; // the game's own timer shows the time left
 static u32 sLavaUntil = 0;
 static u32 sAeroUntil = 0;
 static u32 sHauntUntil = 0;
+static u32 sDisarmUntil = 0;
 static Actor* sBombHat = nullptr;
 static u32 sBombHatUntil = 0;
 
@@ -1896,23 +1897,11 @@ static bool StartArt(PlayState* play, int art) {
             sQuicksandUntil = sFrame + 15 * GDF_FPS;
             GameInteractor::State::MovementSpeedMultiplier = 0.5f;
             break;
-        case GDF_ART_AMMO: {
-            // One kind of ammo he has, a third of it gone
-            static const s32 sKinds[] = { ITEM_STICK, ITEM_NUT, ITEM_BOMB, ITEM_BOW, ITEM_SLINGSHOT, ITEM_BOMBCHU };
-            int have[6];
-            int n = 0;
-            for (int i = 0; i < 6; i++) {
-                if (AMMO(sKinds[i]) >= 3) {
-                    have[n++] = i;
-                }
-            }
-            if (n == 0) {
-                return false;
-            }
-            s32 item = sKinds[have[(int)(Rand_ZeroOne() * (n - 0.01f))]];
-            AMMO(item) -= AMMO(item) / 3;
+        case GDF_ART_AMMO: // Disarm (took Ammo Blight's place): no sword (B) for 15 s
+            sDisarmUntil = sFrame + 15 * GDF_FPS;
+            StartZeldaTimer(15);
+            sElementTimerUntil = sDisarmUntil;
             break;
-        }
         case GDF_ART_TITHE: {
             int take = CLAMP(gSaveContext.rupees - 10, 0, 20);
             if (take <= 0) {
@@ -2281,6 +2270,11 @@ extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
     if (GdfInvasion_IsHeld()) {
         memset(input, 0, sizeof(*input));
         return;
+    }
+    // A Link disarmed: no sword
+    if (GdfInvasion_IsHero() && (sFrame < sDisarmUntil)) {
+        input->cur.button &= ~BTN_B;
+        input->press.button &= ~BTN_B;
     }
     // A Link: a sealed C-button
     if (sSealedButton != 0) {

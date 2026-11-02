@@ -320,13 +320,15 @@ def _(i):
     i.rect(5, 10, 7, 11, 'r')
 
 
-@icon('Ammo Blight')
+@icon('Disarm')
 def _(i):
-    i.line(1, 14, 6, 9, 'N'); i.line(9, 6, 13, 2, 'N')
-    i.poly([(12, 1), (15, 0), (14, 4)], 'G')
-    i.line(1, 12, 2, 14, 'w'); i.line(3, 14, 1, 12, 'w')
-    for x, y in ((7, 9), (8, 7), (6, 7), (9, 9)):
-        i.px(x, y, 'm')
+    # his sword knocked spinning out of his open hand
+    i.line(4, 2, 11, 9, 'G'); i.line(5, 2, 12, 9, 'w')
+    i.line(10, 11, 13, 8, 'n'); i.line(12, 10, 13, 11, 'n')
+    i.rect(1, 12, 5, 14, 'h'); i.px(1, 11, 'h'); i.px(3, 11, 'h'); i.px(5, 11, 'h')
+    for x, y in ((14, 2), (13, 4), (2, 7)):
+        i.px(x, y, 'y')
+    i.line(13, 13, 15, 15, 'r'); i.line(15, 13, 13, 15, 'r')
 
 
 @icon('Dark Pact')
