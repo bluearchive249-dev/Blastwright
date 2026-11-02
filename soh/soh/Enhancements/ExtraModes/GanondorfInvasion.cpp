@@ -1053,7 +1053,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Iron Knuckle", ART_MONSTER, 40, 90, 0, true, "An Iron Knuckle bars Link's way (one at a time)." },
     { "Fire Pillar", ART_OBSTACLE, 26, 40, 15, true, "A ring of fire traps Link for 15 s." },
     { "Aero Alchemy", ART_CURSE, 30, 60, 30, true, "The air around Link turns to water: he swims for 30 s." },
-    { "VVVVVV", ART_CURSE, 30, 90, 60, false, "Link's gravity flips when he leaves the ground, for a minute." },
+    { "The Haunting", ART_CURSE, 34, 90, 20, true, "Darkness swallows Link and two ReDeads rise behind him, for 20 s." },
     { "Lava Floor", ART_CURSE, 28, 60, 30, true, "The floor burns Link for 30 s, or until he defeats an enemy." },
     { "Bomb Flower Hat", ART_CURSE, 40, 120, 30, true, "A bomb flower on a random Link's head: 30 s to hit you, or it blows." },
     { "", ART_OWN, 0, 0, 0, false, "" },
@@ -1084,7 +1084,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
 #define GDF_ART_IRON_KNUCKLE 29
 #define GDF_ART_FIRE_PILLAR 30
 #define GDF_ART_AERO 31
-#define GDF_ART_GRAVITY 32
+#define GDF_ART_HAUNTING 32
 #define GDF_ART_LAVA 33
 #define GDF_ART_BOMB_HAT 34
 static const char* sCurseMessages[8] = {
@@ -1645,6 +1645,7 @@ static const char* ArtMessage(int art) {
         case GDF_ART_FIRE_PILLAR: return "traps you in fire!";
         case GDF_ART_LAVA: return "turns the floor to lava!";
         case GDF_ART_AERO: return "turns the air to water!";
+        case GDF_ART_HAUNTING: return "...something is behind you.";
         case GDF_ART_BOMB_HAT: return "crowns you with a bomb flower! Hit him within 30 s!";
     }
     return "has cursed you!";
@@ -1661,6 +1662,7 @@ static int MonstersFor(int art) {
         case GDF_ART_MOBLINS: return 2;
         case GDF_ART_DARKLINK: return 1;
         case GDF_ART_WALLMASTER: return 1;
+        case GDF_ART_HAUNTING: return 2;
         case GDF_ART_IRON_KNUCKLE: return 1;
     }
     return 0;
@@ -1670,6 +1672,7 @@ static int MonstersFor(int art) {
 static u32 sElementTimerUntil = 0; // the game's own timer shows the time left
 static u32 sLavaUntil = 0;
 static u32 sAeroUntil = 0;
+static u32 sHauntUntil = 0;
 static Actor* sBombHat = nullptr;
 static u32 sBombHatUntil = 0;
 
@@ -1821,6 +1824,24 @@ static bool StartArt(PlayState* play, int art) {
             }
             StartZeldaTimer(15);
             sElementTimerUntil = sFrame + 15 * GDF_FPS;
+            break;
+        }
+        case GDF_ART_HAUNTING: {
+            // The lights go out, the ReDead cry rings out, and two of them stand up right behind him
+            sHauntUntil = sFrame + 20 * GDF_FPS;
+            StartZeldaTimer(20);
+            sElementTimerUntil = sHauntUntil;
+            Audio_PlaySfxGeneral(NA_SE_EN_REDEAD_CRY, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            s16 behind = player->actor.shape.rot.y + 0x8000;
+            for (int i = 0; i < 2; i++) {
+                s16 yaw = behind + (i ? 0x1400 : -0x1400);
+                Vec3f p = player->actor.world.pos;
+                p.x += Math_SinS(yaw) * 110.0f;
+                p.z += Math_CosS(yaw) * 110.0f;
+                Track(Actor_Spawn(&play->actorCtx, play, ACTOR_EN_RD, p.x, p.y, p.z, 0,
+                                  Math_Vec3f_Yaw(&p, &player->actor.world.pos), 0, 1));
+            }
             break;
         }
         case GDF_ART_AERO:
@@ -2898,8 +2919,8 @@ static void DrawHeroHud(ImGuiViewport* vp, float scale) {
                       Col(200, 170, 120, alpha * 220 / 255), 3.0f * scale, 0, 1.2f * scale);
     }
 
-    if (false) {
-        // (was Blinding Gloom: darkness closing in from the edges)
+    if ((sHauntUntil != 0) && (sFrame < sHauntUntil)) {
+        // The Haunting: darkness closing in from the edges
         float w = vp->Size.x;
         float h = vp->Size.y;
         ImVec2 o = vp->Pos;
