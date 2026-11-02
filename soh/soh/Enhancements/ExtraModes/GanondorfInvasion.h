@@ -107,6 +107,14 @@ s32 PlayAsGanondorf_IsGanonOut(PlayState* play);
 s32 GdfInvasion_DarkLinkInput(Actor* actor, Input* input, s16 camYaw);
 s32 GdfInvasion_DarkLinkPossessed(Actor* actor);
 s32 GdfInvasion_CanHurtLinks(void);
+// The light ball volley (as in the tower fight): a Link swings at Ganondorf's ball and sends it back, he swings and
+// sends it back again; whoever misses is hit. A Link's game decides for the Link, Ganondorf's for him.
+void GdfInvasion_SendVolley(Vec3f* ballPos);
+void GdfInvasion_SendBallHit(Vec3f* ballPos);
+void GdfInvasion_BallHurtLink(PlayState* play);
+void GdfInvasion_BallHitGanondorf(void);
+void BossGanon_Player_BallVolleyed(Vec3f* ballPos);
+void BossGanon_Player_BallBurstAt(Vec3f* ballPos);
 // Revival: a fallen Link is down for a while, and another Link standing by him brings him back (3 hearts)
 s32 GdfInvasion_HoldDowned(PlayState* play, Player* player);
 s32 GdfInvasion_ReviveHealth(s32 full);

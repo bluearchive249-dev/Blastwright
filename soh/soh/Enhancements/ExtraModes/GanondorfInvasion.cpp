@@ -970,6 +970,8 @@ static RegisterShipInitFunc lobbyInitFunc(RegisterGanondorfInvasionLobby, {});
 #define GDF_PKT_CHAT "GDF_CHAT"
 #define GDF_PKT_DUNGEON_DONE "GDF_DUNGEON_DONE"
 #define GDF_PKT_WORLD_HIT "GDF_WORLD_HIT"
+#define GDF_PKT_VOLLEY "GDF_VOLLEY"
+#define GDF_PKT_BALL_HIT "GDF_BALL_HIT"
 static void HandleWorldHit(const nlohmann::json& payload);
 
 // A dungeon (its rooms and its boss's room), and where outside it Ganondorf is put once a Link has beaten it
@@ -2288,6 +2290,16 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
             std::string by = Anchor::Instance->clients.count(from) ? Anchor::Instance->clients[from].name : "A Link";
             Notification::Emit({ .prefix = "Invasion", .message = by + " revived you!" });
         }
+    } else if (type == GDF_PKT_VOLLEY) {
+        if (GdfInvasion_IsInvader()) {
+            Vec3f pos = { payload.value("x", 0.0f), payload.value("y", 0.0f), payload.value("z", 0.0f) };
+            BossGanon_Player_BallVolleyed(&pos);
+        }
+    } else if (type == GDF_PKT_BALL_HIT) {
+        if (GdfInvasion_IsInvader()) {
+            Vec3f pos = { payload.value("x", 0.0f), payload.value("y", 0.0f), payload.value("z", 0.0f) };
+            BossGanon_Player_BallBurstAt(&pos);
+        }
     } else if (type == GDF_PKT_WORLD_HIT) {
         HandleWorldHit(payload);
     } else if (type == GDF_PKT_DUNGEON_DONE) {
@@ -3465,4 +3477,61 @@ extern "C" s32 GdfInvasion_ReviveHealth(s32 full) {
         return 3 * 16;
     }
     return full;
+}
+
+// ---- The light ball volley ----
+
+static uint32_t GanondorfClient() {
+    for (auto& [clientId, c] : sClients) {
+        if (c.isGanondorf) {
+            return clientId;
+        }
+    }
+    return 0;
+}
+
+static void SendBallPacket(const char* type, Vec3f* pos) {
+    uint32_t to = GanondorfClient();
+    if ((to == 0) || (Anchor::Instance == nullptr)) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["type"] = type;
+    payload["targetClientId"] = to;
+    payload["x"] = pos->x;
+    payload["y"] = pos->y;
+    payload["z"] = pos->z;
+    Anchor::Instance->SendJsonToRemote(payload);
+}
+
+extern "C" void GdfInvasion_SendVolley(Vec3f* ballPos) {
+    SendBallPacket(GDF_PKT_VOLLEY, ballPos);
+}
+
+extern "C" void GdfInvasion_SendBallHit(Vec3f* ballPos) {
+    SendBallPacket(GDF_PKT_BALL_HIT, ballPos);
+}
+
+// A Link's game: the ball got him (as Ganondorf's hits do: less with fewer hearts, never more than a third)
+extern "C" void GdfInvasion_BallHurtLink(PlayState* play) {
+    Player* self = GET_PLAYER(play);
+    if ((self == nullptr) || (self->invincibilityTimer > 0)) {
+        return;
+    }
+    s32 dmg = 32 * gSaveContext.healthCapacity / (20 * 16);
+    dmg = CLAMP(dmg, 4, MAX(gSaveContext.healthCapacity / 3, 4));
+    self->actor.colChkInfo.damage = (u8)dmg;
+    func_80837C0C(play, self, PLAYER_HIT_RESPONSE_ELECTRIFIED, 4.0f, 5.0f, self->actor.shape.rot.y + 0x8000, 20);
+}
+
+// Ganondorf's game: he missed his own ball sent back at him
+extern "C" void GdfInvasion_BallHitGanondorf(void) {
+    if (!GdfInvasion_IsInvader() || IsBanished()) {
+        return;
+    }
+    nlohmann::json hit;
+    hit["amount"] = 20;
+    hit["effect"] = 2;
+    HandleHit(hit);
+    Flash("Your own magic, sent back at you!");
 }

@@ -5998,7 +5998,8 @@ static ColliderCylinderInit sPlayerPoundCylinderInit = {
 #define GDF_GRAB_FLYING 2
 #define GDF_GRAB_DOWN 3
 static Actor* sGdfGrabActor = NULL;
-static u32 sGdfGrabBusyFrame = 0; // the last frame he held someone (Invasion mode's grab cooldown)
+static u32 sGdfGrabBusyFrame = 0;
+static u32 sGdfLastBFrame = 0xFFFF0000; // when Ganondorf last pressed B (the volley) // the last frame he held someone (Invasion mode's grab cooldown)
 static u8 sGdfGrabState = GDF_GRAB_NONE;
 static u8 sGdfGrabIsEnemy = false;
 static f32 sGdfGrabNeck = 0.0f;
@@ -9832,6 +9833,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     if (sGdfGrabState != GDF_GRAB_NONE) {
         sGdfGrabBusyFrame = play->gameplayFrames;
     }
+    if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
+        sGdfLastBFrame = play->gameplayFrames; // (the volley)
+    }
     // Invasion mode: pacified
     if (GdfInvasion_IsPacified()) {
         if (this->actionFunc != BossGanon_Player_Pacified) {
@@ -10154,6 +10158,110 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 }
 
 // Ganondorf's light ball, thrown by the player. Flies straight and bursts on enemies, walls and floors.
+
+// Points the ball at a spot (NULL: the nearest Link) at its speed
+static void BossGanon_PlayerBall_Aim(BossGanon* this, PlayState* play, Vec3f* at) {
+    Vec3f target;
+    f32 dx;
+    f32 dy;
+    f32 dz;
+
+    if (at == NULL) {
+        Actor* best = NULL;
+        f32 bestDist = 3000.0f;
+        Actor* actor;
+
+        for (actor = play->actorCtx.actorLists[ACTORCAT_NPC].head; actor != NULL; actor = actor->next) {
+            f32 d;
+            if ((actor->update == NULL) || (GdfInvasion_DummyClientId(actor) == 0)) {
+                continue;
+            }
+            d = Math_Vec3f_DistXYZ(&this->actor.world.pos, &actor->world.pos);
+            if (d < bestDist) {
+                bestDist = d;
+                best = actor;
+            }
+        }
+        if (best == NULL) {
+            return;
+        }
+        target = best->world.pos;
+        target.y += 40.0f;
+    } else {
+        target = *at;
+    }
+    dx = target.x - this->actor.world.pos.x;
+    dy = target.y - this->actor.world.pos.y;
+    dz = target.z - this->actor.world.pos.z;
+    this->actor.world.rot.y = Math_Atan2S(dz, dx);
+    this->actor.world.rot.x = RADF_TO_BINANG(atan2f(dy, sqrtf(SQ(dx) + SQ(dz))));
+}
+
+static s32 BossGanon_PlayerBall_NearLink(BossGanon* this, PlayState* play) {
+    Actor* actor;
+
+    if (!GdfInvasion_CanHurtLinks()) {
+        return false;
+    }
+    for (actor = play->actorCtx.actorLists[ACTORCAT_NPC].head; actor != NULL; actor = actor->next) {
+        if ((actor->update != NULL) && (GdfInvasion_DummyClientId(actor) != 0) &&
+            (Math_Vec3f_DistXYZ(&this->actor.world.pos, &actor->world.pos) < 180.0f)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static BossGanon* BossGanon_Player_FindBallNear(Vec3f* pos) {
+    PlayState* play = gPlayState;
+    BossGanon* best = NULL;
+    f32 bestDist = 250.0f;
+    Actor* actor;
+    s32 i;
+
+    if (play == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < ACTORCAT_MAX; i++) {
+        for (actor = play->actorCtx.actorLists[i].head; actor != NULL; actor = actor->next) {
+            f32 d;
+            if ((actor->id != ACTOR_BOSS_GANON) || (actor->params != GDF_PARAMS_PLAYER_LIGHT_BALL) ||
+                (actor->update == NULL) || (((BossGanon*)actor)->unk_1A8 != 0)) {
+                continue;
+            }
+            d = Math_Vec3f_DistXYZ(pos, &actor->world.pos);
+            if (d < bestDist) {
+                bestDist = d;
+                best = (BossGanon*)actor;
+            }
+        }
+    }
+    return best;
+}
+
+// A Link sent it back: at Ganondorf it goes
+void BossGanon_Player_BallVolleyed(Vec3f* ballPos) {
+    BossGanon* ball = BossGanon_Player_FindBallNear(ballPos);
+
+    if ((ball == NULL) || (ball->unk_1A6 != 0)) {
+        return;
+    }
+    ball->unk_1A6 = 1;
+    ball->unk_1A4++;
+    ball->actor.speedXZ = MIN(ball->actor.speedXZ * 1.1f, 40.0f);
+    ball->timers[2] = 90;
+    SoundSource_PlaySfxAtFixedWorldPos(gPlayState, &ball->actor.world.pos, 30, NA_SE_IT_SWORD_REFLECT_MG);
+}
+
+// A Link missed it (his game has hurt him): it bursts
+void BossGanon_Player_BallBurstAt(Vec3f* ballPos) {
+    BossGanon* ball = BossGanon_Player_FindBallNear(ballPos);
+
+    if (ball != NULL) {
+        ball->timers[2] = 0; // bursts on its next update
+    }
+}
+
 static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play) {
     BossGanon* this = (BossGanon*)thisx;
     u8 burst = false;
@@ -10205,9 +10313,35 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
         burst = true;
     }
 
+    // Invasion mode, the volley: sent back by a Link, the ball flies at Ganondorf; B just as it reaches him sends it
+    // back at a Link (a little faster each time), missing gets him hit
+    if ((this->unk_1A6 != 0) && (sPlayerGanondorf != NULL) && (sPlayerGanondorf->actor.update != NULL)) {
+        Vec3f him = sPlayerGanondorf->actor.world.pos;
+        f32 dist;
+
+        him.y += 70.0f;
+        dist = Math_Vec3f_DistXYZ(&this->actor.world.pos, &him);
+        if ((dist < 110.0f) && ((u32)(play->gameplayFrames - sGdfLastBFrame) < 8)) {
+            BossGanon_PlayerBall_Aim(this, play, NULL);
+            this->unk_1A6 = 0;
+            this->unk_1A4++;
+            this->actor.speedXZ = MIN(this->actor.speedXZ * 1.1f, 40.0f);
+            this->timers[2] = 90;
+            Audio_PlayActorSound2(&sPlayerGanondorf->actor, NA_SE_IT_SWORD_REFLECT_MG);
+        } else if (dist < 50.0f) {
+            GdfInvasion_BallHitGanondorf();
+            burst = true;
+            hitSomething = true;
+        } else {
+            BossGanon_PlayerBall_Aim(this, play, &him);
+            this->timers[2] = MAX(this->timers[2], 30);
+        }
+    }
+
     // Also on the frame it bursts against a wall or floor: eye switches and the like sit right on the surface,
-    // and the wall check can stop the ball before its hitbox reaches them
-    if (!hitSomething) {
+    // and the wall check can stop the ball before its hitbox reaches them. (In Invasion mode, near a Link it doesn't
+    // hit here: his own game decides whether he sent it back)
+    if (!hitSomething && (this->unk_1A6 == 0) && !BossGanon_PlayerBall_NearLink(this, play)) {
         Collider_UpdateCylinder(&this->actor, &this->collider);
         BossGanon_Player_SetAT(this, play);
     }
@@ -12541,6 +12675,34 @@ static void BossGanon_PuppetBall_Update(Actor* thisx, PlayState* play) {
     // Moved by the puppet
 }
 
+// A Link's game: his sword swung at the ball as it reaches him sends it back to Ganondorf; if it reaches him first,
+// he's hit
+static void BossGanon_PuppetBall_Volley(BossGanon* ball, PlayState* play) {
+    Player* link = GET_PLAYER(play);
+    Vec3f center;
+    f32 dist;
+
+    if (ball->timers[0] > 0) {
+        ball->timers[0]--;
+        return;
+    }
+    if ((link == NULL) || (gSaveContext.health <= 0) || (link->stateFlags1 & PLAYER_STATE1_DEAD)) {
+        return;
+    }
+    center = link->actor.world.pos;
+    center.y += 40.0f;
+    dist = Math_Vec3f_DistXYZ(&ball->actor.world.pos, &center);
+    if ((link->meleeWeaponState != 0) && (dist < 110.0f)) {
+        GdfInvasion_SendVolley(&ball->actor.world.pos);
+        Audio_PlayActorSound2(&link->actor, NA_SE_IT_SWORD_REFLECT_MG);
+        ball->timers[0] = 20;
+    } else if (dist < 45.0f) {
+        GdfInvasion_SendBallHit(&ball->actor.world.pos);
+        GdfInvasion_BallHurtLink(play);
+        ball->timers[0] = 30;
+    }
+}
+
 static void BossGanon_Puppet_UpdateBalls(BossGanon* this, PlayState* play, GdfNetPose* pose) {
     s32 i;
     s32 j;
@@ -12587,6 +12749,10 @@ static void BossGanon_Puppet_UpdateBalls(BossGanon* this, PlayState* play, GdfNe
         ball->unk_2EC[ball->unk_1A6] = b->pos;
         ball->unk_3C4[ball->unk_1A6].x = BINANG_TO_RAD(b->rot.x);
         ball->unk_3C4[ball->unk_1A6].y = BINANG_TO_RAD(b->rot.y);
+        // The volley: this Link's game decides whether he sent it back or was hit
+        if ((b->kind == 0) && GdfInvasion_IsHero() && !GdfInvasion_LinkAtPeace(0)) {
+            BossGanon_PuppetBall_Volley(ball, play);
+        }
     }
 }
 
