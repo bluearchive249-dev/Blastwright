@@ -52,6 +52,8 @@ extern PlayState* gPlayState;
 }
 
 #include "GanondorfInvasion.h"
+#include "GanondorfArtIcons.h"
+#include <fast/Fast3dGui.h>
 
 #define CVAR_INVASION(var) CVAR_ENHANCEMENT("PlayAsGanondorf.Invasion." var)
 
@@ -2733,6 +2735,8 @@ static void DrawHudText(ImDrawList* list, float size, ImVec2 pos, ImU32 col, con
     list->AddText(ImGui::GetFont(), size, pos, col, text.c_str());
 }
 
+static ImTextureID ArtIcon(int art);
+
 // Ganondorf: his Resolve, his C-button arts, banishment, and messages
 static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
     ImDrawList* list = ImGui::GetForegroundDrawList(vp);
@@ -2769,6 +2773,12 @@ static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
             text += "  " + std::to_string((sArtReady[art] - sFrame) / GDF_FPS + 1) + "s";
         }
         ImU32 c = (!a.ready || cooling || !affordable) ? Col(170, 160, 180, 120) : Col(225, 190, 255, 200);
+        ImTextureID icon = ArtIcon(art);
+        if (icon != (ImTextureID)0) {
+            list->AddImage(icon, ImVec2(cx - font * 1.25f, cy - font * 0.1f), ImVec2(cx - font * 0.15f, cy + font),
+                           ImVec2(0, 0), ImVec2(1, 1),
+                           (!a.ready || cooling || !affordable) ? Col(130, 120, 140, 170) : Col(255, 255, 255, 255));
+        }
         DrawHudText(list, font * 0.85f, ImVec2(cx, cy), c, text);
         cy += font;
     }
@@ -2791,13 +2801,52 @@ static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
     }
 }
 
+// Each Dark Art's icon (our own 16x16 pixel art, GanondorfArtIcons.h), uploaded once and drawn sharp
+static ImTextureID ArtIcon(int art) {
+    if ((art < 0) || (art >= (int)(sizeof(sGdfArtIcons) / sizeof(sGdfArtIcons[0])))) {
+        return (ImTextureID)0;
+    }
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
+    if (gui == nullptr) {
+        return (ImTextureID)0;
+    }
+    std::string name = "GDF_ART_ICON_" + std::to_string(art);
+    if (!gui->HasTextureByName(name)) {
+        std::vector<uint8_t> pixels(16 * 16 * 4, 0);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                char key = sGdfArtIcons[art][y][x];
+                for (const GdfIconColor& c : sGdfIconPalette) {
+                    if (c.key == key) {
+                        uint8_t* px = &pixels[(y * 16 + x) * 4];
+                        px[0] = c.r;
+                        px[1] = c.g;
+                        px[2] = c.b;
+                        px[3] = 255;
+                        break;
+                    }
+                }
+            }
+        }
+        Fast::Texture tex;
+        tex.Type = Fast::TextureType::RGBA32bpp;
+        tex.Width = 16;
+        tex.Height = 16;
+        tex.ImageDataSize = (uint32_t)pixels.size();
+        tex.ImageData = pixels.data();
+        gui->LoadGuiTexture(name, tex);
+        tex.ImageData = nullptr; // ours, not the texture's to free
+    }
+    return gui->GetTextureByName(name);
+}
+
 // Ganondorf's Dark Arts menu
 static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
     ImDrawList* list = ImGui::GetForegroundDrawList(vp);
     float font = ImGui::GetFontSize() * 0.75f * fmaxf(scale, 1.0f);
-    float cellW = 92.0f * scale;
-    float cellH = 40.0f * scale;
-    float gap = 4.0f * scale;
+    float cellW = 50.0f * scale;
+    float cellH = 50.0f * scale;
+    float gap = 6.0f * scale;
     float gridW = GDF_ART_COLS * cellW + (GDF_ART_COLS - 1) * gap;
     float gridH = GDF_ART_ROWS * cellH + (GDF_ART_ROWS - 1) * gap;
     float x0 = vp->Pos.x + (vp->Size.x - gridW) * 0.5f;
@@ -2805,10 +2854,12 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
     static const char* sRows[GDF_ART_ROWS] = { "Obstacles", "Monsters", "Curses", "Curses / his own", "More",
                                                     "Elements" };
 
-    list->AddRectFilled(ImVec2(x0 - 16 * scale, y0 - 46 * scale),
-                        ImVec2(x0 + gridW + 16 * scale, y0 + gridH + 52 * scale), Col(14, 4, 24, 215), 8.0f);
-    DrawHudText(list, font * 1.4f, ImVec2(x0, y0 - 40 * scale), Col(220, 170, 255, 255), "Dark Arts");
-    DrawHudText(list, font * 0.9f, ImVec2(x0 + 120 * scale, y0 - 34 * scale), Col(200, 190, 210, 190),
+    list->AddRectFilled(ImVec2(x0 - 70 * scale, y0 - 46 * scale),
+                        ImVec2(x0 + gridW + 110 * scale, y0 + gridH + 64 * scale), Col(14, 4, 24, 225), 10.0f * scale);
+    list->AddRect(ImVec2(x0 - 70 * scale, y0 - 46 * scale), ImVec2(x0 + gridW + 110 * scale, y0 + gridH + 64 * scale),
+                  Col(150, 110, 60, 230), 10.0f * scale, 0, 2.5f * scale);
+    DrawHudText(list, font * 1.4f, ImVec2(x0 - 60 * scale, y0 - 40 * scale), Col(220, 170, 255, 255), "Dark Arts");
+    DrawHudText(list, font * 0.9f, ImVec2(x0 + 60 * scale, y0 - 34 * scale), Col(200, 190, 210, 190),
              "D-Pad: choose   C: put on that button   START/B: close");
 
     for (int i = 0; i < GDF_ART_COUNT; i++) {
@@ -2816,7 +2867,7 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
         int col = i % GDF_ART_COLS;
         if (a.name[0] == '\0') {
             ImVec2 e0(x0 + col * (cellW + gap), y0 + (i / GDF_ART_COLS) * (cellH + gap));
-            list->AddRectFilled(e0, ImVec2(e0.x + cellW, e0.y + cellH), Col(25, 20, 30, 120), 4.0f);
+            list->AddRectFilled(e0, ImVec2(e0.x + cellW, e0.y + cellH), Col(28, 20, 36, 180), 6.0f * scale);
             if (i == sCursor) {
                 list->AddRect(e0, ImVec2(e0.x + cellW, e0.y + cellH), Col(255, 220, 120, 200), 4.0f, 0, 2.0f * scale);
             }
@@ -2826,21 +2877,34 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
         ImVec2 p0(x0 + col * (cellW + gap), y0 + row * (cellH + gap));
         ImVec2 p1(p0.x + cellW, p0.y + cellH);
         bool selected = i == sCursor;
-        ImU32 bg = a.ready ? Col(60, 20, 80, 220) : Col(35, 30, 40, 200);
-        list->AddRectFilled(p0, p1, bg, 4.0f);
-        if (selected) {
-            list->AddRect(p0, p1, Col(255, 220, 120, 255), 4.0f, 0, 2.0f * scale);
+        bool affordable = gSaveContext.magic >= a.cost;
+        // A sunken stone slot, as on the item screen, with the art's icon in it
+        list->AddRectFilled(p0, p1, Col(40, 28, 52, 230), 6.0f * scale);
+        list->AddRect(ImVec2(p0.x + 1, p0.y + 1), ImVec2(p1.x - 1, p1.y - 1), Col(120, 90, 150, 200), 6.0f * scale, 0,
+                      1.5f * scale);
+        ImTextureID icon = ArtIcon(i);
+        if (icon != (ImTextureID)0) {
+            float m = 7.0f * scale;
+            ImU32 tint = !a.ready ? Col(90, 90, 100, 160) : affordable ? Col(255, 255, 255, 255) : Col(150, 140, 160, 220);
+            list->AddImage(icon, ImVec2(p0.x + m, p0.y + m), ImVec2(p1.x - m, p1.y - m), ImVec2(0, 0), ImVec2(1, 1), tint);
         }
-        DrawHudText(list, font * 0.85f, ImVec2(p0.x + 4 * scale, p0.y + 3 * scale),
-                 a.ready ? Col(240, 225, 255, 255) : Col(150, 140, 160, 200), a.name);
-        DrawHudText(list, font * 0.75f, ImVec2(p0.x + 4 * scale, p0.y + cellH - font * 0.95f),
-                 Col(160, 200, 255, 200), std::to_string(a.cost) + " magic");
+        // Its cost, where an item's ammo count would be
+        std::string cost = std::to_string(a.cost);
+        ImVec2 csz = ImGui::GetFont()->CalcTextSizeA(font * 0.8f, FLT_MAX, 0.0f, cost.c_str());
+        DrawHudText(list, font * 0.8f, ImVec2(p1.x - csz.x - 3 * scale, p1.y - csz.y - 1 * scale),
+                    affordable ? Col(140, 255, 140, 255) : Col(255, 120, 120, 255), cost);
         for (int slot = 0; slot < 3; slot++) {
             if (SlotArt(slot) == i) {
                 static const char* sTags[3] = { "<", "v", ">" };
-                DrawHudText(list, font * 0.9f, ImVec2(p1.x - 12 * scale, p0.y + 2 * scale), Col(255, 200, 60, 255),
-                         sTags[slot]);
+                DrawHudText(list, font * 0.9f, ImVec2(p0.x + 3 * scale, p0.y + 1 * scale), Col(255, 220, 60, 255),
+                            sTags[slot]);
             }
+        }
+        if (selected) {
+            // The item screen's cursor: a bright frame with corners
+            ImU32 cur = Col(255, 230, 120, 255);
+            list->AddRect(ImVec2(p0.x - 2 * scale, p0.y - 2 * scale), ImVec2(p1.x + 2 * scale, p1.y + 2 * scale), cur,
+                          7.0f * scale, 0, 2.5f * scale);
         }
     }
     // Rows and the selected art
@@ -2849,10 +2913,15 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
                  Col(180, 160, 200, 160), sRows[row]);
     }
     const DarkArt& sel = sArts[sCursor];
+    if (sel.name[0] != '\0') {
+        ImVec2 nsz = ImGui::GetFont()->CalcTextSizeA(font * 1.25f, FLT_MAX, 0.0f, sel.name);
+        DrawHudText(list, font * 1.25f, ImVec2(x0 + (gridW - nsz.x) * 0.5f, y0 + gridH + 6 * scale),
+                    Col(255, 235, 200, 255), sel.name);
+    }
     std::string desc = std::string(sel.desc) + "  (" + std::to_string(sel.cost) + " magic, " +
                        std::to_string(sel.cooldown) + " s)" + (sel.ready ? "" : "  - coming later");
-    DrawHudText(list, font * 0.9f, ImVec2(x0, y0 + gridH + 12 * scale), Col(220, 210, 230, 230), desc);
-    DrawHudText(list, font * 0.85f, ImVec2(x0, y0 + gridH + 30 * scale), Col(255, 180, 120, 200),
+    DrawHudText(list, font * 0.9f, ImVec2(x0 - 60 * scale, y0 + gridH + 26 * scale), Col(220, 210, 230, 230), desc);
+    DrawHudText(list, font * 0.85f, ImVec2(x0 - 60 * scale, y0 + gridH + 42 * scale), Col(255, 180, 120, 200),
                 "Kokiri Forest is at peace for a young Link without both sword and shield.");
 }
 
