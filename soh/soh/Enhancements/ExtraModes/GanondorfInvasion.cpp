@@ -1016,7 +1016,7 @@ struct DarkArt {
 };
 
 #define GDF_ART_COLS 6
-#define GDF_ART_ROWS 5
+#define GDF_ART_ROWS 6
 #define GDF_ART_COUNT (GDF_ART_COLS * GDF_ART_ROWS)
 
 // Row by row: obstacles, monsters, curses, his own. Curses are index 12 onward.
@@ -1049,7 +1049,13 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Ammo Blight", ART_OWN, 16, 60, 0, true, "A third of one kind of Link's ammo crumbles away." },
     { "Dark Pact", ART_OWN, 0, 120, 0, true, "Trade 30 of your Resolve for 40 magic." },
     { "Dark Link", ART_MONSTER, 40, 120, 60, true, "Dark Link rises before Link, and you control him for a minute." },
-    { "", ART_OWN, 0, 0, 0, false, "" },
+    { "Wallmaster", ART_MONSTER, 24, 30, 0, true, "A Wallmaster drops on Link and drags him back to the entrance (2 at most)." },
+    { "Iron Knuckle", ART_MONSTER, 40, 90, 0, true, "An Iron Knuckle bars Link's way (one at a time)." },
+    { "Fire Pillar", ART_OBSTACLE, 26, 40, 15, true, "A ring of fire traps Link for 15 s." },
+    { "Aero Alchemy", ART_CURSE, 30, 60, 30, false, "The air around Link turns to water for 30 s." },
+    { "VVVVVV", ART_CURSE, 30, 90, 60, false, "Link's gravity flips when he leaves the ground, for a minute." },
+    { "Lava Floor", ART_CURSE, 28, 60, 30, true, "The floor burns Link for 30 s, or until he defeats an enemy." },
+    { "Bomb Flower Hat", ART_CURSE, 40, 120, 30, true, "A bomb flower on a random Link's head: 30 s to hit you, or it blows." },
     { "", ART_OWN, 0, 0, 0, false, "" },
 };
 
@@ -1074,6 +1080,13 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
 #define GDF_ART_AMMO 25
 #define GDF_ART_PACT 26
 #define GDF_ART_DARKLINK 27
+#define GDF_ART_WALLMASTER 28
+#define GDF_ART_IRON_KNUCKLE 29
+#define GDF_ART_FIRE_PILLAR 30
+#define GDF_ART_AERO 31
+#define GDF_ART_GRAVITY 32
+#define GDF_ART_LAVA 33
+#define GDF_ART_BOMB_HAT 34
 static const char* sCurseMessages[8] = {
     "has reversed your path!", "has frozen the ground!",  "weighs you down with iron!", "has shrunk you!",
     "has sealed your hand!",   "has cast a blinding gloom!", "has stolen your bearings!", "summons a ghostly gale!",
@@ -1343,6 +1356,17 @@ static void TryCast(PlayState* play, int slot) {
         return;
     }
     uint32_t target = FindTargetLink(play);
+    if (art == GDF_ART_BOMB_HAT) {
+        // A random Link, wherever he is
+        std::vector<uint32_t> links;
+        for (auto& [clientId, client] : Anchor::Instance->clients) {
+            if (!client.self && client.online && client.isSaveLoaded && !GdfInvasion_IsClientGanondorf(clientId) &&
+                !GdfInvasion_LinkAtPeace(clientId)) {
+                links.push_back(clientId);
+            }
+        }
+        target = links.empty() ? 0 : links[(size_t)(Rand_ZeroOne() * links.size()) % links.size()];
+    }
     if (target == 0) {
         Flash("No Link close enough");
         Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
@@ -1616,6 +1640,11 @@ static const char* ArtMessage(int art) {
         case GDF_ART_MOBLINS: return "sends his Moblin guard!";
         case GDF_ART_AMMO: return "blights your ammo!";
         case GDF_ART_DARKLINK: return "sends your shadow against you!";
+        case GDF_ART_WALLMASTER: return "sends a Wallmaster for you!";
+        case GDF_ART_IRON_KNUCKLE: return "sends an Iron Knuckle!";
+        case GDF_ART_FIRE_PILLAR: return "traps you in fire!";
+        case GDF_ART_LAVA: return "turns the floor to lava!";
+        case GDF_ART_BOMB_HAT: return "crowns you with a bomb flower! Hit him within 30 s!";
     }
     return "has cursed you!";
 }
@@ -1630,8 +1659,72 @@ static int MonstersFor(int art) {
         case GDF_ART_DUEL: return 1;
         case GDF_ART_MOBLINS: return 2;
         case GDF_ART_DARKLINK: return 1;
+        case GDF_ART_WALLMASTER: return 1;
+        case GDF_ART_IRON_KNUCKLE: return 1;
     }
     return 0;
+}
+
+// ---- The Elements row ----
+static u32 sElementTimerUntil = 0; // the game's own timer shows the time left
+static u32 sLavaUntil = 0;
+static Actor* sBombHat = nullptr;
+static u32 sBombHatUntil = 0;
+
+static void StartZeldaTimer(s16 seconds) {
+    Interface_SetTimer(seconds);
+}
+
+static void StopZeldaTimer() {
+    if ((gSaveContext.timerState >= TIMER_STATE_DOWN_INIT) && (gSaveContext.timerState <= TIMER_STATE_DOWN_TICK)) {
+        gSaveContext.timerState = TIMER_STATE_OFF;
+    }
+}
+
+// The bomb flower hat: disarmed when this Link hurts Ganondorf
+static void DisarmBombHat() {
+    if (ActorAlive(sBombHat)) {
+        Actor_Kill(sBombHat);
+        StopZeldaTimer();
+        sElementTimerUntil = 0;
+        Notification::Emit({ .prefix = "Invasion", .message = "The bomb flower is disarmed!" });
+    }
+    sBombHat = nullptr;
+}
+
+static void UpdateElements(PlayState* play) {
+    Player* player = (play != nullptr) ? GET_PLAYER(play) : nullptr;
+
+    if ((sElementTimerUntil != 0) && (sFrame >= sElementTimerUntil)) {
+        sElementTimerUntil = 0;
+        StopZeldaTimer();
+    }
+    // Lava Floor: the ground itself burns him (not ladders, vines, chests, platforms or anything that isn't floor)
+    if (sLavaUntil != 0) {
+        if ((sFrame >= sLavaUntil) || (player == nullptr)) {
+            sLavaUntil = 0;
+        } else if ((player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && (player->actor.floorBgId == BGCHECK_SCENE) &&
+                   !(player->stateFlags1 & (PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_IN_WATER)) &&
+                   (player->invincibilityTimer <= 0) && ((sFrame % 10) == 0)) {
+            GameInteractor::RawAction::BurnPlayer();
+        }
+    }
+    // The bomb flower hat: on his head, until he hits Ganondorf or it blows
+    if (sBombHat != nullptr) {
+        if (!ActorAlive(sBombHat) || (player == nullptr)) {
+            sBombHat = nullptr;
+        } else if (sFrame >= sBombHatUntil) {
+            ((EnBom*)sBombHat)->timer = 1; // blows
+            sBombHat = nullptr;
+            gSaveContext.health = 0;
+        } else {
+            sBombHat->world.pos = player->actor.world.pos;
+            sBombHat->world.pos.y += 75.0f;
+            sBombHat->velocity = { 0.0f, 0.0f, 0.0f };
+            sBombHat->gravity = 0.0f;
+            ((EnBom*)sBombHat)->timer = 200;
+        }
+    }
 }
 
 static bool DarkLinkHere(PlayState* play) {
@@ -1709,6 +1802,64 @@ static bool StartArt(PlayState* play, int art) {
                     AddObstacle(fire, 15);
                 }
             }
+            break;
+        }
+        case GDF_ART_FIRE_PILLAR: {
+            // A ring of fire walls around him
+            Vec3f c = player->actor.world.pos;
+            for (int i = 0; i < 12; i++) {
+                Vec3f p = c;
+                p.x += Math_SinS(i * 0x10000 / 12) * 140.0f;
+                p.z += Math_CosS(i * 0x10000 / 12) * 140.0f;
+                Actor* fire = Actor_Spawn(&play->actorCtx, play, ACTOR_BG_HIDAN_FIREWALL, p.x, c.y, p.z, 0,
+                                          (s16)(i * 0x10000 / 12) + 0x4000, 0, 0);
+                if (fire != nullptr) {
+                    AddObstacle(fire, 15);
+                }
+            }
+            StartZeldaTimer(15);
+            sElementTimerUntil = sFrame + 15 * GDF_FPS;
+            break;
+        }
+        case GDF_ART_LAVA:
+            sLavaUntil = sFrame + 30 * GDF_FPS;
+            StartZeldaTimer(30);
+            sElementTimerUntil = sLavaUntil;
+            break;
+        case GDF_ART_BOMB_HAT:
+            if (ActorAlive(sBombHat)) {
+                return false;
+            }
+            sBombHat = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, player->actor.world.pos.x,
+                                   player->actor.world.pos.y + 80.0f, player->actor.world.pos.z, 0, 0, 0, BOMB_BODY);
+            if (sBombHat == nullptr) {
+                return false;
+            }
+            sBombHat->room = -1;
+            sBombHatUntil = sFrame + 30 * GDF_FPS;
+            StartZeldaTimer(30);
+            sElementTimerUntil = sBombHatUntil;
+            break;
+        case GDF_ART_WALLMASTER:
+        case GDF_ART_IRON_KNUCKLE: {
+            int same = 0;
+            s16 id = (art == GDF_ART_WALLMASTER) ? ACTOR_EN_WALLMAS : ACTOR_EN_IK;
+            for (Actor* a : sSummoned) {
+                same += (ActorAlive(a) && (a->id == id)) ? 1 : 0;
+            }
+            if (same >= ((art == GDF_ART_WALLMASTER) ? 2 : 1)) {
+                return false; // at most two Wallmasters, one Iron Knuckle
+            }
+            if (art == GDF_ART_WALLMASTER) {
+                // Its shadow grows under him, then it drops
+                Track(Actor_Spawn(&play->actorCtx, play, ACTOR_EN_WALLMAS, player->actor.world.pos.x,
+                                  player->actor.world.pos.y, player->actor.world.pos.z, 0, 0, 0, 0));
+                break;
+            }
+            sSummon.art = art;
+            sSummon.start = sFrame;
+            sSummon.spawned = 0;
+            sSummon.spotCount = 0;
             break;
         }
         case GDF_ART_QUICKSAND:
@@ -1806,6 +1957,7 @@ static void UpdateSummons() {
             o.actor = nullptr;
         }
     }
+    UpdateElements(play);
     // Dark Link's minute is up
     if (sDarkLink != nullptr) {
         if (!ActorAlive(sDarkLink)) {
@@ -1889,6 +2041,12 @@ static void UpdateSummons() {
                 SpawnMonstersAt(play, ACTOR_EN_SKB, 0, 3, 200.0f, 320.0f, false);
             }
             if (sSummon.spawned >= 3) {
+                sSummon.art = -1;
+            }
+            break;
+        case GDF_ART_IRON_KNUCKLE:
+            SpawnMonstersAt(play, ACTOR_EN_IK, 2, 1, 220.0f, 320.0f, false); // a black Iron Knuckle, standing
+            if (sSummon.spawned > 0) {
                 sSummon.art = -1;
             }
             break;
@@ -2167,6 +2325,7 @@ bool GdfInvasion_UpdateGanondorfDummy(Actor* actor, uint32_t clientId) {
         payload["effect"] = actor->colChkInfo.damageEffect;
         Anchor::Instance->SendJsonToRemote(payload);
         sHitCooldown[clientId] = sFrame + 8;
+        DisarmBombHat(); // hurting him disarms the bomb flower hat
     }
     Collider_UpdateCylinder(actor, &dummy->cylinder);
     dummy->cylinder.dim.radius = (s16)radius;
@@ -2514,7 +2673,18 @@ static void UpdateDungeonExit(PlayState* play) {
     Notification::Emit({ .prefix = "Invasion", .message = "A Link has conquered this dungeon: you're cast out of it." });
 }
 
+static void OnInvasionEnemyDefeat(void* actor) {
+    if (GdfInvasion_IsHero() && (sLavaUntil != 0)) {
+        sLavaUntil = 0; // Lava Floor ends with a defeated enemy
+        if (sElementTimerUntil != 0) {
+            sElementTimerUntil = 0;
+            StopZeldaTimer();
+        }
+    }
+}
+
 static void RegisterInvasionPlay() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnEnemyDefeat>(OnInvasionEnemyDefeat);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnBossDefeat>(OnInvasionBossDefeat);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(TickInvasion);
 }
@@ -2601,7 +2771,8 @@ static void DrawArtsMenu(ImGuiViewport* vp, float scale) {
     float gridH = GDF_ART_ROWS * cellH + (GDF_ART_ROWS - 1) * gap;
     float x0 = vp->Pos.x + (vp->Size.x - gridW) * 0.5f;
     float y0 = vp->Pos.y + (vp->Size.y - gridH) * 0.5f;
-    static const char* sRows[GDF_ART_ROWS] = { "Obstacles", "Monsters", "Curses", "Curses / his own", "More" };
+    static const char* sRows[GDF_ART_ROWS] = { "Obstacles", "Monsters", "Curses", "Curses / his own", "More",
+                                                    "Elements" };
 
     list->AddRectFilled(ImVec2(x0 - 16 * scale, y0 - 46 * scale),
                         ImVec2(x0 + gridW + 16 * scale, y0 + gridH + 52 * scale), Col(14, 4, 24, 215), 8.0f);
