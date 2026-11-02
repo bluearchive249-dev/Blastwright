@@ -10212,7 +10212,8 @@ static s32 BossGanon_PlayerBall_NearLink(BossGanon* this, PlayState* play) {
     return false;
 }
 
-static BossGanon* BossGanon_Player_FindBallNear(Vec3f* pos) {
+// lightOnly: 1 his light balls, 0 those and his Big Magic
+static BossGanon* BossGanon_Player_FindBallNear(Vec3f* pos, s32 lightOnly) {
     PlayState* play = gPlayState;
     BossGanon* best = NULL;
     f32 bestDist = 250.0f;
@@ -10225,8 +10226,22 @@ static BossGanon* BossGanon_Player_FindBallNear(Vec3f* pos) {
     for (i = 0; i < ACTORCAT_MAX; i++) {
         for (actor = play->actorCtx.actorLists[i].head; actor != NULL; actor = actor->next) {
             f32 d;
-            if ((actor->id != ACTOR_BOSS_GANON) || (actor->params != GDF_PARAMS_PLAYER_LIGHT_BALL) ||
-                (actor->update == NULL) || (((BossGanon*)actor)->unk_1A8 != 0)) {
+            if ((actor->id != ACTOR_BOSS_GANON) || (actor->update == NULL)) {
+                continue;
+            }
+            if (actor->params == GDF_PARAMS_PLAYER_LIGHT_BALL) {
+                if (lightOnly < 0) {
+                    continue;
+                }
+                if (((BossGanon*)actor)->unk_1A8 != 0) {
+                    continue; // bursting
+                }
+            } else if ((actor->params >= GDF_PARAMS_PLAYER_BIG_MAGIC) &&
+                       (actor->params < GDF_PARAMS_PLAYER_BIG_MAGIC + GDF_PLAYER_BIG_MAGIC_COUNT)) {
+                if ((lightOnly > 0) || (((BossGanon*)actor)->unk_1C2 == 1)) {
+                    continue;
+                }
+            } else {
                 continue;
             }
             d = Math_Vec3f_DistXYZ(pos, &actor->world.pos);
@@ -10241,7 +10256,7 @@ static BossGanon* BossGanon_Player_FindBallNear(Vec3f* pos) {
 
 // A Link sent it back: at Ganondorf it goes
 void BossGanon_Player_BallVolleyed(Vec3f* ballPos) {
-    BossGanon* ball = BossGanon_Player_FindBallNear(ballPos);
+    BossGanon* ball = BossGanon_Player_FindBallNear(ballPos, 1);
 
     if ((ball == NULL) || (ball->unk_1A6 != 0)) {
         return;
@@ -10255,7 +10270,7 @@ void BossGanon_Player_BallVolleyed(Vec3f* ballPos) {
 
 // A Link missed it (his game has hurt him): it bursts
 void BossGanon_Player_BallBurstAt(Vec3f* ballPos) {
-    BossGanon* ball = BossGanon_Player_FindBallNear(ballPos);
+    BossGanon* ball = BossGanon_Player_FindBallNear(ballPos, 0);
 
     if (ball != NULL) {
         ball->timers[2] = 0; // bursts on its next update
@@ -10463,8 +10478,9 @@ static void BossGanon_PlayerBigMagic_Update_Impl(Actor* thisx, PlayState* play) 
                 numEffects = 10;
             }
 
-            if (numEffects != 40) {
-                // Still hits what it touches on the frame it bursts against a wall (eye switches)
+            if ((numEffects != 40) && !BossGanon_PlayerBall_NearLink(this, play)) {
+                // Still hits what it touches on the frame it bursts against a wall (eye switches). (In Invasion mode,
+                // near a Link his own game decides: only a spin attack stops it)
                 Collider_UpdateCylinder(&this->actor, &this->collider);
                 BossGanon_Player_SetAT(this, play);
             }
@@ -12703,6 +12719,36 @@ static void BossGanon_PuppetBall_Volley(BossGanon* ball, PlayState* play) {
     }
 }
 
+// A Link's game: Big Magic can't be sent back; only a spin attack breaks it, anything else and he's hit
+static void BossGanon_PuppetBall_BigMagic(BossGanon* ball, PlayState* play) {
+    Player* link = GET_PLAYER(play);
+    Vec3f center;
+    f32 dist;
+    u8 spinning;
+
+    if (ball->timers[0] > 0) {
+        ball->timers[0]--;
+        return;
+    }
+    if ((link == NULL) || (gSaveContext.health <= 0) || (link->stateFlags1 & PLAYER_STATE1_DEAD)) {
+        return;
+    }
+    center = link->actor.world.pos;
+    center.y += 40.0f;
+    dist = Math_Vec3f_DistXYZ(&ball->actor.world.pos, &center);
+    spinning = (link->meleeWeaponState != 0) && (link->meleeWeaponAnimation >= PLAYER_MWA_SPIN_ATTACK_1H) &&
+               (link->meleeWeaponAnimation <= PLAYER_MWA_BIG_SPIN_2H);
+    if (spinning && (dist < 160.0f)) {
+        GdfInvasion_SendBallHit(&ball->actor.world.pos); // broken
+        Audio_PlayActorSound2(&link->actor, NA_SE_IT_SWORD_REFLECT_MG);
+        ball->timers[0] = 30;
+    } else if (dist < 55.0f) {
+        GdfInvasion_SendBallHit(&ball->actor.world.pos);
+        GdfInvasion_BallHurtLink(play);
+        ball->timers[0] = 30;
+    }
+}
+
 static void BossGanon_Puppet_UpdateBalls(BossGanon* this, PlayState* play, GdfNetPose* pose) {
     s32 i;
     s32 j;
@@ -12750,8 +12796,12 @@ static void BossGanon_Puppet_UpdateBalls(BossGanon* this, PlayState* play, GdfNe
         ball->unk_3C4[ball->unk_1A6].x = BINANG_TO_RAD(b->rot.x);
         ball->unk_3C4[ball->unk_1A6].y = BINANG_TO_RAD(b->rot.y);
         // The volley: this Link's game decides whether he sent it back or was hit
-        if ((b->kind == 0) && GdfInvasion_IsHero() && !GdfInvasion_LinkAtPeace(0)) {
-            BossGanon_PuppetBall_Volley(ball, play);
+        if (GdfInvasion_IsHero() && !GdfInvasion_LinkAtPeace(0)) {
+            if (b->kind == 0) {
+                BossGanon_PuppetBall_Volley(ball, play);
+            } else {
+                BossGanon_PuppetBall_BigMagic(ball, play);
+            }
         }
     }
 }

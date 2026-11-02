@@ -3533,5 +3533,4 @@ extern "C" void GdfInvasion_BallHitGanondorf(void) {
     hit["amount"] = 20;
     hit["effect"] = 2;
     HandleHit(hit);
-    Flash("Your own magic, sent back at you!");
 }
