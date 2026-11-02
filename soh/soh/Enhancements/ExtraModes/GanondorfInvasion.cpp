@@ -1934,6 +1934,9 @@ static bool StartArt(PlayState* play, int art) {
             }
             return false;
     }
+    if (art == GDF_ART_HAUNTING) {
+        return true; // no word, no laugh: he finds out the hard way
+    }
     Audio_PlaySfxGeneral(NA_SE_EN_GANON_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                          &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     Notification::Emit({ .prefix = "Ganondorf", .message = ArtMessage(art) });
