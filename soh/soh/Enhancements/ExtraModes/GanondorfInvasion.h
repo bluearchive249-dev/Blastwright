@@ -110,6 +110,8 @@ s32 GdfInvasion_CanHurtLinks(void);
 // The light ball volley (as in the tower fight): a Link swings at Ganondorf's ball and sends it back, he swings and
 // sends it back again; whoever misses is hit. A Link's game decides for the Link, Ganondorf's for him.
 void GdfInvasion_SendVolley(Vec3f* ballPos);
+// Aero Alchemy: the air around this Link is water (he swims)
+s32 GdfInvasion_AeroAlchemyActive(void);
 void GdfInvasion_SendBallHit(Vec3f* ballPos);
 void GdfInvasion_BallHurtLink(PlayState* play);
 void GdfInvasion_BallHitGanondorf(void);

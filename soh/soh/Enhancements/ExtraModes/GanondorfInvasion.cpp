@@ -1052,7 +1052,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Wallmaster", ART_MONSTER, 24, 30, 0, true, "A Wallmaster drops on Link and drags him back to the entrance (2 at most)." },
     { "Iron Knuckle", ART_MONSTER, 40, 90, 0, true, "An Iron Knuckle bars Link's way (one at a time)." },
     { "Fire Pillar", ART_OBSTACLE, 26, 40, 15, true, "A ring of fire traps Link for 15 s." },
-    { "Aero Alchemy", ART_CURSE, 30, 60, 30, false, "The air around Link turns to water for 30 s." },
+    { "Aero Alchemy", ART_CURSE, 30, 60, 30, true, "The air around Link turns to water: he swims for 30 s." },
     { "VVVVVV", ART_CURSE, 30, 90, 60, false, "Link's gravity flips when he leaves the ground, for a minute." },
     { "Lava Floor", ART_CURSE, 28, 60, 30, true, "The floor burns Link for 30 s, or until he defeats an enemy." },
     { "Bomb Flower Hat", ART_CURSE, 40, 120, 30, true, "A bomb flower on a random Link's head: 30 s to hit you, or it blows." },
@@ -1644,6 +1644,7 @@ static const char* ArtMessage(int art) {
         case GDF_ART_IRON_KNUCKLE: return "sends an Iron Knuckle!";
         case GDF_ART_FIRE_PILLAR: return "traps you in fire!";
         case GDF_ART_LAVA: return "turns the floor to lava!";
+        case GDF_ART_AERO: return "turns the air to water!";
         case GDF_ART_BOMB_HAT: return "crowns you with a bomb flower! Hit him within 30 s!";
     }
     return "has cursed you!";
@@ -1668,6 +1669,7 @@ static int MonstersFor(int art) {
 // ---- The Elements row ----
 static u32 sElementTimerUntil = 0; // the game's own timer shows the time left
 static u32 sLavaUntil = 0;
+static u32 sAeroUntil = 0;
 static Actor* sBombHat = nullptr;
 static u32 sBombHatUntil = 0;
 
@@ -1821,6 +1823,11 @@ static bool StartArt(PlayState* play, int art) {
             sElementTimerUntil = sFrame + 15 * GDF_FPS;
             break;
         }
+        case GDF_ART_AERO:
+            sAeroUntil = sFrame + 30 * GDF_FPS;
+            StartZeldaTimer(30);
+            sElementTimerUntil = sAeroUntil;
+            break;
         case GDF_ART_LAVA:
             sLavaUntil = sFrame + 30 * GDF_FPS;
             StartZeldaTimer(30);
@@ -3704,4 +3711,8 @@ extern "C" void GdfInvasion_BallHitGanondorf(void) {
     hit["amount"] = 20;
     hit["effect"] = 2;
     HandleHit(hit);
+}
+
+extern "C" s32 GdfInvasion_AeroAlchemyActive(void) {
+    return GdfInvasion_IsHero() && (sAeroUntil != 0) && (sFrame < sAeroUntil);
 }

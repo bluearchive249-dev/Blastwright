@@ -11328,6 +11328,17 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
     Math_Vec3f_Copy(&unusedWorldPos, &this->actor.world.pos);
     Actor_UpdateBgCheckInfo(play, &this->actor, vWallCheckHeight, vWallCheckRadius, ceilingCheckHeight, flags);
 
+    // Invasion mode, Aero Alchemy: the air around him is water (a surface a little above the ground under him)
+    if ((this->actor.category == ACTORCAT_PLAYER) && GdfInvasion_AeroAlchemyActive() &&
+        (this->actor.floorHeight > BGCHECK_Y_MIN + 10.0f)) {
+        f32 surface = this->actor.floorHeight + this->ageProperties->unk_2C + 30.0f;
+
+        if (surface - this->actor.world.pos.y > this->actor.yDistToWater) {
+            this->actor.yDistToWater = surface - this->actor.world.pos.y;
+            this->actor.bgCheckFlags |= BGCHECKFLAG_WATER;
+        }
+    }
+
     if (this->actor.bgCheckFlags & 0x10) {
         this->actor.velocity.y = 0.0f;
     }
