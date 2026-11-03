@@ -4091,13 +4091,9 @@ static void RegisterWorldHeld() {
 
 static RegisterShipInitFunc worldHeldInitFunc(RegisterWorldHeld, {});
 
-static bool TestModeOnSafe() {
-    return false;
-}
-
 // ---- World sync, stage 2: the doors he kicks in fly off their hinges for everyone ----
 extern "C" void GdfInvasion_NoteDoorKick(Vec3f* doorPos, Vec3f* fromPos) {
-    if (!GdfInvasion_IsInvader() || TestModeOnSafe() || (gPlayState == nullptr) || !AnchorOn()) {
+    if (!GdfInvasion_IsInvader() || TestModeOn() || (gPlayState == nullptr) || !AnchorOn()) {
         return;
     }
     nlohmann::json payload;
