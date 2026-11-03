@@ -6462,6 +6462,10 @@ void Interface_Draw(PlayState* play) {
                 }
                 svar5 = OTRGetRectDimensionFromLeftEdge(gSaveContext.timerX[timerId] + X_Margins_Timer);
                 svar2 = gSaveContext.timerY[timerId];
+                // SoH: Invasion mode, in its corner the timer goes under Ganondorf's Resolve meter, not over it
+                if (GdfInvasion_ShowResolveMeter() && (svar2 <= 54)) {
+                    svar2 += 16;
+                }
                 if (CVarGetInteger(CVAR_COSMETIC("HUD.Timers.PosType"), 0) != ORIGINAL_LOCATION) {
                     svar2 = (CVarGetInteger(CVAR_COSMETIC("HUD.Timers.PosY"), 0));
                     if (CVarGetInteger(CVAR_COSMETIC("HUD.Timers.PosType"), 0) == ANCHOR_LEFT) {
