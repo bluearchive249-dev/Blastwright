@@ -1,6 +1,7 @@
 #include <nlohmann/json.hpp>
 
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 extern "C" {
 #include "macros.h"
@@ -13,6 +14,10 @@ extern "C" {
  */
 
 void Anchor::SendPacket_UpdateBeansCount() {
+    // Invasion mode: the Invader's own progress isn't shared (he only receives the Hero's)
+    if (GdfInvasion_IsInvader()) {
+        return;
+    }
     if (!IsSaveLoaded() || !roomState.syncItemsAndFlags) {
         return;
     }

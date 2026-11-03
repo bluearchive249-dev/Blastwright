@@ -25,6 +25,7 @@ extern PlayState* gPlayState;
 
 #include "GanondorfStart.h"
 #include "GanondorfIntro.h"
+#include "GanondorfInvasion.h"
 
 #define GDF_START_TEXT_NARRATION 0x7E00
 #define GDF_START_TEXT_POE 0x7E01
@@ -34,8 +35,9 @@ static bool sIntroShown = false;  // the arrival narration has played
 static int sFramesInScene = 0;
 
 static bool IsOptionOn() {
+    // In Invasion mode Ganondorf starts in Kokiri Forest, just as Link does
     return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) &&
-           CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoStart"), 0);
+           CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GerudoStart"), 0) && !GdfInvasion_IsInvader();
 }
 
 extern "C" int32_t GanondorfStart_IsGerudoFile(void) {

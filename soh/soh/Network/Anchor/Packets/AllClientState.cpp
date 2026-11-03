@@ -1,5 +1,6 @@
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/JsonConversions.hpp"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include <nlohmann/json.hpp>
 #include <ship/Context.h>
 #include <ship/window/Window.h>
@@ -53,6 +54,13 @@ void Anchor::HandlePacket_AllClientState(nlohmann::json payload) {
         clients[client.clientId].isGameComplete = client.isGameComplete;
         clients[client.clientId].sceneNum = client.sceneNum;
         clients[client.clientId].entranceIndex = client.entranceIndex;
+    }
+
+    // Invasion mode: the lobby seats (when the server passes them on)
+    for (auto& state : payload["state"]) {
+        if (state.is_object() && state.contains("clientId")) {
+            GdfInvasion_ReadClientState(state["clientId"].get<uint32_t>(), state);
+        }
     }
 
     // remove clients that are no longer in the list
