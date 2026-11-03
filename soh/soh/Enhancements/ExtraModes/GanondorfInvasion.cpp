@@ -228,6 +228,7 @@ static void ReadMirror(uint32_t from, const nlohmann::json& list);
 static bool IsWorldHost();
 static void WriteWorld(nlohmann::json& payload);
 static void ReadWorld(uint32_t from, const nlohmann::json& world);
+static void NoteHostClaim(uint32_t clientId, const nlohmann::json& world);
 
 static void WriteGrab(nlohmann::json& g);
 static void ReadGrab(uint32_t from, const nlohmann::json& g);
@@ -354,6 +355,9 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
     }
     if (payload.contains("gm") && GdfInvasion_IsInvader()) {
         ReadMirror(clientId, payload["gm"]);
+    }
+    if (payload.contains("gw")) {
+        NoteHostClaim(clientId, payload["gw"]);
     }
     if (payload.contains("gw") && !IsWorldHost()) {
         ReadWorld(clientId, payload["gw"]);
@@ -3575,6 +3579,10 @@ static void ReadMirror(uint32_t from, const nlohmann::json& list) {
             continue;
         }
         Ghost& g = sGhosts[key];
+        if ((g.actor != nullptr) && (g.id != (s16)e[1].get<int>())) {
+            Actor_Kill(g.actor); // not the same one after all (a host who came in fresh): make it anew
+            g.actor = nullptr;
+        }
         Vec3f pos = { e[3].get<float>(), e[4].get<float>(), e[5].get<float>() };
         s16 rotY = (s16)e[6].get<int>();
         if (g.actor == nullptr) {
@@ -3724,15 +3732,63 @@ extern "C" s32 GdfInvasion_ShowResolveMeter(void) {
 // and his health for each comes back, so they're shared.
 // =================================================================================================
 
-static uint32_t WorldHostClient() {
-    if (Anchor::Instance == nullptr) {
+// Everyone hosts: each room has its own host, the first Link to settle in it. Whoever walks in later joins his
+// world. When the host leaves the room (or the game), the next Link there takes over the world as it stands.
+struct HostClaim {
+    s16 scene = -1;
+    s8 room = -1;
+    u32 heard = 0;
+    bool cs = false; // in a cutscene: his world (the cutscene's actors) is shown to the others in the room
+};
+static std::map<uint32_t, HostClaim> sClaims; // other Links hosting: where, and when we last heard
+static bool sClaiming = false;
+static s16 sClaimScene = -1;
+static s8 sClaimRoom = -1;
+static u32 sRoomSince = 0;
+static u32 sHostLastHeard = 0;
+static uint32_t sWorldFrom = 0;
+static void AdoptWorld();
+
+static int ClientSeat(uint32_t clientId) {
+    return sClientSeats.count(clientId) ? sClientSeats[clientId] : GDF_SEAT_NONE;
+}
+
+static void NoteHostClaim(uint32_t clientId, const nlohmann::json& world) {
+    if (!Anchor::Instance->clients.count(clientId) || !world.is_object()) {
+        return;
+    }
+    HostClaim& c = sClaims[clientId];
+    c.scene = Anchor::Instance->clients[clientId].sceneNum;
+    auto r = world.value("r", nlohmann::json::array());
+    c.room = (r.is_array() && !r.empty()) ? (s8)r[0].get<int>() : -1;
+    c.heard = sFrame;
+    c.cs = world.value("cs", false);
+}
+
+static bool InCutscene(PlayState* play) {
+    return (play != nullptr) && ((play->csCtx.state != CS_STATE_IDLE) || Player_InCsMode(play));
+}
+
+// The other Link hosting the room this player is in (the lowest seat, if two claim it at once)
+static uint32_t RoomHostClient() {
+    PlayState* play = gPlayState;
+    if ((Anchor::Instance == nullptr) || (play == nullptr)) {
         return 0;
     }
-    int bestSeat = GDF_SEAT_COUNT;
+    int bestSeat = 2 * GDF_SEAT_COUNT;
     uint32_t best = 0;
-    for (auto& [clientId, client] : Anchor::Instance->clients) {
-        int seat = client.self ? OwnSeat() : (sClientSeats.count(clientId) ? sClientSeats[clientId] : GDF_SEAT_NONE);
-        if ((seat >= GDF_SEAT_FIRST_LINK) && (seat < bestSeat) && client.online) {
+    for (auto& [clientId, c] : sClaims) {
+        if ((sFrame - c.heard > 20) || (c.scene != play->sceneNum) || (c.room != play->roomCtx.curRoom.num) ||
+            !Anchor::Instance->clients.count(clientId) || !Anchor::Instance->clients[clientId].online ||
+            Anchor::Instance->clients[clientId].self) {
+            continue;
+        }
+        int seat = ClientSeat(clientId);
+        if (seat < GDF_SEAT_FIRST_LINK) {
+            continue;
+        }
+        seat += c.cs ? 0 : GDF_SEAT_COUNT; // one in a cutscene comes first
+        if (seat < bestSeat) {
             bestSeat = seat;
             best = clientId;
         }
@@ -3741,9 +3797,44 @@ static uint32_t WorldHostClient() {
 }
 
 static bool IsWorldHost() {
-    uint32_t host = WorldHostClient();
-    return GdfInvasion_IsHero() && (host != 0) && Anchor::Instance->clients.count(host) &&
-           Anchor::Instance->clients[host].self;
+    return GdfInvasion_IsHero() && sClaiming;
+}
+
+static void UpdateHostClaim() {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || (Anchor::Instance == nullptr) || (GdfInvasion_Role() == GDF_INVASION_OFF) ||
+        !GdfInvasion_IsHero() || (OwnSeat() < GDF_SEAT_FIRST_LINK)) {
+        sClaiming = false;
+        return;
+    }
+    if ((play->sceneNum != sClaimScene) || (play->roomCtx.curRoom.num != sClaimRoom)) {
+        sClaimScene = play->sceneNum;
+        sClaimRoom = play->roomCtx.curRoom.num;
+        sRoomSince = sFrame;
+        sClaiming = false; // a new room: see first whether someone hosts it
+    }
+    uint32_t other = RoomHostClient();
+    bool myCs = InCutscene(play);
+    if (other != 0) {
+        sHostLastHeard = sFrame;
+        bool otherCs = sClaims[other].cs;
+        if (myCs && !otherCs) {
+            if (!sClaiming) {
+                sClaiming = true; // a cutscene here: the others watch it from this game
+                AdoptWorld();
+            }
+            return;
+        }
+        if (sClaiming && ((otherCs && !myCs) || ((otherCs == myCs) && (ClientSeat(other) < OwnSeat())))) {
+            sClaiming = false; // both took it at once: the lower seat keeps it
+        }
+        return;
+    }
+    if (!sClaiming && (sFrame - sRoomSince >= 40) && (sFrame - sHostLastHeard >= 10)) {
+        sClaiming = true; // nobody hosts this room (anymore): this player does, with the world as it stands
+        AdoptWorld();
+    }
 }
 
 static bool IsWorldActorKind(Actor* a) {
@@ -3796,19 +3887,34 @@ static void WriteWorld(nlohmann::json& payload) {
                       { "b", WriteBosses(play) }, { "m", WriteMovers(play) },
                       { "f",
                         { play->actorCtx.flags.swch, play->actorCtx.flags.tempSwch, play->actorCtx.flags.clear,
-                          play->actorCtx.flags.tempClear } } };
+                          play->actorCtx.flags.tempClear } },
+                      { "cs", InCutscene(play) } };
 }
 
 static u32 sWorldHeard = 0;
-static uint32_t sWorldFrom = 0;
 static std::vector<s8> sWorldRooms;
 
 static void ReadWorld(uint32_t from, const nlohmann::json& world) {
     PlayState* play = gPlayState;
 
-    if ((play == nullptr) || (from != WorldHostClient()) || !world.is_object() ||
+    if ((play == nullptr) || (from != RoomHostClient()) || !world.is_object() ||
         !Anchor::Instance->clients.count(from) || (Anchor::Instance->clients[from].sceneNum != play->sceneNum)) {
         return;
+    }
+    if ((sWorldFrom != 0) && (sWorldFrom != from)) {
+        // A new host took the room over: his world is the old one (same keys), so the copies carry on
+        std::map<std::pair<uint32_t, int>, Ghost> moved;
+        for (auto it = sGhosts.begin(); it != sGhosts.end();) {
+            if (it->second.world && (it->first.first == sWorldFrom)) {
+                moved[{ from, it->first.second }] = it->second;
+                it = sGhosts.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        for (auto& [k, g] : moved) {
+            sGhosts[k] = g;
+        }
     }
     sWorldHeard = sFrame;
     sWorldFrom = from;
@@ -3924,7 +4030,26 @@ static void SuppressLocalWorld() {
     }
 }
 
+// Taking a room over: the old host's copies here become this game's own, under the same keys
+static void AdoptWorld() {
+    PlayState* play = gPlayState;
+
+    for (auto it = sGhosts.begin(); it != sGhosts.end();) {
+        Ghost& g = it->second;
+        if (g.world && (it->first.first == sWorldFrom) && ActorAlive(g.actor) && (play != nullptr)) {
+            g.actor->room = play->roomCtx.curRoom.num;
+            sWorldKeys[g.actor] = it->first.second;
+            sWorldNextKey = MAX(sWorldNextKey, it->first.second + 1);
+            it = sGhosts.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    sWorldHeard = 0;
+}
+
 static void RegisterInvasionWorld() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(UpdateHostClaim);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(SuppressLocalWorld);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) {
         sWorldKeys.clear();
