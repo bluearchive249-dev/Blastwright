@@ -993,6 +993,9 @@ static RegisterShipInitFunc lobbyInitFunc(RegisterGanondorfInvasionLobby, {});
 #define GDF_PKT_CHAT "GDF_CHAT"
 #define GDF_PKT_DUNGEON_DONE "GDF_DUNGEON_DONE"
 #define GDF_PKT_WORLD_HIT "GDF_WORLD_HIT"
+#define GDF_PKT_WORLD_HOLD "GDF_WORLD_HOLD"
+#define GDF_PKT_DOOR_KICK "GDF_DOOR_KICK"
+static void HandleWorldHold(const nlohmann::json& payload);
 #define GDF_PKT_VOLLEY "GDF_VOLLEY"
 #define GDF_PKT_BALL_HIT "GDF_BALL_HIT"
 static void HandleWorldHit(const nlohmann::json& payload);
@@ -2654,6 +2657,23 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
             Vec3f pos = { payload.value("x", 0.0f), payload.value("y", 0.0f), payload.value("z", 0.0f) };
             BossGanon_Player_BallBurstAt(&pos);
         }
+    } else if (type == GDF_PKT_DOOR_KICK) {
+        PlayState* play = gPlayState;
+        std::vector<float> d = payload.value("d", std::vector<float>{});
+        std::vector<float> f = payload.value("f", std::vector<float>{});
+        if ((play != nullptr) && !GdfInvasion_IsInvader() && (d.size() >= 3) && (f.size() >= 3) &&
+            (payload.value("scene", -1) == play->sceneNum)) {
+            Vec3f door = { d[0], d[1], d[2] };
+            Vec3f from = { f[0], f[1], f[2] };
+            for (Actor* a = play->actorCtx.actorLists[ACTORCAT_DOOR].head; a != nullptr; a = a->next) {
+                if ((a->id == ACTOR_EN_DOOR) && (Math_Vec3f_DistXYZ(&a->world.pos, &door) < 40.0f)) {
+                    EnDoor_RemoteKick(a, &from);
+                    break;
+                }
+            }
+        }
+    } else if (type == GDF_PKT_WORLD_HOLD) {
+        HandleWorldHold(payload);
     } else if (type == GDF_PKT_WORLD_HIT) {
         HandleWorldHit(payload);
     } else if (type == GDF_PKT_DUNGEON_DONE) {
@@ -3808,6 +3828,9 @@ static void ReadWorld(uint32_t from, const nlohmann::json& world) {
             g.hostHp = hp;
         }
         g.seen = sFrame;
+        if (ActorAlive(g.actor) && (g.actor == BossGanon_Player_GetGrabbedActor())) {
+            continue; // in Ganondorf's fist: his game moves it (and tells the host where)
+        }
         if (ActorAlive(g.actor)) {
             g.actor->world.pos = pos;
             g.actor->shape.rot.y = g.actor->world.rot.y = rotY;
@@ -3991,4 +4014,96 @@ extern "C" void GdfInvasion_BallHitGanondorf(void) {
 
 extern "C" s32 GdfInvasion_AeroAlchemyActive(void) {
     return GdfInvasion_IsHero() && (sAeroUntil != 0) && (sFrame < sAeroUntil);
+}
+
+// ---- World sync, stage 1: Ganondorf holding the host's monsters and NPCs ----
+
+// Ganondorf's game: while he holds a copy of the host's actor, the host's real one is put where his fist has it
+static void SendWorldHold() {
+    Actor* held = BossGanon_Player_GetGrabbedActor();
+
+    if (!GdfInvasion_IsInvader() || (held == nullptr) || (Anchor::Instance == nullptr)) {
+        return;
+    }
+    for (auto& [key, g] : sGhosts) {
+        if (!g.world || (g.actor != held)) {
+            continue;
+        }
+        nlohmann::json payload;
+        payload["type"] = GDF_PKT_WORLD_HOLD;
+        payload["targetClientId"] = key.first;
+        payload["key"] = key.second;
+        payload["p"] = { held->world.pos.x, held->world.pos.y, held->world.pos.z };
+        payload["r"] = held->shape.rot.y;
+        Anchor::Instance->SendJsonToRemote(payload);
+        return;
+    }
+}
+
+struct WorldHeld {
+    Actor* actor = nullptr;
+    Vec3f pos;
+    s16 rotY = 0;
+    u32 frame = 0;
+};
+static WorldHeld sWorldHeld;
+
+// The host: Ganondorf has this one by the throat
+static void HandleWorldHold(const nlohmann::json& payload) {
+    if (!IsWorldHost()) {
+        return;
+    }
+    int key = payload.value("key", 0);
+    std::vector<float> p = payload.value("p", std::vector<float>{});
+    if (p.size() < 3) {
+        return;
+    }
+    for (auto& [actor, k] : sWorldKeys) {
+        if ((k == key) && ActorAlive(actor)) {
+            sWorldHeld.actor = actor;
+            sWorldHeld.pos = { p[0], p[1], p[2] };
+            sWorldHeld.rotY = (s16)payload.value("r", 0);
+            sWorldHeld.frame = sFrame;
+            return;
+        }
+    }
+}
+
+static void UpdateWorldHeld() {
+    SendWorldHold();
+    if ((sWorldHeld.actor == nullptr) || !ActorAlive(sWorldHeld.actor) || (sFrame - sWorldHeld.frame > 10)) {
+        sWorldHeld.actor = nullptr;
+        return;
+    }
+    // Held where his fist is, and doing nothing of its own meanwhile
+    Actor* a = sWorldHeld.actor;
+    a->world.pos = sWorldHeld.pos;
+    a->prevPos = sWorldHeld.pos;
+    a->shape.rot.y = a->world.rot.y = sWorldHeld.rotY;
+    a->velocity = { 0.0f, 0.0f, 0.0f };
+    a->speedXZ = 0.0f;
+    a->freezeTimer = 2;
+}
+
+static void RegisterWorldHeld() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(UpdateWorldHeld);
+}
+
+static RegisterShipInitFunc worldHeldInitFunc(RegisterWorldHeld, {});
+
+static bool TestModeOnSafe() {
+    return false;
+}
+
+// ---- World sync, stage 2: the doors he kicks in fly off their hinges for everyone ----
+extern "C" void GdfInvasion_NoteDoorKick(Vec3f* doorPos, Vec3f* fromPos) {
+    if (!GdfInvasion_IsInvader() || TestModeOnSafe() || (gPlayState == nullptr) || !AnchorOn()) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["type"] = GDF_PKT_DOOR_KICK;
+    payload["scene"] = gPlayState->sceneNum;
+    payload["d"] = { doorPos->x, doorPos->y, doorPos->z };
+    payload["f"] = { fromPos->x, fromPos->y, fromPos->z };
+    Anchor::Instance->SendJsonToRemote(payload);
 }

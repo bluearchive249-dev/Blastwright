@@ -11834,6 +11834,11 @@ static void BossGanon_Player_GrabRelease(PlayState* play) {
     sGdfGrabState = GDF_GRAB_NONE;
 }
 
+// Invasion mode, world sync: who he's holding (a copy of the host Link's monster or NPC is moved there too)
+Actor* BossGanon_Player_GetGrabbedActor(void) {
+    return (sGdfGrabState != GDF_GRAB_NONE) ? sGdfGrabActor : NULL;
+}
+
 s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play) {
     Actor* target;
 

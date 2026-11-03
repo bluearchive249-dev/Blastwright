@@ -7,6 +7,7 @@
 #include "z_en_door.h"
 #include <string.h>
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h" // SoH: door kicks
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "objects/gameplay_field_keep/gameplay_field_keep.h"
 #include "objects/object_hidan_objects/object_hidan_objects.h"
@@ -301,6 +302,30 @@ static void EnDoor_GanondorfKick(EnDoor* this, PlayState* play) {
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
     Audio_PlayActorSound2(&this->actor, NA_SE_EV_WOODBOX_BREAK);
     Actor_RequestQuakeAndRumble(&this->actor, play, 3, 6);
+    // Invasion mode: the Links see this door kicked in too
+    GdfInvasion_NoteDoorKick(&this->actor.world.pos, &player->actor.world.pos);
+}
+
+// Invasion mode: Ganondorf kicked this door in his game (from `from`): here it flies off its hinges the same way
+void EnDoor_RemoteKick(Actor* thisx, Vec3f* from) {
+    EnDoor* this = (EnDoor*)thisx;
+    s16 toDoor = Math_Vec3f_Yaw(from, &this->actor.world.pos);
+    s16 diff = toDoor - this->actor.shape.rot.y;
+
+    if (this->gdfKickState != 0) {
+        return;
+    }
+    memcpy(this->gdfClosedJoints, this->skelAnime.jointTable, sizeof(this->gdfClosedJoints));
+    this->gdfKickState = 1;
+    this->gdfFlyPos = this->actor.world.pos;
+    this->gdfFlyVel.x = Math_SinS(toDoor) * 13.0f;
+    this->gdfFlyVel.y = 7.0f;
+    this->gdfFlyVel.z = Math_CosS(toDoor) * 13.0f;
+    this->gdfFlyYaw = this->actor.shape.rot.y;
+    this->gdfFlyPitch = 0;
+    this->gdfFlyDir = (ABS(diff) < 0x4000) ? 1 : -1;
+    Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EV_WOODBOX_BREAK);
 }
 
 static void EnDoor_GanondorfFly(EnDoor* this, PlayState* play) {
@@ -368,6 +393,11 @@ void EnDoor_Open(EnDoor* this, PlayState* play) {
 
 void EnDoor_Update(Actor* thisx, PlayState* play) {
     EnDoor* this = (EnDoor*)thisx;
+
+    // (a door kicked in another player's game flies here without opening)
+    if ((this->gdfKickState == 1) && (this->actionFunc != EnDoor_Open)) {
+        EnDoor_GanondorfFly(this, play);
+    }
 
     this->actionFunc(this, play);
 

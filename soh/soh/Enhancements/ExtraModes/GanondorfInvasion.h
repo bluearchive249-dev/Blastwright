@@ -68,6 +68,11 @@ void BossGanon_Player_CastPose(void);
 void BossGanon_Player_NetPacified(void);
 // Phantom Step: he's moved with Link (snapped, not walked over)
 void BossGanon_Player_NetSnap(void);
+// The actor in his fist (NULL when he holds no one)
+Actor* BossGanon_Player_GetGrabbedActor(void);
+// World sync: Ganondorf kicked a door in his game (where it is, where he kicked from); the Links' doors fly too
+void GdfInvasion_NoteDoorKick(Vec3f* doorPos, Vec3f* fromPos);
+void EnDoor_RemoteKick(Actor* door, Vec3f* from);
 
 // The throat grab on another player's Link: whether he may, which player a dummy is, and what his fist does
 u32 GdfInvasion_DummyClientId(Actor* actor);
