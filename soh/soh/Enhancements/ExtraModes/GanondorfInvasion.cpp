@@ -46,6 +46,7 @@ extern "C" {
 #include "src/overlays/actors/ovl_Bg_Ice_Shelter/z_bg_ice_shelter.h"
 #include "src/overlays/actors/ovl_En_Fire_Rock/z_en_fire_rock.h"
 #include "src/overlays/actors/ovl_Bg_Hidan_Curtain/z_bg_hidan_curtain.h"
+#include "src/overlays/actors/ovl_En_Ik/z_en_ik.h"
 #include "src/overlays/actors/ovl_En_Dekubaba/z_en_dekubaba.h"
 #include "src/overlays/actors/ovl_En_Firefly/z_en_firefly.h"
 #include "src/overlays/actors/ovl_En_Test/z_en_test.h"
@@ -1779,6 +1780,14 @@ static void DisarmBombHat() {
 
 static void UpdateElements(PlayState* play) {
     Player* player = (play != nullptr) ? GET_PLAYER(play) : nullptr;
+
+    // His Iron Knuckle doesn't sit waiting to be struck: it stands up and comes for Link at once
+    for (Actor* a : sSummoned) {
+        if (ActorAlive(a) && (a->id == ACTOR_EN_IK) && (((EnIk*)a)->unk_2F8 == 3) &&
+            (((EnIk*)a)->skelAnime.playSpeed == 0.0f)) {
+            ((EnIk*)a)->skelAnime.playSpeed = 1.0f;
+        }
+    }
 
     // Fire Pillar: trapped inside it
     if (sPillar != nullptr) {
