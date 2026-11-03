@@ -3551,6 +3551,68 @@ static void WriteMirror(nlohmann::json& payload) {
     }
 }
 
+// ---- Smoothing: copies glide toward where the other game says they are, instead of jumping with each update ----
+// Each update gives a target and, from the last two, a speed; between updates the target runs on at that speed for a
+// few frames, and the copy closes most of the gap every frame. Far off (a warp, a respawn) it's put there at once.
+struct Smooth {
+    Vec3f target = { 0.0f, 0.0f, 0.0f };
+    Vec3f vel = { 0.0f, 0.0f, 0.0f };
+    Vec3s rot = { 0, 0, 0 };
+    u32 heard = 0;
+    bool init = false;
+};
+static std::map<Actor*, Smooth> sSmooth;
+
+static void SmoothNote(Actor* a, Vec3f pos, Vec3s rot) {
+    Smooth& sm = sSmooth[a];
+    if (sm.init) {
+        float dt = (float)CLAMP((int)(sFrame - sm.heard), 1, 6);
+        Vec3f v = { (pos.x - sm.target.x) / dt, (pos.y - sm.target.y) / dt, (pos.z - sm.target.z) / dt };
+        if (sqrtf(v.x * v.x + v.y * v.y + v.z * v.z) > 60.0f) {
+            v = { 0.0f, 0.0f, 0.0f }; // a jump, not a speed
+        }
+        sm.vel = v;
+    } else {
+        a->world.pos = pos;
+        a->shape.rot = rot;
+    }
+    sm.target = pos;
+    sm.rot = rot;
+    sm.heard = sFrame;
+    sm.init = true;
+}
+
+static s16 SmoothAngle(s16 cur, s16 target) {
+    s16 d = (s16)(target - cur);
+    return (s16)(cur + d / 2);
+}
+
+static void SmoothApply(Actor* a, bool allAxes) {
+    auto it = sSmooth.find(a);
+    if (it == sSmooth.end()) {
+        return;
+    }
+    Smooth& sm = it->second;
+    float ahead = (float)MIN(sFrame - sm.heard, 4u);
+    Vec3f goal = { sm.target.x + sm.vel.x * ahead, sm.target.y + sm.vel.y * ahead, sm.target.z + sm.vel.z * ahead };
+    float d = Math_Vec3f_DistXYZ(&goal, &a->world.pos);
+    if (d > 250.0f) {
+        a->world.pos = goal;
+    } else {
+        a->world.pos.x += (goal.x - a->world.pos.x) * 0.45f;
+        a->world.pos.y += (goal.y - a->world.pos.y) * 0.45f;
+        a->world.pos.z += (goal.z - a->world.pos.z) * 0.45f;
+    }
+    a->shape.rot.y = SmoothAngle(a->shape.rot.y, sm.rot.y);
+    a->world.rot.y = a->shape.rot.y;
+    if (allAxes) {
+        a->shape.rot.x = SmoothAngle(a->shape.rot.x, sm.rot.x);
+        a->shape.rot.z = SmoothAngle(a->shape.rot.z, sm.rot.z);
+        a->world.rot.x = a->shape.rot.x;
+        a->world.rot.z = a->shape.rot.z;
+    }
+}
+
 struct Ghost {
     Actor* actor = nullptr;
     s16 id = 0;
@@ -3600,8 +3662,7 @@ static void ReadMirror(uint32_t from, const nlohmann::json& list) {
         }
         g.seen = sFrame;
         if (ActorAlive(g.actor)) {
-            g.actor->world.pos = pos;
-            g.actor->shape.rot.y = g.actor->world.rot.y = rotY;
+            SmoothNote(g.actor, pos, { g.actor->shape.rot.x, rotY, g.actor->shape.rot.z });
         }
     }
 }
@@ -3642,6 +3703,9 @@ static void UpdateGhosts() {
         // in his game leave him alone), so nothing needs freezing. Only the bombs wait for the Link's to go off.
         if (g.id == ACTOR_EN_BOM) {
             g.actor->freezeTimer = 2;
+        }
+        if (g.actor != BossGanon_Player_GetGrabbedActor()) {
+            SmoothApply(g.actor, false);
         }
         ++it;
     }
@@ -3934,6 +3998,10 @@ static void ReadWorld(uint32_t from, const nlohmann::json& world) {
             continue;
         }
         Ghost& g = sGhosts[key];
+        if ((g.actor != nullptr) && (g.id != (s16)e[1].get<int>())) {
+            Actor_Kill(g.actor); // not the same one after all (a host who came in fresh): make it anew
+            g.actor = nullptr;
+        }
         Vec3f pos = { e[3].get<float>(), e[4].get<float>(), e[5].get<float>() };
         s16 rotY = (s16)e[6].get<int>();
         u8 hp = (u8)e[7].get<int>();
@@ -3955,8 +4023,7 @@ static void ReadWorld(uint32_t from, const nlohmann::json& world) {
             continue; // in Ganondorf's fist: his game moves it (and tells the host where)
         }
         if (ActorAlive(g.actor)) {
-            g.actor->world.pos = pos;
-            g.actor->shape.rot.y = g.actor->world.rot.y = rotY;
+            SmoothNote(g.actor, pos, { g.actor->shape.rot.x, rotY, g.actor->shape.rot.z });
             // Hurt in the host's game (or by another player): hurt here too
             if (hp < g.actor->colChkInfo.health) {
                 g.actor->colChkInfo.health = hp;
@@ -4262,11 +4329,14 @@ extern "C" void GdfInvasion_NoteSkel(SkelAnime* skelAnime) {
     }
 }
 
+static std::map<Actor*, u32> sBossNoted; // the host update each boss copy last took
 static std::set<Actor*> sMovedBg; // the host's: moving parts that have moved since the area loaded
 
 extern "C" void GdfInvasion_ForgetActor(Actor* actor) {
     sActorSkel.erase(actor);
     sMovedBg.erase(actor);
+    sSmooth.erase(actor);
+    sBossNoted.erase(actor);
 }
 
 static bool IsSyncedBoss(Actor* a) {
@@ -4354,15 +4424,27 @@ extern "C" void GdfInvasion_AfterBossUpdate(Actor* actor) {
     if (best == nullptr) {
         return;
     }
-    actor->world.pos = best->pos;
-    actor->shape.rot = best->rot;
-    actor->world.rot.y = best->rot.y;
+    if (sBossNoted[actor] != sHostBossFrame) {
+        sBossNoted[actor] = sHostBossFrame;
+        SmoothNote(actor, best->pos, best->rot);
+    }
+    SmoothApply(actor, true);
     auto it = sActorSkel.find(actor);
     if ((it != sActorSkel.end()) && (it->second->jointTable != nullptr)) {
         SkelAnime* sk = it->second;
         int n = (int)MIN((size_t)sk->limbCount, best->joints.size() / 3);
         for (int i = 0; i < n; i++) {
-            sk->jointTable[i] = { (s16)best->joints[i * 3], (s16)best->joints[i * 3 + 1], (s16)best->joints[i * 3 + 2] };
+            Vec3s& j = sk->jointTable[i];
+            if (i == 0) {
+                // the root limb carries position: eased like the rest
+                j.x += (s16)(((s16)best->joints[0] - j.x) / 2);
+                j.y += (s16)(((s16)best->joints[1] - j.y) / 2);
+                j.z += (s16)(((s16)best->joints[2] - j.z) / 2);
+                continue;
+            }
+            j.x = SmoothAngle(j.x, (s16)best->joints[i * 3]);
+            j.y = SmoothAngle(j.y, (s16)best->joints[i * 3 + 1]);
+            j.z = SmoothAngle(j.z, (s16)best->joints[i * 3 + 2]);
         }
     }
     // Hurt here: the host's boss takes it too
@@ -4453,6 +4535,7 @@ static nlohmann::json WriteMovers(PlayState* play) {
 struct HostMover {
     Vec3f pos;
     Vec3s rot;
+    bool fresh = true; // not yet handed to the smoother
 };
 static std::map<long long, HostMover> sHostMovers;
 static u32 sHostMoverFrame = 0;
@@ -4488,9 +4571,11 @@ extern "C" void GdfInvasion_AfterBgUpdate(Actor* actor) {
     if (it == sHostMovers.end()) {
         return;
     }
-    actor->world.pos = it->second.pos;
-    actor->shape.rot = it->second.rot;
-    actor->world.rot = it->second.rot;
+    if (it->second.fresh) {
+        SmoothNote(actor, it->second.pos, it->second.rot);
+        it->second.fresh = false;
+    }
+    SmoothApply(actor, true);
 }
 
 static void ReadSceneFlags(const nlohmann::json& f) {
@@ -4511,6 +4596,7 @@ static void RegisterWorldMovers() {
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) {
         sHostMovers.clear();
         sMovedBg.clear();
+        sSmooth.clear();
     });
 }
 
