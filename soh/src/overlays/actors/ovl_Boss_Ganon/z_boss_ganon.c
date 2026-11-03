@@ -6512,9 +6512,14 @@ static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play
     if ((this->actionFunc == BossGanon_Player_Land) && (this->unk_1C2 < 2)) {
         Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
     } else if ((this->actionFunc == BossGanon_Player_Land) || (sGdfFastGroundTimer > 0)) {
-        // Getting up: still quick, but eased. The pose it follows is a frame old, and following it in full each frame
-        // made him bob up and down as he rose
-        Math_ApproachF(&this->playerGroundOffset, target, 0.45f, 12.0f);
+        // Getting up (and blending into his idle after): down at once, up only eased. The pose it follows is a frame
+        // old: following it in full both ways bobbed him upward as he rose, and easing both ways left him hanging in
+        // the air after the get-up
+        if (target < this->playerGroundOffset) {
+            Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
+        } else {
+            Math_ApproachF(&this->playerGroundOffset, target, 0.35f, 8.0f);
+        }
     } else {
         Math_ApproachF(&this->playerGroundOffset, target, 0.5f, 6.0f);
     }
