@@ -4827,7 +4827,7 @@ s32 func_808382DC(Player* this, PlayState* play) {
     s32 sp64;
 
     // Invasion mode: no knockback from monsters for Ganondorf either (grabs, shoves, explosions)
-    if (GdfInvasion_IsInvader()) {
+    if (GdfInvasion_ShieldedFromWorld()) {
         this->knockbackType = PLAYER_KNOCKBACK_NONE;
         this->shieldQuad.base.acFlags &= ~AC_BOUNCED;
     }
@@ -12277,7 +12277,7 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
             }
 
             if (!(this->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_DAMAGED)) &&
-                (this->invincibilityTimer <= 0) && !GdfInvasion_IsInvader()) {
+                (this->invincibilityTimer <= 0) && !GdfInvasion_ShieldedFromWorld()) {
                 // (Invasion mode: nothing in his own game hurts Ganondorf, only the Links do, through his Resolve)
                 CollisionCheck_SetAC(play, &play->colChkCtx, &this->cylinder.base);
 

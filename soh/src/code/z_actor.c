@@ -2711,7 +2711,7 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                         // Invasion mode: the monsters and bosses in Ganondorf's game don't go after him (the Links
                         // are his enemies): to them he's far out of reach while they think (his own targeting
                         // still sees them where they are)
-                        u8 ignoreHim = GdfInvasion_IsInvader() && ((i == ACTORCAT_ENEMY) || (i == ACTORCAT_BOSS)) &&
+                        u8 ignoreHim = GdfInvasion_ShieldedFromWorld() && ((i == ACTORCAT_ENEMY) || (i == ACTORCAT_BOSS)) &&
                                        (actor->id != ACTOR_BOSS_GANON) && (actor->id != ACTOR_BOSS_GANON2);
                         f32 xzDist = actor->xzDistToPlayer;
                         f32 yDist = actor->yDistToPlayer;

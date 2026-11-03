@@ -63,8 +63,27 @@ static bool AnchorOn() {
     return (Anchor::Instance != nullptr) && Anchor::Instance->isEnabled;
 }
 
+// Dev test mode (Extra Modes > Ganondorf): alone, offline, he's Ganondorf and the Link his arts land on at once
+static bool TestModeOn() {
+    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.InvasionTest"), 0) &&
+           CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) &&
+           !(AnchorOn() && CVarGetInteger(CVAR_INVASION("Enabled"), 0));
+}
+
+extern "C" s32 GdfInvasion_TestMode(void) {
+    return TestModeOn();
+}
+
+// In his own game nothing but the Links can touch him (not in test mode, where his arts' monsters are for him)
+extern "C" s32 GdfInvasion_ShieldedFromWorld(void) {
+    return GdfInvasion_IsInvader() && !TestModeOn();
+}
+
 // The role is set when the host starts the game from the lobby (from the seat each player took)
 extern "C" s32 GdfInvasion_Role(void) {
+    if (TestModeOn()) {
+        return GDF_INVASION_INVADER;
+    }
     if (!AnchorOn() || !CVarGetInteger(CVAR_INVASION("Enabled"), 0)) {
         return GDF_INVASION_OFF;
     }
@@ -76,7 +95,7 @@ extern "C" s32 GdfInvasion_IsInvader(void) {
 }
 
 extern "C" s32 GdfInvasion_IsHero(void) {
-    return GdfInvasion_Role() == GDF_INVASION_HERO;
+    return (GdfInvasion_Role() == GDF_INVASION_HERO) || TestModeOn();
 }
 
 // No truce: only Kokiri Forest is at peace, for a young Link who has never yet had both a sword and a shield on.
@@ -114,7 +133,7 @@ static bool ClientArmedOnce(uint32_t clientId);
 
 // This Link (0: the local one) is in peaceful Kokiri Forest
 extern "C" s32 GdfInvasion_LinkAtPeace(uint32_t clientId) {
-    if (Anchor::Instance == nullptr) {
+    if ((Anchor::Instance == nullptr) || TestModeOn()) {
         return false;
     }
     bool self = (clientId == 0) || (Anchor::Instance->clients.count(clientId) && Anchor::Instance->clients[clientId].self);
@@ -1271,6 +1290,8 @@ static uint32_t FindTargetLink(PlayState* play, float range = GDF_CAST_RANGE) {
 static bool GroundSpotAround(PlayState* play, Vec3f center, float minDist, float maxDist, Vec3f* out);
 static void Smoke(PlayState* play, Vec3f* pos);
 
+static void HandleCurse(const nlohmann::json& payload);
+
 static void TryCast(PlayState* play, int slot) {
     int art = SlotArt(slot);
 
@@ -1322,6 +1343,24 @@ static void TryCast(PlayState* play, int slot) {
         Flash("Veiled: the Links can't see or hear you");
         return;
     }
+    if (TestModeOn() && (art == GDF_ART_EYE)) {
+        Flash("Eye of Ganon needs another player");
+        return;
+    }
+    if (TestModeOn() && (art == GDF_ART_PHANTOM_STEP)) {
+        Player* self = GET_PLAYER(play);
+        Vec3f spot;
+        if (GroundSpotAround(play, self->actor.world.pos, 400.0f, 700.0f, &spot)) {
+            Smoke(play, &self->actor.world.pos);
+            self->actor.world.pos = spot;
+            self->actor.prevPos = spot;
+            BossGanon_Player_NetSnap();
+            Smoke(play, &spot);
+            gSaveContext.magic -= a.cost;
+            sArtReady[art] = sFrame + a.cooldown * GDF_FPS;
+        }
+        return;
+    }
     if ((art == GDF_ART_PHANTOM_STEP) || (art == GDF_ART_EYE)) {
         uint32_t who = FindTargetLink(play, (art == GDF_ART_EYE) ? 100000.0f : GDF_CAST_RANGE * 2.0f);
         if (who == 0) {
@@ -1356,6 +1395,25 @@ static void TryCast(PlayState* play, int slot) {
     }
     if (sFrame < sVeilUntil) {
         Flash("Not while veiled");
+        return;
+    }
+    // Test mode: on himself (he's the Link here too)
+    if (TestModeOn()) {
+        gSaveContext.magic -= a.cost;
+        sArtReady[art] = sFrame + a.cooldown * GDF_FPS;
+        if (art == GDF_ART_DARKLINK) {
+            sPossessStart = sFrame;
+            sPossessTarget = 0;
+            sPossessUntil = sFrame + (a.duration + 1) * GDF_FPS;
+        }
+        nlohmann::json payload;
+        payload["curse"] = art - GDF_FIRST_CURSE;
+        payload["art"] = art;
+        payload["duration"] = a.duration;
+        payload["clientId"] = 0;
+        HandleCurse(payload);
+        BossGanon_Player_CastPose();
+        Flash(std::string(a.name) + " (test)");
         return;
     }
     uint32_t target = FindTargetLink(play);
@@ -2259,7 +2317,11 @@ static void HandleCurse(const nlohmann::json& payload) {
         ack["ok"] = ok;
         ack["art"] = art;
         ack["rupees"] = sTitheTaken;
-        Anchor::Instance->SendJsonToRemote(ack);
+        if (!TestModeOn()) {
+            Anchor::Instance->SendJsonToRemote(ack);
+        } else if (!ok) {
+            Flash(std::string(sArts[art].name) + " didn't take hold here");
+        }
         return;
     }
     int curse = payload.value("curse", -1);
@@ -2284,7 +2346,9 @@ static void HandleCurse(const nlohmann::json& payload) {
     ack["targetClientId"] = from;
     ack["ok"] = ok;
     ack["art"] = payload.value("art", -1);
-    Anchor::Instance->SendJsonToRemote(ack);
+    if (!TestModeOn()) {
+        Anchor::Instance->SendJsonToRemote(ack);
+    }
 }
 
 static void UpdateCurses() {
@@ -2320,6 +2384,7 @@ extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
         sDlTilt = (tilt < 8.0f) ? 0 : (s16)fminf(tilt, 127.0f);
         sDlYaw = sPossessYaw - (s16)(atan2f(sx, sy) * (32768.0f / 3.14159265f));
         sDlButtons = raw->cur.button & (BTN_A | BTN_B | BTN_R | BTN_Z);
+        sDlHeard = sFrame; // (test mode: heard straight away)
         memset(input, 0, sizeof(*input));
         return;
     }
@@ -2597,7 +2662,9 @@ static void TickInvasion() {
             }
         }
         // Ganon's battle theme while the Invader's Ganon is here
-        PlayAsGanondorf_SetGanonMusic(play, ganonOut);
+        if (!TestModeOn()) {
+            PlayAsGanondorf_SetGanonMusic(play, ganonOut);
+        }
 
         // Reviving a fallen Link: stand by him for a few seconds
         Player* self = GET_PLAYER(play);
@@ -3221,14 +3288,30 @@ static void DrawChat(ImGuiViewport* vp, float scale) {
 void GdfInvasionHud::Draw() {
     PlayState* play = gPlayState;
 
-    if ((Anchor::Instance == nullptr) || !Anchor::Instance->isEnabled) {
+    bool test = TestModeOn();
+    if (!test && ((Anchor::Instance == nullptr) || !Anchor::Instance->isEnabled)) {
         return;
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     float scale = vp->Size.y / 480.0f;
 
-    DrawChat(vp, scale);
-    if ((play == nullptr) || !Anchor::Instance->IsSaveLoaded() || (play->pauseCtx.state != 0)) {
+    if (!test) {
+        DrawChat(vp, scale);
+    }
+    if ((play == nullptr) || (!test && !Anchor::Instance->IsSaveLoaded()) || (play->pauseCtx.state != 0) ||
+        (test && (gSaveContext.fileNum < 0 || gSaveContext.fileNum > 2))) {
+        return;
+    }
+    if (test) {
+        // Test mode: his HUD and menu, and what his arts do to "Link" (himself)
+        DrawInvaderHud(vp, scale);
+        DrawHeroHud(vp, scale);
+        if (sMenuOpen) {
+            DrawArtsMenu(vp, scale);
+        }
+        DrawHudText(ImGui::GetForegroundDrawList(vp), ImGui::GetFontSize() * 0.75f,
+                    ImVec2(vp->Pos.x + 8 * scale, vp->Pos.y + vp->Size.y - 22 * scale), Col(255, 200, 120, 200),
+                    "Invasion test mode (offline): Dark Arts land on yourself");
         return;
     }
     if (GdfInvasion_IsInvader() && GameStarted()) {
@@ -3520,6 +3603,9 @@ extern "C" s32 GdfInvasion_IsSummoned(Actor* actor) {
 }
 
 static Actor* GhostDarkLink() {
+    if (TestModeOn()) {
+        return ActorAlive(sDarkLink) ? sDarkLink : nullptr;
+    }
     for (auto& [key, g] : sGhosts) {
         if ((g.id == ACTOR_EN_TORCH2) && ActorAlive(g.actor)) {
             return g.actor;

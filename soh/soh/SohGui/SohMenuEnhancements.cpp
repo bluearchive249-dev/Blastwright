@@ -2519,6 +2519,18 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(0.4f).Max(1.5f).DefaultValue(0.8f).Format("%.2fx").Tooltip(
             "How far back and how high the camera sits while Ganon is out."));
+    AddWidget(path, "Invasion Test Mode (Dev)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.InvasionTest"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().Tooltip(
+            "For trying out Invasion mode alone, offline. Ganondorf gets his magic bar, his Resolve meter, his "
+            "attack costs and the Dark Arts menu (START; Z + START pauses). Every Dark Art lands on yourself, as if "
+            "you were the Link: monsters attack you, curses and timers hit you, Dark Link is yours to drive. "
+            "Ganon form costs, the D-Pad Left cycle and the fireball ring work as in a real game.\n\n"
+            "Not available: anything needing another player (Eye of Ganon, the volley, revival, the shared world). "
+            "Ignored while connected to an Invasion game."));
     AddWidget(path, "Ganondorf Title Screen", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.TitleScreen"))
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(

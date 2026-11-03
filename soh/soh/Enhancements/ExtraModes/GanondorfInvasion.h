@@ -49,6 +49,9 @@ void GdfInvasion_NoteSfx(u16 sfxId);
 s32 GdfInvasion_Role(void);
 s32 GdfInvasion_IsInvader(void);
 s32 GdfInvasion_IsHero(void);
+// Dev test mode: offline, his Dark Arts land on himself; and whether his own game's monsters leave him alone
+s32 GdfInvasion_TestMode(void);
+s32 GdfInvasion_ShieldedFromWorld(void);
 // The truce: until Link has entered the Deku Tree, nothing Ganondorf does can touch him
 s32 GdfInvasion_AdventureStarted(void);
 
