@@ -3775,10 +3775,10 @@ static void WriteWorld(nlohmann::json& payload) {
     }
     nlohmann::json list = nlohmann::json::array();
     std::map<Actor*, int> keep;
-    for (int cat : { ACTORCAT_ENEMY, ACTORCAT_NPC }) {
+    for (int cat : { ACTORCAT_ENEMY, ACTORCAT_NPC, ACTORCAT_MISC }) {
         for (Actor* a = play->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
-            if (SkipForWorld(a)) {
-                continue;
+            if (SkipForWorld(a) || ((cat == ACTORCAT_MISC) && (a->id != ACTOR_EN_ITEM00))) {
+                continue; // (of the misc ones, only pickups: rupees, hearts, ammo)
             }
             auto it = sWorldKeys.find(a);
             int key = (it != sWorldKeys.end()) ? it->second : sWorldNextKey++;
@@ -3902,10 +3902,11 @@ static void SuppressLocalWorld() {
         (Anchor::Instance->clients[sWorldFrom].sceneNum != play->sceneNum)) {
         return;
     }
-    for (int cat : { ACTORCAT_ENEMY, ACTORCAT_NPC }) {
+    for (int cat : { ACTORCAT_ENEMY, ACTORCAT_NPC, ACTORCAT_MISC }) {
         for (Actor* a = play->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
-            if (SkipForWorld(a) || GdfInvasion_IsSummoned(a) || (a->room < 0)) {
-                continue;
+            if (SkipForWorld(a) || GdfInvasion_IsSummoned(a) || (a->room < 0) ||
+                ((cat == ACTORCAT_MISC) && (a->id != ACTOR_EN_ITEM00))) {
+                continue; // (pickups too: the host's are everyone's, once)
             }
             if (std::find(sWorldRooms.begin(), sWorldRooms.end(), a->room) != sWorldRooms.end()) {
                 Actor_Kill(a);
