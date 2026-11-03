@@ -143,7 +143,15 @@ void EnTorch2_Init(Actor* thisx, PlayState* play2) {
     this->currentShield = PLAYER_SHIELD_HYLIAN;
     this->heldItemAction = this->heldItemId = PLAYER_IA_SWORD_MASTER;
     Player_SetModelGroup(this, PLAYER_MODELGROUP_SWORD_AND_SHIELD);
-    play->playerInit(this, play, &gDarkLinkSkel);
+    {
+        // Dark Link is always adult-sized (his skeleton is adult Link's): set up with adult Link's proportions even
+        // while Link is a child (Invasion mode's Dark Link), or he stands sunk into the ground
+        s32 age = gSaveContext.linkAge;
+
+        gSaveContext.linkAge = LINK_AGE_ADULT;
+        play->playerInit(this, play, &gDarkLinkSkel);
+        gSaveContext.linkAge = age;
+    }
     this->actor.naviEnemyId = 0x26;
     this->cylinder.base.acFlags = AC_ON | AC_TYPE_PLAYER;
     this->meleeWeaponQuads[0].base.atFlags = this->meleeWeaponQuads[1].base.atFlags = AT_ON | AT_TYPE_ENEMY;

@@ -45,6 +45,7 @@ extern "C" {
 #include "src/overlays/actors/ovl_En_Bom/z_en_bom.h"
 #include "src/overlays/actors/ovl_Bg_Ice_Shelter/z_bg_ice_shelter.h"
 #include "src/overlays/actors/ovl_En_Fire_Rock/z_en_fire_rock.h"
+#include "src/overlays/actors/ovl_Bg_Hidan_Curtain/z_bg_hidan_curtain.h"
 #include "src/overlays/actors/ovl_En_Dekubaba/z_en_dekubaba.h"
 #include "src/overlays/actors/ovl_En_Firefly/z_en_firefly.h"
 #include "src/overlays/actors/ovl_En_Test/z_en_test.h"
@@ -1072,7 +1073,7 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Dark Link", ART_MONSTER, 40, 120, 60, true, "Dark Link rises before Link, and you control him for a minute." },
     { "Wallmaster", ART_MONSTER, 24, 30, 0, true, "A Wallmaster drops on Link and drags him back to the entrance (2 at most)." },
     { "Iron Knuckle", ART_MONSTER, 40, 90, 0, true, "An Iron Knuckle bars Link's way (one at a time)." },
-    { "Fire Pillar", ART_OBSTACLE, 26, 40, 15, true, "A ring of fire traps Link for 15 s." },
+    { "Fire Pillar", ART_OBSTACLE, 26, 40, 15, true, "A wide pillar of fire rises around Link: he's trapped inside for 15 s." },
     { "Aero Alchemy", ART_CURSE, 30, 60, 30, true, "The air around Link turns to water: he swims for 30 s." },
     { "The Haunting", ART_CURSE, 34, 90, 20, true, "Darkness swallows Link and two ReDeads rise behind him, for 20 s." },
     { "Lava Floor", ART_CURSE, 28, 60, 30, true, "The floor burns Link for 30 s, or until he defeats an enemy." },
@@ -1743,6 +1744,9 @@ static int MonstersFor(int art) {
 // ---- The Elements row ----
 static u32 sElementTimerUntil = 0; // the game's own timer shows the time left
 static u32 sLavaUntil = 0;
+#define GDF_PILLAR_SCALE 2.1f // (81 wide as a vanilla pillar: 170 here)
+static Actor* sPillar = nullptr;
+static Vec3f sPillarCenter;
 static u32 sAeroUntil = 0;
 static u32 sHauntUntil = 0;
 static u32 sDisarmUntil = 0;
@@ -1775,6 +1779,28 @@ static void DisarmBombHat() {
 
 static void UpdateElements(PlayState* play) {
     Player* player = (play != nullptr) ? GET_PLAYER(play) : nullptr;
+
+    // Fire Pillar: trapped inside it
+    if (sPillar != nullptr) {
+        if (!ActorAlive(sPillar) || (player == nullptr)) {
+            sPillar = nullptr;
+        } else {
+            f32 radius = 81.0f * GDF_PILLAR_SCALE;
+            f32 dx = player->actor.world.pos.x - sPillarCenter.x;
+            f32 dz = player->actor.world.pos.z - sPillarCenter.z;
+            f32 d = sqrtf(dx * dx + dz * dz);
+            ((BgHidanCurtain*)sPillar)->collider.base.atFlags &= ~AT_ON;
+            if ((d > radius - 25.0f) && (d > 1.0f)) {
+                // Into the flames: burned, and back inside
+                if (player->invincibilityTimer <= 0) {
+                    GameInteractor::RawAction::BurnPlayer();
+                }
+                player->actor.world.pos.x = sPillarCenter.x + dx / d * (radius - 30.0f);
+                player->actor.world.pos.z = sPillarCenter.z + dz / d * (radius - 30.0f);
+                player->linearVelocity = 0.0f;
+            }
+        }
+    }
 
     // Earthquake: thrown off his feet again and again, the ground rumbling, harmless boulders raining down
     if ((sQuakeUntil != 0) && (player != nullptr)) {
@@ -1927,18 +1953,19 @@ static bool StartArt(PlayState* play, int art) {
             break;
         }
         case GDF_ART_FIRE_PILLAR: {
-            // A ring of fire walls around him
+            // One wide pillar of fire (Dodongo's Cavern's, Ganon's Castle's) rises around him: inside he's safe, but
+            // its wall burns him and throws him back in
             Vec3f c = player->actor.world.pos;
-            for (int i = 0; i < 12; i++) {
-                Vec3f p = c;
-                p.x += Math_SinS(i * 0x10000 / 12) * 140.0f;
-                p.z += Math_CosS(i * 0x10000 / 12) * 140.0f;
-                Actor* fire = Actor_Spawn(&play->actorCtx, play, ACTOR_BG_HIDAN_FIREWALL, p.x, c.y, p.z, 0,
-                                          (s16)(i * 0x10000 / 12) + 0x4000, 0, 0);
-                if (fire != nullptr) {
-                    AddObstacle(fire, 15);
-                }
+            Actor* pillar = Actor_Spawn(&play->actorCtx, play, ACTOR_BG_HIDAN_CURTAIN, c.x, c.y, c.z, 0, 0, 0,
+                                        (3 << 12) | 0x3F);
+            if (pillar == nullptr) {
+                return false;
             }
+            Actor_SetScale(pillar, 0.09f * GDF_PILLAR_SCALE);
+            ((BgHidanCurtain*)pillar)->collider.base.atFlags &= ~AT_ON; // (the wall's own check, UpdateElements)
+            AddObstacle(pillar, 15);
+            sPillar = pillar;
+            sPillarCenter = c;
             StartZeldaTimer(15);
             sElementTimerUntil = sFrame + 15 * GDF_FPS;
             break;
