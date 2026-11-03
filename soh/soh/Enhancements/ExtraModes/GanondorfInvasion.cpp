@@ -18,6 +18,7 @@
 #include <cmath>
 #include <deque>
 #include <map>
+#include <set>
 #include <vector>
 #include <string>
 
@@ -3764,6 +3765,9 @@ static bool SkipForWorld(Actor* a) {
 
 static std::map<Actor*, int> sWorldKeys;
 static nlohmann::json WriteBosses(PlayState* play);
+static nlohmann::json WriteMovers(PlayState* play);
+static void ReadMovers(const nlohmann::json& list);
+static void ReadSceneFlags(const nlohmann::json& f);
 static void ReadBosses(const nlohmann::json& list);
 static int sWorldNextKey = GDF_WORLD_KEY;
 
@@ -3789,7 +3793,10 @@ static void WriteWorld(nlohmann::json& payload) {
     }
     sWorldKeys.swap(keep);
     payload["gw"] = { { "r", { play->roomCtx.curRoom.num, play->roomCtx.prevRoom.num } }, { "a", list },
-                      { "b", WriteBosses(play) } };
+                      { "b", WriteBosses(play) }, { "m", WriteMovers(play) },
+                      { "f",
+                        { play->actorCtx.flags.swch, play->actorCtx.flags.tempSwch, play->actorCtx.flags.clear,
+                          play->actorCtx.flags.tempClear } } };
 }
 
 static u32 sWorldHeard = 0;
@@ -3806,6 +3813,8 @@ static void ReadWorld(uint32_t from, const nlohmann::json& world) {
     sWorldHeard = sFrame;
     sWorldFrom = from;
     ReadBosses(world.value("b", nlohmann::json::array()));
+    ReadMovers(world.value("m", nlohmann::json::array()));
+    ReadSceneFlags(world.value("f", nlohmann::json::array()));
     sWorldRooms.clear();
     for (const auto& r : world.value("r", nlohmann::json::array())) {
         sWorldRooms.push_back((s8)r.get<int>());
@@ -4128,8 +4137,11 @@ extern "C" void GdfInvasion_NoteSkel(SkelAnime* skelAnime) {
     }
 }
 
+static std::set<Actor*> sMovedBg; // the host's: moving parts that have moved since the area loaded
+
 extern "C" void GdfInvasion_ForgetActor(Actor* actor) {
     sActorSkel.erase(actor);
+    sMovedBg.erase(actor);
 }
 
 static bool IsSyncedBoss(Actor* a) {
@@ -4280,3 +4292,101 @@ static void RegisterWorldBosses() {
 }
 
 static RegisterShipInitFunc worldBossInitFunc(RegisterWorldBosses, {});
+
+// ---- World sync, stage 5: moving parts (blocks, platforms, elevators) and the area's switches ----
+// A moving part is the same in every game: same kind, same place in the area's data. The host sends those that
+// have moved; everyone else's are put where his are (and carry whoever stands on them). Ganondorf, who has no flag
+// sync of his own, also takes the host's switch and room-clear flags, so his doors and bars match.
+
+static long long MoverKey(s16 id, const Vec3f& home) {
+    long long x = (long long)lroundf(home.x) & 0xFFFFF;
+    long long y = (long long)lroundf(home.y) & 0xFFFFF;
+    long long z = (long long)lroundf(home.z) & 0xFFFFF;
+    return ((long long)(u16)id << 60) ^ (x << 40) ^ (y << 20) ^ z;
+}
+
+static nlohmann::json WriteMovers(PlayState* play) {
+    nlohmann::json list = nlohmann::json::array();
+    for (Actor* a = play->actorCtx.actorLists[ACTORCAT_BG].head; a != nullptr; a = a->next) {
+        if ((a->update == nullptr) || GdfInvasion_IsSummoned(a)) {
+            continue;
+        }
+        bool moved = (Math_Vec3f_DistXYZ(&a->world.pos, &a->home.pos) > 1.0f) || (a->shape.rot.x != a->home.rot.x) ||
+                     (a->shape.rot.y != a->home.rot.y) || (a->shape.rot.z != a->home.rot.z);
+        if (moved) {
+            sMovedBg.insert(a);
+        }
+        if (!sMovedBg.count(a)) {
+            continue;
+        }
+        list.push_back({ a->id, a->home.pos.x, a->home.pos.y, a->home.pos.z, a->world.pos.x, a->world.pos.y,
+                         a->world.pos.z, a->shape.rot.x, a->shape.rot.y, a->shape.rot.z });
+    }
+    return list;
+}
+
+struct HostMover {
+    Vec3f pos;
+    Vec3s rot;
+};
+static std::map<long long, HostMover> sHostMovers;
+static u32 sHostMoverFrame = 0;
+
+static void ReadMovers(const nlohmann::json& list) {
+    sHostMovers.clear();
+    for (const auto& e : list) {
+        if (!e.is_array() || (e.size() < 10)) {
+            continue;
+        }
+        Vec3f home = { e[1].get<float>(), e[2].get<float>(), e[3].get<float>() };
+        HostMover m;
+        m.pos = { e[4].get<float>(), e[5].get<float>(), e[6].get<float>() };
+        m.rot = { (s16)e[7].get<int>(), (s16)e[8].get<int>(), (s16)e[9].get<int>() };
+        sHostMovers[MoverKey((s16)e[0].get<int>(), home)] = m;
+    }
+    sHostMoverFrame = sFrame;
+}
+
+static bool FollowingHost(PlayState* play) {
+    return (play != nullptr) && (GdfInvasion_Role() != GDF_INVASION_OFF) && !IsWorldHost() &&
+           (sFrame - sHostMoverFrame <= 20) && Anchor::Instance->clients.count(sWorldFrom) &&
+           (Anchor::Instance->clients[sWorldFrom].sceneNum == play->sceneNum);
+}
+
+extern "C" void GdfInvasion_AfterBgUpdate(Actor* actor) {
+    PlayState* play = gPlayState;
+
+    if (!FollowingHost(play) || GdfInvasion_IsSummoned(actor)) {
+        return;
+    }
+    auto it = sHostMovers.find(MoverKey(actor->id, actor->home.pos));
+    if (it == sHostMovers.end()) {
+        return;
+    }
+    actor->world.pos = it->second.pos;
+    actor->shape.rot = it->second.rot;
+    actor->world.rot = it->second.rot;
+}
+
+static void ReadSceneFlags(const nlohmann::json& f) {
+    PlayState* play = gPlayState;
+
+    if (!GdfInvasion_IsInvader() || (play == nullptr) || !f.is_array() || (f.size() < 4) ||
+        !Anchor::Instance->clients.count(sWorldFrom) ||
+        (Anchor::Instance->clients[sWorldFrom].sceneNum != play->sceneNum)) {
+        return;
+    }
+    play->actorCtx.flags.swch = f[0].get<u32>();
+    play->actorCtx.flags.tempSwch = f[1].get<u32>();
+    play->actorCtx.flags.clear = f[2].get<u32>();
+    play->actorCtx.flags.tempClear = f[3].get<u32>();
+}
+
+static void RegisterWorldMovers() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) {
+        sHostMovers.clear();
+        sMovedBg.clear();
+    });
+}
+
+static RegisterShipInitFunc worldMoverInitFunc(RegisterWorldMovers, {});

@@ -78,6 +78,7 @@ extern Actor* gGdfInitActor;
 void GdfInvasion_NoteSkel(SkelAnime* skelAnime);
 void GdfInvasion_ForgetActor(Actor* actor);
 void GdfInvasion_AfterBossUpdate(Actor* actor);
+void GdfInvasion_AfterBgUpdate(Actor* actor);
 
 // The throat grab on another player's Link: whether he may, which player a dummy is, and what his fist does
 u32 GdfInvasion_DummyClientId(Actor* actor);

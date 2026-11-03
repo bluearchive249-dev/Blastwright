@@ -2741,6 +2741,8 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                         // World sync: a boss here follows the host Link's boss
                         if ((i == ACTORCAT_BOSS) && (actor->update != NULL)) {
                             GdfInvasion_AfterBossUpdate(actor);
+                        } else if ((i == ACTORCAT_BG) && (actor->update != NULL)) {
+                            GdfInvasion_AfterBgUpdate(actor); // blocks, platforms, elevators
                         }
                         if (ignoreHim && (actor->update != NULL)) {
                             actor->xzDistToPlayer = xzDist;
