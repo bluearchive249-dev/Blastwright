@@ -995,6 +995,8 @@ static RegisterShipInitFunc lobbyInitFunc(RegisterGanondorfInvasionLobby, {});
 #define GDF_PKT_WORLD_HIT "GDF_WORLD_HIT"
 #define GDF_PKT_WORLD_HOLD "GDF_WORLD_HOLD"
 #define GDF_PKT_DOOR_KICK "GDF_DOOR_KICK"
+#define GDF_PKT_BOSS_HIT "GDF_BOSS_HIT"
+static void HandleBossHit(const nlohmann::json& payload);
 static void HandleWorldHold(const nlohmann::json& payload);
 #define GDF_PKT_VOLLEY "GDF_VOLLEY"
 #define GDF_PKT_BALL_HIT "GDF_BALL_HIT"
@@ -2672,6 +2674,8 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
                 }
             }
         }
+    } else if (type == GDF_PKT_BOSS_HIT) {
+        HandleBossHit(payload);
     } else if (type == GDF_PKT_WORLD_HOLD) {
         HandleWorldHold(payload);
     } else if (type == GDF_PKT_WORLD_HIT) {
@@ -3759,6 +3763,8 @@ static bool SkipForWorld(Actor* a) {
 }
 
 static std::map<Actor*, int> sWorldKeys;
+static nlohmann::json WriteBosses(PlayState* play);
+static void ReadBosses(const nlohmann::json& list);
 static int sWorldNextKey = GDF_WORLD_KEY;
 
 static void WriteWorld(nlohmann::json& payload) {
@@ -3782,7 +3788,8 @@ static void WriteWorld(nlohmann::json& payload) {
         }
     }
     sWorldKeys.swap(keep);
-    payload["gw"] = { { "r", { play->roomCtx.curRoom.num, play->roomCtx.prevRoom.num } }, { "a", list } };
+    payload["gw"] = { { "r", { play->roomCtx.curRoom.num, play->roomCtx.prevRoom.num } }, { "a", list },
+                      { "b", WriteBosses(play) } };
 }
 
 static u32 sWorldHeard = 0;
@@ -3798,6 +3805,7 @@ static void ReadWorld(uint32_t from, const nlohmann::json& world) {
     }
     sWorldHeard = sFrame;
     sWorldFrom = from;
+    ReadBosses(world.value("b", nlohmann::json::array()));
     sWorldRooms.clear();
     for (const auto& r : world.value("r", nlohmann::json::array())) {
         sWorldRooms.push_back((s8)r.get<int>());
@@ -4103,3 +4111,171 @@ extern "C" void GdfInvasion_NoteDoorKick(Vec3f* doorPos, Vec3f* fromPos) {
     payload["f"] = { fromPos->x, fromPos->y, fromPos->z };
     Anchor::Instance->SendJsonToRemote(payload);
 }
+
+// ---- World sync, stage 3: the host Link's bosses for everyone ----
+// Each player's game runs its own boss, but away from the host it's made to follow his: where it is, which way it
+// faces, its pose (its skeleton's joints) and its health. Hits on it anywhere are sent to the host's boss.
+
+extern "C" {
+Actor* gGdfInitActor = nullptr;
+}
+static std::map<Actor*, SkelAnime*> sActorSkel; // each actor's (first) skeleton, noted as it's set up
+
+extern "C" void GdfInvasion_NoteSkel(SkelAnime* skelAnime) {
+    if ((gGdfInitActor != nullptr) && !sActorSkel.count(gGdfInitActor)) {
+        sActorSkel[gGdfInitActor] = skelAnime;
+    }
+}
+
+extern "C" void GdfInvasion_ForgetActor(Actor* actor) {
+    sActorSkel.erase(actor);
+}
+
+static bool IsSyncedBoss(Actor* a) {
+    return (a->update != nullptr) && (a->category == ACTORCAT_BOSS) && (a->id != ACTOR_BOSS_GANON) &&
+           (a->id != ACTOR_BOSS_GANON2) && (a->id != ACTOR_EN_TORCH2);
+}
+
+static nlohmann::json WriteBosses(PlayState* play) {
+    nlohmann::json list = nlohmann::json::array();
+    for (Actor* a = play->actorCtx.actorLists[ACTORCAT_BOSS].head; a != nullptr; a = a->next) {
+        if (!IsSyncedBoss(a)) {
+            continue;
+        }
+        std::vector<int> joints;
+        auto it = sActorSkel.find(a);
+        if ((it != sActorSkel.end()) && (it->second->jointTable != nullptr)) {
+            SkelAnime* sk = it->second;
+            for (int i = 0; i < sk->limbCount && i < 80; i++) {
+                joints.insert(joints.end(), { sk->jointTable[i].x, sk->jointTable[i].y, sk->jointTable[i].z });
+            }
+        }
+        list.push_back({ { "i", a->id },
+                         { "p", { a->world.pos.x, a->world.pos.y, a->world.pos.z } },
+                         { "r", { a->shape.rot.x, a->shape.rot.y, a->shape.rot.z } },
+                         { "h", a->colChkInfo.health },
+                         { "j", joints } });
+    }
+    return list;
+}
+
+struct HostBoss {
+    s16 id;
+    Vec3f pos;
+    Vec3s rot;
+    u8 health;
+    std::vector<int> joints;
+};
+static std::vector<HostBoss> sHostBosses;
+static u32 sHostBossFrame = 0;
+static std::map<Actor*, u8> sBossHostHp; // what the host last said each local boss's health was
+
+static void ReadBosses(const nlohmann::json& list) {
+    sHostBosses.clear();
+    for (const auto& b : list) {
+        try {
+            HostBoss hb;
+            std::vector<float> p = b.value("p", std::vector<float>{ 0, 0, 0 });
+            std::vector<int> r = b.value("r", std::vector<int>{ 0, 0, 0 });
+            p.resize(3);
+            r.resize(3);
+            hb.id = (s16)b.value("i", 0);
+            hb.pos = { p[0], p[1], p[2] };
+            hb.rot = { (s16)r[0], (s16)r[1], (s16)r[2] };
+            hb.health = (u8)b.value("h", 0);
+            hb.joints = b.value("j", std::vector<int>{});
+            sHostBosses.push_back(std::move(hb));
+        } catch (...) {
+        }
+    }
+    sHostBossFrame = sFrame;
+}
+
+// After a boss's own update, away from the host: it's put where the host's is, posed as his, with his health
+extern "C" void GdfInvasion_AfterBossUpdate(Actor* actor) {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || (GdfInvasion_Role() == GDF_INVASION_OFF) || IsWorldHost() || !IsSyncedBoss(actor) ||
+        (sFrame - sHostBossFrame > 20) || !Anchor::Instance->clients.count(sWorldFrom) ||
+        (Anchor::Instance->clients[sWorldFrom].sceneNum != play->sceneNum)) {
+        return;
+    }
+    const HostBoss* best = nullptr;
+    float bestDist = 1e9f;
+    for (const HostBoss& hb : sHostBosses) {
+        if (hb.id != actor->id) {
+            continue;
+        }
+        Vec3f hbPos = hb.pos;
+        float d = Math_Vec3f_DistXYZ(&hbPos, &actor->world.pos);
+        if (d < bestDist) {
+            bestDist = d;
+            best = &hb;
+        }
+    }
+    if (best == nullptr) {
+        return;
+    }
+    actor->world.pos = best->pos;
+    actor->shape.rot = best->rot;
+    actor->world.rot.y = best->rot.y;
+    auto it = sActorSkel.find(actor);
+    if ((it != sActorSkel.end()) && (it->second->jointTable != nullptr)) {
+        SkelAnime* sk = it->second;
+        int n = (int)MIN((size_t)sk->limbCount, best->joints.size() / 3);
+        for (int i = 0; i < n; i++) {
+            sk->jointTable[i] = { (s16)best->joints[i * 3], (s16)best->joints[i * 3 + 1], (s16)best->joints[i * 3 + 2] };
+        }
+    }
+    // Hurt here: the host's boss takes it too
+    auto hp = sBossHostHp.find(actor);
+    if ((hp != sBossHostHp.end()) && (actor->colChkInfo.health < hp->second)) {
+        nlohmann::json payload;
+        payload["type"] = GDF_PKT_BOSS_HIT;
+        payload["targetClientId"] = sWorldFrom;
+        payload["id"] = actor->id;
+        payload["hp"] = actor->colChkInfo.health;
+        payload["p"] = { best->pos.x, best->pos.y, best->pos.z };
+        Anchor::Instance->SendJsonToRemote(payload);
+    }
+    if ((best->health > 0) || (actor->colChkInfo.health > 0)) {
+        actor->colChkInfo.health = MIN(actor->colChkInfo.health, best->health);
+    }
+    sBossHostHp[actor] = actor->colChkInfo.health;
+}
+
+// The host: another player hurt his boss
+static void HandleBossHit(const nlohmann::json& payload) {
+    PlayState* play = gPlayState;
+    if ((play == nullptr) || !IsWorldHost()) {
+        return;
+    }
+    std::vector<float> p = payload.value("p", std::vector<float>{ 0, 0, 0 });
+    p.resize(3);
+    Vec3f at = { p[0], p[1], p[2] };
+    s16 id = (s16)payload.value("id", 0);
+    int hp = payload.value("hp", 255);
+    Actor* best = nullptr;
+    float bestDist = 1e9f;
+    for (Actor* a = play->actorCtx.actorLists[ACTORCAT_BOSS].head; a != nullptr; a = a->next) {
+        if ((a->id == id) && IsSyncedBoss(a)) {
+            float d = Math_Vec3f_DistXYZ(&a->world.pos, &at);
+            if (d < bestDist) {
+                bestDist = d;
+                best = a;
+            }
+        }
+    }
+    if ((best != nullptr) && (hp < best->colChkInfo.health)) {
+        best->colChkInfo.health = (u8)MAX(hp, 1); // (the last blow is his game's own, so the boss dies properly)
+    }
+}
+
+static void RegisterWorldBosses() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) {
+        sHostBosses.clear();
+        sBossHostHp.clear();
+    });
+}
+
+static RegisterShipInitFunc worldBossInitFunc(RegisterWorldBosses, {});

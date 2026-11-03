@@ -73,6 +73,11 @@ Actor* BossGanon_Player_GetGrabbedActor(void);
 // World sync: Ganondorf kicked a door in his game (where it is, where he kicked from); the Links' doors fly too
 void GdfInvasion_NoteDoorKick(Vec3f* doorPos, Vec3f* fromPos);
 void EnDoor_RemoteKick(Actor* door, Vec3f* from);
+// World sync, bosses: each actor's skeleton (noted as it's set up), and the boss following the host's
+extern Actor* gGdfInitActor;
+void GdfInvasion_NoteSkel(SkelAnime* skelAnime);
+void GdfInvasion_ForgetActor(Actor* actor);
+void GdfInvasion_AfterBossUpdate(Actor* actor);
 
 // The throat grab on another player's Link: whether he may, which player a dummy is, and what his fist does
 u32 GdfInvasion_DummyClientId(Actor* actor);

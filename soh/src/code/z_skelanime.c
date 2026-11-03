@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "vt.h"
 #include <string.h>
 #include <stdio.h>
@@ -1556,6 +1557,8 @@ void SkelAnime_SetUpdate(SkelAnime* skelAnime) {
  * finishes.
  */
 s32 SkelAnime_Update(SkelAnime* skelAnime) {
+    GdfInvasion_NoteSkel(skelAnime);
+    GdfInvasion_NoteSkel(skelAnime);
     return skelAnime->update.normal(skelAnime);
 }
 

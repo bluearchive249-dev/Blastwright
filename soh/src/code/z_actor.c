@@ -1262,7 +1262,9 @@ void Actor_Init(Actor* actor, PlayState* play) {
         Actor_SetObjectDependency(play, actor);
 
         if (GameInteractor_ShouldActorInit(actor)) {
+            gGdfInitActor = actor; // (world sync: which actor a skeleton belongs to)
             actor->init(actor, play);
+            gGdfInitActor = NULL;
             actor->init = NULL;
 
             GameInteractor_ExecuteOnActorInit(actor);
@@ -1274,6 +1276,7 @@ void Actor_Init(Actor* actor, PlayState* play) {
 }
 
 void Actor_Destroy(Actor* actor, PlayState* play) {
+    GdfInvasion_ForgetActor(actor);
     if (actor->destroy != NULL) {
         if (GameInteractor_ShouldActorDestroy(actor)) {
             actor->destroy(actor, play);
@@ -2654,7 +2657,9 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                     Actor_SetObjectDependency(play, actor);
 
                     if (GameInteractor_ShouldActorInit(actor)) {
+                        gGdfInitActor = actor;
                         actor->init(actor, play);
+                        gGdfInitActor = NULL;
                         actor->init = NULL;
 
                         GameInteractor_ExecuteOnActorInit(actor);
@@ -2732,6 +2737,10 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                         if (ignoreHim) {
                             player->actor.world.pos = himPos;
                             player->actor.focus.pos = himFocus;
+                        }
+                        // World sync: a boss here follows the host Link's boss
+                        if ((i == ACTORCAT_BOSS) && (actor->update != NULL)) {
+                            GdfInvasion_AfterBossUpdate(actor);
                         }
                         if (ignoreHim && (actor->update != NULL)) {
                             actor->xzDistToPlayer = xzDist;
