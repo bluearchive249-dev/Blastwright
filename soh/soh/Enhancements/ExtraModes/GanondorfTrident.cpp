@@ -237,11 +237,13 @@ bool ReadFile() {
 
 } // namespace
 
-extern "C" s32 GanondorfTrident_GetSelected(void) {
-    s32 weapon = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Weapon"), 1);
+extern "C" s32 GdfInvasion_Role(void);
 
-    // Ganondorf: Invasion has no Ganondorf menu: his stance always uses a trident (the first unless one was chosen)
-    if (weapon < 1) {
+extern "C" s32 GanondorfTrident_GetSelected(void) {
+    s32 weapon = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Weapon"), 0);
+
+    // In an Invasion game his stance always uses a trident (the first unless one was chosen)
+    if ((weapon < 1) && (GdfInvasion_Role() != 0)) {
         weapon = 1;
     }
 

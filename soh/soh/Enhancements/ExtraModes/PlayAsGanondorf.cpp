@@ -80,9 +80,9 @@ static bool IsStandingOnGround() {
 
 static bool sSprinting = false; // holding A on the ground: Ganondorf sprints
 
-// Ganondorf: Invasion has no Ganondorf menu: he always keeps Link's C-button items
 extern "C" s32 PlayAsGanondorf_KeepItems(void) {
-    return true;
+    // In an Invasion game he always keeps them (his Dark Arts share the C-buttons); otherwise the menu decides
+    return (GdfInvasion_Role() != GDF_INVASION_OFF) || CVarGetInteger(CVAR_PLAY_AS_GDF("KeepItems"), 0);
 }
 
 static bool IsEnabled() {
