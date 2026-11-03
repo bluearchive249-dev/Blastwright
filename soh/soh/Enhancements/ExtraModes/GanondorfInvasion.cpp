@@ -41,6 +41,11 @@ extern "C" {
 #include "variables.h"
 #include "src/overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include "src/overlays/actors/ovl_En_Bom/z_en_bom.h"
+#include "src/overlays/actors/ovl_Bg_Ice_Shelter/z_bg_ice_shelter.h"
+#include "src/overlays/actors/ovl_En_Fire_Rock/z_en_fire_rock.h"
+#include "src/overlays/actors/ovl_En_Dekubaba/z_en_dekubaba.h"
+#include "src/overlays/actors/ovl_En_Firefly/z_en_firefly.h"
+#include "src/overlays/actors/ovl_En_Test/z_en_test.h"
 extern PlayState* gPlayState;
 }
 
@@ -87,6 +92,7 @@ struct ClientGdf {
 
 static std::map<uint32_t, ClientGdf> sClients;
 static u32 sFrame = 0;
+static u32 sVeilUntil = 0; // Shadow Veil (Ganondorf): unseen and unheard by the Links
 
 static void WriteGrab(nlohmann::json& g);
 static void ReadGrab(uint32_t from, const nlohmann::json& g);
@@ -97,8 +103,8 @@ bool GdfInvasion_IsHeld();
 static std::vector<std::pair<u16, u32>> sSfxQueue;
 
 extern "C" void GdfInvasion_NoteSfx(u16 sfxId) {
-    if (!GdfInvasion_IsInvader()) {
-        return;
+    if (!GdfInvasion_IsInvader() || (sFrame < sVeilUntil)) {
+        return; // not heard while veiled
     }
     std::erase_if(sSfxQueue, [](const std::pair<u16, u32>& q) { return sFrame - q.second > 3; });
     for (auto& q : sSfxQueue) {
@@ -120,6 +126,10 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
     payload["gdfRole"] = GDF_INVASION_INVADER;
     if (!BossGanon_Player_GetNetPose(&pose)) {
         return;
+    }
+    if (sFrame < sVeilUntil) {
+        pose.hidden = true; // Shadow Veil
+        pose.ballCount = 0;
     }
     nlohmann::json g;
     g["h"] = pose.hidden;
@@ -771,18 +781,18 @@ struct DarkArt {
 
 // Row by row: obstacles, monsters, curses, his own. Curses are index 12 onward.
 static const DarkArt sArts[GDF_ART_COUNT] = {
-    { "Red Ice Wall", ART_OBSTACLE, 14, 8, 20, false, "A wall of red ice across a path. Melts with fire." },
-    { "Wall of Flame", ART_OBSTACLE, 19, 10, 15, false, "A line of rising and falling fire." },
-    { "Rolling Boulders", ART_OBSTACLE, 24, 15, 0, false, "Three boulders roll toward the marker." },
+    { "Red Ice Wall", ART_OBSTACLE, 14, 8, 20, true, "A wall of red ice across Link's path. Blue Fire melts it." },
+    { "Wall of Flame", ART_OBSTACLE, 19, 10, 15, true, "A line of fire walls ahead of Link that erupt as he nears." },
+    { "Rock Fall", ART_OBSTACLE, 24, 15, 0, true, "Burning rocks crash down from the sky around Link." },
     { "Bomb Rain", ART_OBSTACLE, 29, 30, 3, true, "Over twenty bombs rain down around Link." },
-    { "Iron Bars", ART_OBSTACLE, 19, 20, 15, false, "The nearest door to Link is barred shut." },
-    { "Quicksand", ART_OBSTACLE, 24, 20, 20, false, "A circle of sinking sand." },
-    { "Ambush Ring", ART_MONSTER, 19, 15, 0, false, "Four small monsters rise around Link." },
+    { "Sealed Door", ART_OBSTACLE, 19, 20, 15, true, "Red ice seals the door nearest to Link." },
+    { "Quicksand", ART_OBSTACLE, 24, 20, 15, true, "Link's feet sink: he moves at half speed." },
+    { "Ambush Ring", ART_MONSTER, 19, 15, 0, true, "Four Deku Babas rise in a ring around Link." },
     { "Floormasters", ART_MONSTER, 29, 35, 0, true, "Three Floormasters crawl out around Link and lunge." },
-    { "Swarm", ART_MONSTER, 24, 20, 0, false, "Keese circle above Link, then dive." },
-    { "Waves", ART_MONSTER, 34, 40, 0, false, "Three waves of three monsters." },
-    { "Sentinel", ART_MONSTER, 29, 30, 0, false, "One tough monster on Link's path." },
-    { "Duel", ART_MONSTER, 48, 60, 40, false, "Link is walled in with a Stalfos." },
+    { "Swarm", ART_MONSTER, 24, 20, 0, true, "Five Keese burst out above Link." },
+    { "Waves", ART_MONSTER, 34, 40, 0, true, "Three waves of Stalchildren, one every few seconds." },
+    { "Sentinel", ART_MONSTER, 29, 30, 0, true, "A Like Like waits on Link's path." },
+    { "Duel", ART_MONSTER, 48, 60, 40, true, "A Stalfos challenges Link (once per area)." },
     { "Backwards Path", ART_CURSE, 19, 30, 12, true, "Link's controls are reversed." },
     { "Frozen Ground", ART_CURSE, 14, 25, 15, true, "The ground under Link turns slippery." },
     { "Iron Weight", ART_CURSE, 14, 25, 15, true, "Link is weighed down by iron (not in water)." },
@@ -791,15 +801,29 @@ static const DarkArt sArts[GDF_ART_COUNT] = {
     { "Blinding Gloom", ART_CURSE, 19, 30, 25, true, "Darkness closes in around Link." },
     { "Lost Bearings", ART_CURSE, 14, 30, 15, true, "Link can't Z-target." },
     { "Ghostly Gale", ART_CURSE, 19, 30, 15, true, "Gusts of wind push Link about." },
-    { "Phantom Step", ART_OWN, 19, 30, 0, false, "Ganondorf steps out of sight." },
-    { "Eye of Ganon", ART_OWN, 10, 10, 10, false, "Watch Link from afar." },
-    { "Shadow Veil", ART_OWN, 24, 45, 15, false, "Ganondorf turns invisible to Link." },
-    { "Rupee Tithe", ART_OWN, 14, 60, 0, false, "Takes 20 rupees from Link." },
+    { "Phantom Step", ART_OWN, 19, 30, 0, true, "Ganondorf vanishes and steps out somewhere out of sight." },
+    { "Eye of Ganon", ART_OWN, 10, 10, 10, true, "Watch the nearest Link from above for 10 s." },
+    { "Shadow Veil", ART_OWN, 24, 45, 15, true, "Ganondorf is invisible (and silent) to the Links." },
+    { "Rupee Tithe", ART_OWN, 14, 60, 0, true, "Takes up to 20 rupees from Link (never his last 10)." },
 };
 
 #define GDF_FIRST_CURSE 12
+#define GDF_ART_RED_ICE 0
+#define GDF_ART_FLAME_WALL 1
+#define GDF_ART_ROCK_FALL 2
 #define GDF_ART_BOMB_RAIN 3
+#define GDF_ART_SEALED_DOOR 4
+#define GDF_ART_QUICKSAND 5
+#define GDF_ART_AMBUSH 6
 #define GDF_ART_FLOORMASTERS 7
+#define GDF_ART_SWARM 8
+#define GDF_ART_WAVES 9
+#define GDF_ART_SENTINEL 10
+#define GDF_ART_DUEL 11
+#define GDF_ART_PHANTOM_STEP 20
+#define GDF_ART_EYE 21
+#define GDF_ART_VEIL 22
+#define GDF_ART_TITHE 23
 static const char* sCurseMessages[8] = {
     "has reversed your path!", "has frozen the ground!",  "weighs you down with iron!", "has shrunk you!",
     "has sealed your hand!",   "has cast a blinding gloom!", "has stolen your bearings!", "summons a ghostly gale!",
@@ -821,6 +845,9 @@ static int sCursor = GDF_FIRST_CURSE;
 static u32 sMenuMoveFrame = 0;
 static std::string sCastMessage;
 static u32 sCastMessageUntil = 0;
+static u32 sEyeUntil = 0;    // Eye of Ganon: watching a Link
+static uint32_t sEyeTarget = 0;
+static s16 sEyeCam = -1;
 
 static int SlotArt(int slot) {
     static const char* sCVars[3] = { CVAR_INVASION("Slot0"), CVAR_INVASION("Slot1"), CVAR_INVASION("Slot2") };
@@ -850,7 +877,7 @@ extern "C" s32 GdfInvasion_CanAct(void) {
     if (!GdfInvasion_IsInvader()) {
         return true;
     }
-    return !sMenuOpen && !IsBanished();
+    return !sMenuOpen && !IsBanished() && (sFrame >= sEyeUntil);
 }
 
 static void Flash(const std::string& message) {
@@ -859,10 +886,10 @@ static void Flash(const std::string& message) {
 }
 
 // The Link a Dark Art goes to: the nearest one in his area, close enough
-static uint32_t FindTargetLink(PlayState* play) {
+static uint32_t FindTargetLink(PlayState* play, float range = GDF_CAST_RANGE) {
     Player* self = GET_PLAYER(play);
     uint32_t best = 0;
-    float bestDist = GDF_CAST_RANGE;
+    float bestDist = range;
 
     for (auto& [clientId, client] : Anchor::Instance->clients) {
         if (client.self || !client.online || !client.isSaveLoaded || (client.sceneNum != play->sceneNum) ||
@@ -878,6 +905,9 @@ static uint32_t FindTargetLink(PlayState* play) {
     }
     return best;
 }
+
+static bool GroundSpotAround(PlayState* play, Vec3f center, float minDist, float maxDist, Vec3f* out);
+static void Smoke(PlayState* play, Vec3f* pos);
 
 static void TryCast(PlayState* play, int slot) {
     int art = SlotArt(slot);
@@ -911,6 +941,50 @@ static void TryCast(PlayState* play, int slot) {
         Flash("Not enough magic");
         Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+    // His own arts: worked here, in his game
+    if (art == GDF_ART_VEIL) {
+        gSaveContext.magic -= a.cost;
+        sArtReady[art] = sFrame + a.cooldown * GDF_FPS;
+        sVeilUntil = sFrame + a.duration * GDF_FPS;
+        Flash("Veiled: the Links can't see or hear you");
+        return;
+    }
+    if ((art == GDF_ART_PHANTOM_STEP) || (art == GDF_ART_EYE)) {
+        uint32_t who = FindTargetLink(play, (art == GDF_ART_EYE) ? 100000.0f : GDF_CAST_RANGE * 2.0f);
+        if (who == 0) {
+            Flash("No Link in this area");
+            Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            return;
+        }
+        Player* self = GET_PLAYER(play);
+        if (art == GDF_ART_PHANTOM_STEP) {
+            // Out of the Link's sight: somewhere on the ground well away from him
+            Vec3f spot;
+            Vec3f linkPos = Anchor::Instance->clients[who].posRot.pos;
+            if (!GroundSpotAround(play, linkPos, 700.0f, 1100.0f, &spot)) {
+                Flash("Nowhere to step to here");
+                return;
+            }
+            Smoke(play, &self->actor.world.pos);
+            self->actor.world.pos = spot;
+            self->actor.prevPos = spot;
+            self->actor.shape.rot.y = self->actor.world.rot.y = self->yaw = Math_Vec3f_Yaw(&spot, &linkPos);
+            BossGanon_Player_NetSnap();
+            Smoke(play, &spot);
+        } else {
+            sEyeTarget = who;
+            sEyeUntil = sFrame + a.duration * GDF_FPS;
+        }
+        gSaveContext.magic -= a.cost;
+        sArtReady[art] = sFrame + a.cooldown * GDF_FPS;
+        Flash(std::string(a.name));
+        return;
+    }
+    if (sFrame < sVeilUntil) {
+        Flash("Not while veiled");
         return;
     }
     uint32_t target = FindTargetLink(play);
@@ -1037,30 +1111,46 @@ static bool LinkCanBeCursed(PlayState* play) {
                                      PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE));
 }
 
-// ---- A Link's side: what Ganondorf summons around him ----
+// ---- A Link's side: what Ganondorf summons and raises around him ----
 #define GDF_MAX_SUMMONED 6
+#define GDF_MAX_OBSTACLES 4
 struct Summon {
     int art = -1;
     u32 start = 0;
     int spawned = 0;
+    Vec3f spots[4];
+    int spotCount = 0;
 };
 static Summon sSummon;
 static Actor* sSummoned[GDF_MAX_SUMMONED];
+struct Obstacle {
+    Actor* actor = nullptr;
+    u32 until = 0;
+};
+static Obstacle sObstacles[GDF_MAX_OBSTACLES * 5];
+static u32 sQuicksandUntil = 0;
+static int sTitheTaken = 0;
 
-static int LiveSummoned() {
+static bool ActorAlive(Actor* actor) {
     PlayState* play = gPlayState;
-    int n = 0;
 
-    for (int i = 0; i < GDF_MAX_SUMMONED; i++) {
-        bool alive = false;
-        if ((sSummoned[i] != nullptr) && (play != nullptr)) {
-            for (Actor* a = play->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
-                if ((a == sSummoned[i]) && (a->update != nullptr)) {
-                    alive = true;
-                }
+    if ((actor == nullptr) || (play == nullptr)) {
+        return false;
+    }
+    for (int c = 0; c < ACTORCAT_MAX; c++) {
+        for (Actor* a = play->actorCtx.actorLists[c].head; a != nullptr; a = a->next) {
+            if (a == actor) {
+                return a->update != nullptr;
             }
         }
-        if (!alive) {
+    }
+    return false;
+}
+
+static int LiveSummoned() {
+    int n = 0;
+    for (int i = 0; i < GDF_MAX_SUMMONED; i++) {
+        if (!ActorAlive(sSummoned[i])) {
             sSummoned[i] = nullptr;
         } else {
             n++;
@@ -1069,38 +1159,38 @@ static int LiveSummoned() {
     return n;
 }
 
-static bool StartSummon(int art) {
-    if (sSummon.art >= 0) {
-        return false; // one at a time
+static void Track(Actor* a) {
+    for (int j = 0; (a != nullptr) && (j < GDF_MAX_SUMMONED); j++) {
+        if (sSummoned[j] == nullptr) {
+            sSummoned[j] = a;
+            return;
+        }
     }
-    if ((art == GDF_ART_FLOORMASTERS) && (LiveSummoned() > GDF_MAX_SUMMONED - 3)) {
-        return false; // too many of his monsters about already
-    }
-    sSummon.art = art;
-    sSummon.start = sFrame;
-    sSummon.spawned = 0;
-    Audio_PlaySfxGeneral(NA_SE_EN_GANON_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                         &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-    Notification::Emit({ .prefix = "Ganondorf",
-                         .message = (art == GDF_ART_BOMB_RAIN) ? "rains bombs upon you!" : "sends the Floormasters!" });
-    return true;
 }
 
-// A spot on the ground near Link (at least `minDist` from him)
-static bool GroundSpot(PlayState* play, float minDist, float maxDist, Vec3f* out) {
-    Player* player = GET_PLAYER(play);
+static void AddObstacle(Actor* a, int seconds) {
+    for (Obstacle& o : sObstacles) {
+        if ((o.actor == nullptr) || !ActorAlive(o.actor)) {
+            o.actor = a;
+            o.until = sFrame + seconds * GDF_FPS;
+            return;
+        }
+    }
+}
 
-    for (int tries = 0; tries < 8; tries++) {
+// A spot on the ground around `center` (between minDist and maxDist from it)
+static bool GroundSpotAround(PlayState* play, Vec3f center, float minDist, float maxDist, Vec3f* out) {
+    for (int tries = 0; tries < 10; tries++) {
         s16 yaw = (s16)(Rand_ZeroOne() * 0x10000);
         float d = minDist + Rand_ZeroOne() * (maxDist - minDist);
-        Vec3f p = player->actor.world.pos;
+        Vec3f p = center;
         p.x += Math_SinS(yaw) * d;
         p.z += Math_CosS(yaw) * d;
         p.y += 80.0f;
         CollisionPoly* poly;
         s32 bgId;
         float floorY = BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &p);
-        if ((floorY > BGCHECK_Y_MIN) && (fabsf(floorY - player->actor.world.pos.y) < 120.0f)) {
+        if ((floorY > BGCHECK_Y_MIN) && (fabsf(floorY - center.y) < 120.0f)) {
             p.y = floorY;
             *out = p;
             return true;
@@ -1109,66 +1199,295 @@ static bool GroundSpot(PlayState* play, float minDist, float maxDist, Vec3f* out
     return false;
 }
 
+static bool GroundSpot(PlayState* play, float minDist, float maxDist, Vec3f* out) {
+    return GroundSpotAround(play, GET_PLAYER(play)->actor.world.pos, minDist, maxDist, out);
+}
+
+// Ahead of Link (where he's facing), on the ground
+static Vec3f AheadOfLink(PlayState* play, float dist) {
+    Player* player = GET_PLAYER(play);
+    Vec3f p = player->actor.world.pos;
+    p.x += Math_SinS(player->actor.shape.rot.y) * dist;
+    p.z += Math_CosS(player->actor.shape.rot.y) * dist;
+    p.y += 80.0f;
+    CollisionPoly* poly;
+    s32 bgId;
+    float floorY = BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &p);
+    p.y = (floorY > BGCHECK_Y_MIN) ? floorY : player->actor.world.pos.y;
+    return p;
+}
+
+static void Smoke(PlayState* play, Vec3f* pos) {
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    EffectSsDeadDb_Spawn(play, pos, &zero, &zero, 140, 0, 60, 0, 90, 255, 30, 0, 60, 1, 9, true);
+}
+
+static const char* ArtMessage(int art) {
+    switch (art) {
+        case GDF_ART_RED_ICE: return "bars your way with red ice!";
+        case GDF_ART_FLAME_WALL: return "raises a wall of flame!";
+        case GDF_ART_ROCK_FALL: return "brings the sky down on you!";
+        case GDF_ART_BOMB_RAIN: return "rains bombs upon you!";
+        case GDF_ART_SEALED_DOOR: return "has sealed the door!";
+        case GDF_ART_QUICKSAND: return "drags at your feet!";
+        case GDF_ART_AMBUSH: return "springs an ambush!";
+        case GDF_ART_FLOORMASTERS: return "sends the Floormasters!";
+        case GDF_ART_SWARM: return "sends a swarm of Keese!";
+        case GDF_ART_WAVES: return "sends wave after wave!";
+        case GDF_ART_SENTINEL: return "sets a sentinel in your path!";
+        case GDF_ART_DUEL: return "challenges you to a duel!";
+        case GDF_ART_TITHE: return "takes his tithe!";
+    }
+    return "has cursed you!";
+}
+
+static int MonstersFor(int art) {
+    switch (art) {
+        case GDF_ART_AMBUSH: return 4;
+        case GDF_ART_FLOORMASTERS: return 3;
+        case GDF_ART_SWARM: return 5;
+        case GDF_ART_WAVES: return 3;
+        case GDF_ART_SENTINEL:
+        case GDF_ART_DUEL: return 1;
+    }
+    return 0;
+}
+
+// Starts an art in this Link's game; false when it can't happen now (the magic goes back)
+static bool StartArt(PlayState* play, int art) {
+    Player* player = GET_PLAYER(play);
+
+    if (sSummon.art >= 0) {
+        return false; // one at a time
+    }
+    int monsters = MonstersFor(art);
+    if ((monsters > 0) && (LiveSummoned() + monsters > GDF_MAX_SUMMONED)) {
+        return false; // too many of his monsters about already
+    }
+    switch (art) {
+        case GDF_ART_RED_ICE: {
+            Vec3f p = AheadOfLink(play, 120.0f);
+            Actor* ice = Actor_Spawn(&play->actorCtx, play, ACTOR_BG_ICE_SHELTER, p.x, p.y, p.z, 0,
+                                     player->actor.shape.rot.y, 0, (RED_ICE_WALL << 8) | 0x40 | 0x3F);
+            if (ice == nullptr) {
+                return false;
+            }
+            AddObstacle(ice, 20);
+            break;
+        }
+        case GDF_ART_SEALED_DOOR: {
+            // The door nearest to Link (within reach)
+            Actor* best = nullptr;
+            float bestDist = 800.0f;
+            for (Actor* a = play->actorCtx.actorLists[ACTORCAT_DOOR].head; a != nullptr; a = a->next) {
+                float d = Actor_WorldDistXZToActor(&player->actor, a);
+                if ((a->update != nullptr) && (d < bestDist)) {
+                    best = a;
+                    bestDist = d;
+                }
+            }
+            if (best == nullptr) {
+                return false;
+            }
+            // In front of it, on Link's side
+            s16 yaw = Actor_WorldYawTowardActor(best, &player->actor);
+            Vec3f p = best->world.pos;
+            p.x += Math_SinS(yaw) * 25.0f;
+            p.z += Math_CosS(yaw) * 25.0f;
+            Actor* ice = Actor_Spawn(&play->actorCtx, play, ACTOR_BG_ICE_SHELTER, p.x, p.y, p.z, 0, yaw, 0,
+                                     (RED_ICE_WALL << 8) | 0x40 | 0x3F);
+            if (ice == nullptr) {
+                return false;
+            }
+            AddObstacle(ice, 15);
+            break;
+        }
+        case GDF_ART_FLAME_WALL: {
+            // Five fire walls in a line across Link's path
+            Vec3f c = AheadOfLink(play, 160.0f);
+            s16 across = player->actor.shape.rot.y + 0x4000;
+            for (int i = -2; i <= 2; i++) {
+                Vec3f p = c;
+                p.x += Math_SinS(across) * i * 55.0f;
+                p.z += Math_CosS(across) * i * 55.0f;
+                Actor* fire = Actor_Spawn(&play->actorCtx, play, ACTOR_BG_HIDAN_FIREWALL, p.x, p.y, p.z, 0, 0, 0, 0);
+                if (fire != nullptr) {
+                    AddObstacle(fire, 15);
+                }
+            }
+            break;
+        }
+        case GDF_ART_QUICKSAND:
+            sQuicksandUntil = sFrame + 15 * GDF_FPS;
+            GameInteractor::State::MovementSpeedMultiplier = 0.5f;
+            break;
+        case GDF_ART_TITHE: {
+            int take = CLAMP(gSaveContext.rupees - 10, 0, 20);
+            if (take <= 0) {
+                return false;
+            }
+            Rupees_ChangeBy(-take);
+            sTitheTaken = take;
+            break;
+        }
+        default:
+            if ((art == GDF_ART_DUEL) || (monsters > 0) || (art == GDF_ART_BOMB_RAIN) || (art == GDF_ART_ROCK_FALL)) {
+                sSummon.art = art;
+                sSummon.start = sFrame;
+                sSummon.spawned = 0;
+                sSummon.spotCount = 0;
+                break;
+            }
+            return false;
+    }
+    Audio_PlaySfxGeneral(NA_SE_EN_GANON_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                         &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Notification::Emit({ .prefix = "Ganondorf", .message = ArtMessage(art) });
+    return true;
+}
+
+// Monsters come up a second after dark smoke marks their spots
+static void SpawnMonstersAt(PlayState* play, s16 actorId, s16 params, int count, float minDist, float maxDist,
+                            bool flying) {
+    Player* player = GET_PLAYER(play);
+    u32 t = sFrame - sSummon.start;
+
+    if (sSummon.spotCount == 0) {
+        for (int i = 0; i < count; i++) {
+            if (!GroundSpot(play, minDist, maxDist, &sSummon.spots[i])) {
+                sSummon.spots[i] = player->actor.world.pos;
+                sSummon.spots[i].x += minDist * Math_SinS(i * (0x10000 / count));
+                sSummon.spots[i].z += minDist * Math_CosS(i * (0x10000 / count));
+            }
+            if (flying) {
+                sSummon.spots[i].y += 120.0f;
+            }
+            Smoke(play, &sSummon.spots[i]);
+        }
+        sSummon.spotCount = count;
+        sSummon.start = sFrame;
+        return;
+    }
+    if (t >= GDF_FPS) {
+        for (int i = 0; i < sSummon.spotCount; i++) {
+            Vec3f* p = &sSummon.spots[i];
+            Track(Actor_Spawn(&play->actorCtx, play, actorId, p->x, p->y, p->z, 0,
+                              Math_Vec3f_Yaw(p, &player->actor.world.pos), 0, params));
+        }
+        sSummon.spotCount = 0;
+        sSummon.spawned++;
+    }
+}
+
 static void UpdateSummons() {
     PlayState* play = gPlayState;
 
+    // Timed obstacles melt away
+    for (Obstacle& o : sObstacles) {
+        if ((o.actor != nullptr) && ((sFrame >= o.until) || !ActorAlive(o.actor))) {
+            if (ActorAlive(o.actor)) {
+                Actor_Kill(o.actor);
+            }
+            o.actor = nullptr;
+        }
+    }
+    if ((sQuicksandUntil != 0) && (sFrame >= sQuicksandUntil)) {
+        sQuicksandUntil = 0;
+        GameInteractor::State::MovementSpeedMultiplier = 1.0f;
+    }
     if (sSummon.art < 0) {
         return;
     }
-    if ((play == nullptr) || !GdfInvasion_IsHero() || (sFrame - sSummon.start > 6 * GDF_FPS)) {
+    if ((play == nullptr) || !GdfInvasion_IsHero() || (sFrame - sSummon.start > 20 * GDF_FPS)) {
         sSummon.art = -1;
         return;
     }
     Player* player = GET_PLAYER(play);
     u32 t = sFrame - sSummon.start;
-    Vec3f zero = { 0.0f, 0.0f, 0.0f };
 
-    if (sSummon.art == GDF_ART_BOMB_RAIN) {
-        // 24 bombs over three seconds, falling from above, in a ring around him and on him
-        while ((sSummon.spawned < 24) && (sSummon.spawned < (int)(t * 24 / (3 * GDF_FPS)) + 1)) {
-            s16 yaw = (s16)(Rand_ZeroOne() * 0x10000);
-            float d = Rand_ZeroOne() * 260.0f;
-            Vec3f p = player->actor.world.pos;
-            p.x += Math_SinS(yaw) * d;
-            p.z += Math_CosS(yaw) * d;
-            p.y += 350.0f + Rand_ZeroOne() * 150.0f;
-            Actor* bomb = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, p.x, p.y, p.z, 0, 0, 0, BOMB_BODY);
-            if (bomb != nullptr) {
-                ((EnBom*)bomb)->timer = 45 + (s16)(Rand_ZeroOne() * 25.0f);
-            }
-            sSummon.spawned++;
-        }
-        if (sSummon.spawned >= 24) {
-            sSummon.art = -1;
-        }
-        return;
-    }
-    if (sSummon.art == GDF_ART_FLOORMASTERS) {
-        // A second's warning (dark smoke where they'll come up), then three of them
-        static Vec3f sSpots[3];
-        if (t == 0) {
-            for (int i = 0; i < 3; i++) {
-                if (!GroundSpot(play, 220.0f, 360.0f, &sSpots[i])) {
-                    sSpots[i] = player->actor.world.pos;
-                    sSpots[i].x += 250.0f * Math_SinS(i * 0x5555);
-                    sSpots[i].z += 250.0f * Math_CosS(i * 0x5555);
+    switch (sSummon.art) {
+        case GDF_ART_BOMB_RAIN:
+        case GDF_ART_ROCK_FALL: {
+            // Falling from above over three seconds, around him and on him
+            bool bombs = sSummon.art == GDF_ART_BOMB_RAIN;
+            int total = bombs ? 24 : 14;
+            while ((sSummon.spawned < total) && (sSummon.spawned < (int)(t * total / (3 * GDF_FPS)) + 1)) {
+                s16 yaw = (s16)(Rand_ZeroOne() * 0x10000);
+                float d = Rand_ZeroOne() * 260.0f;
+                Vec3f p = player->actor.world.pos;
+                p.x += Math_SinS(yaw) * d;
+                p.z += Math_CosS(yaw) * d;
+                p.y += 350.0f + Rand_ZeroOne() * 150.0f;
+                if (bombs) {
+                    Actor* bomb = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, p.x, p.y, p.z, 0, 0, 0, BOMB_BODY);
+                    if (bomb != nullptr) {
+                        ((EnBom*)bomb)->timer = 45 + (s16)(Rand_ZeroOne() * 25.0f);
+                    }
+                } else {
+                    Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FIRE_ROCK, p.x, p.y, p.z, 0, 0, 0,
+                                FIRE_ROCK_SPAWNED_FALLING2);
                 }
-                EffectSsDeadDb_Spawn(play, &sSpots[i], &zero, &zero, 140, 0, 60, 0, 90, 255, 30, 0, 60, 1, 9, true);
+                sSummon.spawned++;
             }
+            if (sSummon.spawned >= total) {
+                sSummon.art = -1;
+            }
+            break;
         }
-        if (t == GDF_FPS) {
-            for (int i = 0; i < 3; i++) {
-                Actor* a = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FLOORMAS, sSpots[i].x, sSpots[i].y,
-                                       sSpots[i].z, 0, Math_Vec3f_Yaw(&sSpots[i], &player->actor.world.pos), 0, 0);
-                for (int j = 0; (a != nullptr) && (j < GDF_MAX_SUMMONED); j++) {
-                    if (sSummoned[j] == nullptr) {
-                        sSummoned[j] = a;
-                        break;
+        case GDF_ART_FLOORMASTERS:
+            SpawnMonstersAt(play, ACTOR_EN_FLOORMAS, 0, 3, 220.0f, 360.0f, false);
+            if (sSummon.spawned > 0) {
+                sSummon.art = -1;
+            }
+            break;
+        case GDF_ART_AMBUSH:
+            SpawnMonstersAt(play, ACTOR_EN_DEKUBABA, DEKUBABA_NORMAL, 4, 150.0f, 220.0f, false);
+            if (sSummon.spawned > 0) {
+                sSummon.art = -1;
+            }
+            break;
+        case GDF_ART_SWARM:
+            SpawnMonstersAt(play, ACTOR_EN_FIREFLY, KEESE_NORMAL_FLY, 4, 120.0f, 260.0f, true);
+            if (sSummon.spawned > 0) {
+                sSummon.art = -1;
+            }
+            break;
+        case GDF_ART_WAVES:
+            // A wave of Stalchildren, then the next a few seconds after
+            if ((sSummon.spotCount != 0) || (t >= 5 * GDF_FPS) || (sSummon.spawned == 0)) {
+                if ((sSummon.spawned > 0) && (sSummon.spotCount == 0)) {
+                    if (LiveSummoned() > GDF_MAX_SUMMONED - 3) {
+                        break; // the last wave is still about
                     }
                 }
+                SpawnMonstersAt(play, ACTOR_EN_SKB, 0, 3, 200.0f, 320.0f, false);
             }
-            sSummon.art = -1;
+            if (sSummon.spawned >= 3) {
+                sSummon.art = -1;
+            }
+            break;
+        case GDF_ART_SENTINEL:
+        case GDF_ART_DUEL: {
+            if (sSummon.spotCount == 0) {
+                sSummon.spots[0] = AheadOfLink(play, 260.0f);
+                sSummon.spotCount = 1;
+                sSummon.start = sFrame;
+                Smoke(play, &sSummon.spots[0]);
+                break;
+            }
+            if (t >= GDF_FPS) {
+                Vec3f* p = &sSummon.spots[0];
+                bool duel = sSummon.art == GDF_ART_DUEL;
+                Track(Actor_Spawn(&play->actorCtx, play, duel ? ACTOR_EN_TEST : ACTOR_EN_RR, p->x, p->y, p->z, 0,
+                                  Math_Vec3f_Yaw(p, &player->actor.world.pos), 0, duel ? STALFOS_TYPE_1 : 0));
+                sSummon.art = -1;
+                sSummon.spotCount = 0;
+            }
+            break;
         }
+        default:
+            sSummon.art = -1;
+            break;
     }
 }
 
@@ -1210,18 +1529,20 @@ static void SetCurse(int curse, bool on) {
     }
 }
 
-static bool StartSummon(int art);
+static bool StartArt(PlayState* play, int art);
 
 static void HandleCurse(const nlohmann::json& payload) {
     PlayState* play = gPlayState;
     int art = payload.value("art", -1);
-    if ((art == GDF_ART_BOMB_RAIN) || (art == GDF_ART_FLOORMASTERS)) {
-        bool ok = GdfInvasion_IsHero() && LinkCanBeCursed(play) && StartSummon(art);
+    if ((art >= 0) && ((art < GDF_FIRST_CURSE) || (art >= GDF_FIRST_CURSE + 8))) {
+        sTitheTaken = 0;
+        bool ok = GdfInvasion_IsHero() && LinkCanBeCursed(play) && StartArt(play, art);
         nlohmann::json ack;
         ack["type"] = GDF_PKT_CURSE_ACK;
         ack["targetClientId"] = payload.value("clientId", 0u);
         ack["ok"] = ok;
         ack["art"] = art;
+        ack["rupees"] = sTitheTaken;
         Anchor::Instance->SendJsonToRemote(ack);
         return;
     }
@@ -1261,7 +1582,7 @@ static void UpdateCurses() {
 
 extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
     // Ganondorf: his menu open, or banished
-    if (GdfInvasion_IsInvader() && (sMenuOpen || IsBanished())) {
+    if (GdfInvasion_IsInvader() && (sMenuOpen || IsBanished() || (sFrame < sEyeUntil))) {
         memset(input, 0, sizeof(*input));
         return;
     }
@@ -1436,6 +1757,10 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
         HandleCurse(payload);
     } else if (type == GDF_PKT_CURSE_ACK) {
         int art = payload.value("art", -1);
+        if (payload.value("ok", false) && (payload.value("rupees", 0) > 0)) {
+            Rupees_ChangeBy((s16)payload.value("rupees", 0)); // his tithe
+            Flash("Took " + std::to_string(payload.value("rupees", 0)) + " rupees");
+        }
         if (!payload.value("ok", false) && (art >= 0) && (art < GDF_ART_COUNT)) {
             // Refused (that Link was in a cutscene, talking, ...): the magic comes back, and the cooldown resets
             gSaveContext.magic = MIN(gSaveContext.magic + sArts[art].cost, gSaveContext.magicCapacity);
@@ -1478,6 +1803,28 @@ static void TickInvasion() {
     }
     if (gSaveContext.gameMode != GAMEMODE_NORMAL) {
         return;
+    }
+    // Eye of Ganon: the camera hangs over the Link he's watching
+    if ((sFrame < sEyeUntil) && Anchor::Instance->clients.count(sEyeTarget) &&
+        (Anchor::Instance->clients[sEyeTarget].sceneNum == play->sceneNum)) {
+        if (sEyeCam < 0) {
+            sEyeCam = Play_CreateSubCamera(play);
+            Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
+            Play_ChangeCameraStatus(play, sEyeCam, CAM_STAT_ACTIVE);
+        }
+        PosRot& pr = Anchor::Instance->clients[sEyeTarget].posRot;
+        Vec3f at = pr.pos;
+        at.y += 40.0f;
+        Vec3f eye = at;
+        eye.x -= Math_SinS(pr.rot.y) * 260.0f;
+        eye.z -= Math_CosS(pr.rot.y) * 260.0f;
+        eye.y += 220.0f;
+        Play_CameraSetAtEye(play, sEyeCam, &at, &eye);
+    } else if (sEyeCam >= 0) {
+        sEyeUntil = 0;
+        Play_ClearCamera(play, sEyeCam);
+        Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_ACTIVE);
+        sEyeCam = -1;
     }
     // His magic: the full bar, refilling on its own (faster when he keeps away from the Links)
     if (!gSaveContext.isMagicAcquired || !gSaveContext.isDoubleMagicAcquired) {
@@ -1541,6 +1888,11 @@ static void DrawInvaderHud(ImGuiViewport* vp, float scale) {
     list->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), Col(0, 0, 0, 120), 2.0f);
     list->AddRectFilled(ImVec2(x, y), ImVec2(x + w * f, y + h), Col(200, 40, 70, 210), 2.0f);
     DrawHudText(list, font * 0.8f, ImVec2(x + w + 6.0f, y - font * 0.25f), Col(230, 200, 210, 170), "Resolve");
+
+    if (sFrame < sVeilUntil) {
+        DrawHudText(list, font * 0.8f, ImVec2(x, y + h + 4.0f * scale), Col(200, 160, 255, 200),
+                    "Veiled " + std::to_string((sVeilUntil - sFrame) / GDF_FPS + 1) + "s");
+    }
 
     // The arts on his C-buttons, under the buttons
     float cx = vp->Pos.x + vp->Size.x - 190.0f * scale;
