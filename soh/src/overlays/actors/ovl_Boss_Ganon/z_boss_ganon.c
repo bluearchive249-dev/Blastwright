@@ -5794,8 +5794,10 @@ static void BossGanon_Player_SlayNpcs(BossGanon* this, PlayState* play) {
             Actor* next = npc->next;
 
             // Not the one he's carrying (Ruto), not his own bodyguards, and nothing already gone
+            // Online, never the other players either: a Link is fought, not cut down like an NPC
             if ((npc->update != NULL) && (npc != player->heldActor) && (npc->init == NULL) &&
-                !((npc->id == ACTOR_EN_GELDB) && EN_GELDB_IS_FRIEND(npc->params))) {
+                !((npc->id == ACTOR_EN_GELDB) && EN_GELDB_IS_FRIEND(npc->params)) && (npc->id != ACTOR_PLAYER) &&
+                (GdfInvasion_DummyClientId(npc) == 0)) {
                 for (i = 0; i < sGdfAtCount; i++) {
                     if (BossGanon_Player_NpcInVolume(npc, &sGdfAtVolumes[i])) {
                         BossGanon_Player_SlayNpc(play, npc);
