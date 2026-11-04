@@ -3620,7 +3620,12 @@ struct Ghost {
     u32 seen = 0;
     bool world = false; // the host Link's (the shared world), not one of Ganondorf's arts
     u8 hostHp = 0;      // its health in the host's game
+    u8 lastHp = 255;    // its health here, last frame
+    u8 category = 0;
+    u32 hurt = 0;       // when it last lost health here
 };
+static u32 sWorldHeard = 0; // when the room's host last sent his world
+static std::map<std::pair<uint32_t, int>, u32> sGhostRetry; // couldn't be made yet: try again after this frame
 #define GDF_WORLD_KEY 1000000 // the shared world's keys, apart from the arts' ones
 static void SendWorldHit(uint32_t host, int key, u8 hp);
 static std::map<std::pair<uint32_t, int>, Ghost> sGhosts;
@@ -3675,17 +3680,39 @@ static void UpdateGhosts() {
         Ghost& g = it->second;
         bool alive = ActorAlive(g.actor);
         if (!alive) {
-            if (g.world) {
-                SendWorldHit(it->first.first, it->first.second, 0); // killed here: killed for everyone
+            // Killed here (in a fight, or a pickup taken): gone for everyone. One that only took itself away in this
+            // game (an NPC not meant for this player's age or time of day) stays in everyone else's.
+            bool killed = (g.category == ACTORCAT_ENEMY) && ((g.lastHp == 0) || (sFrame - g.hurt < 60));
+            bool taken = (g.id == ACTOR_EN_ITEM00) && (sFrame - g.born > 2);
+            if (g.world && (killed || taken)) {
+                SendWorldHit(it->first.first, it->first.second, 0);
             }
-            sGhostsGone[it->first] = true; // gone in his game (killed, area left): not brought back
+            sGhostsGone[it->first] = true;
             it = sGhosts.erase(it);
             continue;
         }
+        if (g.actor->colChkInfo.health < g.lastHp) {
+            g.hurt = sFrame;
+        }
+        g.lastHp = g.actor->colChkInfo.health;
+        g.category = g.actor->category;
         if (g.world && (g.actor->colChkInfo.health < g.hostHp)) {
             // Hurt here: hurt in the host's game too
             g.hostHp = g.actor->colChkInfo.health;
             SendWorldHit(it->first.first, it->first.second, g.hostHp);
+        }
+        if (g.world && (play != nullptr) && (sFrame - g.seen > 30) && (sFrame - sWorldHeard > 30)) {
+            // The host has gone quiet (paused, loading, a lag spike): hold it where it is, it isn't gone. After
+            // 10 seconds of quiet it becomes this game's own, so the room is never left empty.
+            if (sFrame - g.seen > 200) {
+                g.actor->room = play->roomCtx.curRoom.num;
+                sGhostsGone[it->first] = true; // (not made a second time if the host comes back)
+                it = sGhosts.erase(it);
+                continue;
+            }
+            g.actor->freezeTimer = 2;
+            ++it;
+            continue;
         }
         if ((play == nullptr) || (sFrame - g.seen > (g.world ? 30u : 10u))) {
             // Gone in the Link's game
@@ -3716,7 +3743,10 @@ static void UpdateGhosts() {
 
 static void RegisterInvasionGhosts() {
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(UpdateGhosts);
-    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) { sGhosts.clear(); });
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) {
+        sGhosts.clear();
+        sGhostRetry.clear();
+    });
 }
 
 static RegisterShipInitFunc ghostInitFunc(RegisterInvasionGhosts, {});
@@ -3955,7 +3985,6 @@ static void WriteWorld(nlohmann::json& payload) {
                       { "cs", InCutscene(play) } };
 }
 
-static u32 sWorldHeard = 0;
 static std::vector<s8> sWorldRooms;
 
 static void ReadWorld(uint32_t from, const nlohmann::json& world) {
@@ -3994,7 +4023,7 @@ static void ReadWorld(uint32_t from, const nlohmann::json& world) {
             continue;
         }
         auto key = std::make_pair(from, e[0].get<int>());
-        if (sGhostsGone.count(key)) {
+        if (sGhostsGone.count(key) || (sGhostRetry.count(key) && (sFrame < sGhostRetry[key]))) {
             continue;
         }
         Ghost& g = sGhosts[key];
@@ -4011,10 +4040,11 @@ static void ReadWorld(uint32_t from, const nlohmann::json& world) {
             g.actor = Actor_Spawn(&play->actorCtx, play, g.id, pos.x, pos.y, pos.z, 0, rotY, 0, (s16)e[2].get<int>());
             g.born = sFrame;
             if (g.actor == nullptr) {
-                sGhostsGone[key] = true;
+                sGhostRetry[key] = sFrame + 60; // (its graphics not loaded here yet, or too many actors)
                 sGhosts.erase(key);
                 continue;
             }
+            sGhostRetry.erase(key);
             g.actor->room = -1; // kept whichever room this player is in
             g.hostHp = hp;
         }
