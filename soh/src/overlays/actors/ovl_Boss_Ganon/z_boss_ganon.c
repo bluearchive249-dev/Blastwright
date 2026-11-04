@@ -5698,8 +5698,9 @@ static void BossGanon_Player_SpawnHunter(PlayState* play) {
         if ((floorY < BGCHECK_Y_MIN + 10.0f) || (fabsf(floorY - player->actor.world.pos.y) > 120.0f)) {
             continue;
         }
-        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HEISHI1, pos.x, floorY, pos.z, 0,
-                    Math_Vec3f_Yaw(&pos, &player->actor.world.pos), 0, EN_HEISHI1_PARAMS_HUNTER);
+        GdfInvasion_MirrorActor(Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HEISHI1, pos.x, floorY, pos.z, 0,
+                                            Math_Vec3f_Yaw(&pos, &player->actor.world.pos), 0,
+                                            EN_HEISHI1_PARAMS_HUNTER)); // (the Links see them too)
         return;
     }
 }
@@ -5772,6 +5773,7 @@ static void BossGanon_Player_SlayNpc(PlayState* play, Actor* npc) {
     SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 40, NA_SE_IT_SWORD_STRIKE_HARD);
     SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 40, NA_SE_EN_EXTINCT);
 
+    GdfInvasion_NoteSlain(npc); // (one from the shared world: slain in everyone's)
     if (!BossGanon_Player_IsHunter(npc)) {
         GanondorfKills_Record(npc);
         if (BossGanon_Player_IsMarketScene(play->sceneNum)) {
@@ -7721,8 +7723,10 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
     if (!BossGanon_Player_CanStartAttack(this, play)) {
         return;
     }
-    // Invasion mode: C-buttons with a Dark Art on them cast it
-    if (GdfInvasion_HandleCButtons(play)) {
+    // Invasion mode: C-buttons with a Dark Art on them cast it (but with the trident in hand, C-Right spins it:
+    // the fireball ring needs it)
+    if (!(BossGanon_Player_HasTrident() && CHECK_BTN_ALL(play->state.input[0].press.button, BTN_CRIGHT)) &&
+        GdfInvasion_HandleCButtons(play)) {
         return;
     }
 

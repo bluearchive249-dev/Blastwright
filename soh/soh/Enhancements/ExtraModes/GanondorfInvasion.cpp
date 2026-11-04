@@ -223,6 +223,13 @@ static void Mirror(Actor* a) {
     }
 }
 static void WriteMirror(nlohmann::json& payload);
+extern "C" s32 BossGanon_Player_IsWanted(void);
+static bool sGanonWanted = false; // (a Link's game) Ganondorf is wanted in this market: the bell rings here too
+static u32 sGanonWantedHeard = 0;
+static bool InSameScene(uint32_t clientId) {
+    return (gPlayState != nullptr) && (Anchor::Instance != nullptr) && Anchor::Instance->clients.count(clientId) &&
+           (Anchor::Instance->clients[clientId].sceneNum == gPlayState->sceneNum);
+}
 static void ReadMirror(uint32_t from, const nlohmann::json& list);
 // The shared world: the host Link's monsters and NPCs, for everyone in his area
 static bool IsWorldHost();
@@ -272,6 +279,10 @@ void GdfInvasion_WritePose(nlohmann::json& payload) {
         return;
     }
     payload["gdfRole"] = GDF_INVASION_INVADER;
+    WriteMirror(payload); // his hunting guards
+    if (BossGanon_Player_IsWanted()) {
+        payload["gwant"] = true;
+    }
     if (sFrame < sPossessUntil) {
         payload["dl"] = nlohmann::json::array({ (int)sDlYaw, (int)sDlTilt, (int)sDlButtons });
     }
@@ -353,8 +364,13 @@ void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload) {
     if (payload.contains("gArmed") && (clientId < 256)) {
         sClientArmed[clientId] |= payload.value("gArmed", false); // once armed, for good
     }
-    if (payload.contains("gm") && GdfInvasion_IsInvader()) {
-        ReadMirror(clientId, payload["gm"]);
+    if (payload.contains("gm") && InSameScene(clientId) &&
+        (GdfInvasion_IsInvader() || (GdfInvasion_IsHero() && (payload.value("gdfRole", 0) == GDF_INVASION_INVADER)))) {
+        ReadMirror(clientId, payload["gm"]); // (a Link's: his arts' monsters; Ganondorf's: his hunting guards)
+    }
+    if (payload.value("gdfRole", 0) == GDF_INVASION_INVADER) {
+        sGanonWanted = payload.value("gwant", false) && InSameScene(clientId);
+        sGanonWantedHeard = sFrame;
     }
     if (payload.contains("gw")) {
         NoteHostClaim(clientId, payload["gw"]);
@@ -3672,6 +3688,7 @@ static void ReadMirror(uint32_t from, const nlohmann::json& list) {
     }
 }
 
+static bool TakeSlain(Actor* actor);
 static void UpdateGhosts() {
     PlayState* play = gPlayState;
     Vec3f zero = { 0.0f, 0.0f, 0.0f };
@@ -3682,7 +3699,8 @@ static void UpdateGhosts() {
         if (!alive) {
             // Killed here (in a fight, or a pickup taken): gone for everyone. One that only took itself away in this
             // game (an NPC not meant for this player's age or time of day) stays in everyone else's.
-            bool killed = (g.category == ACTORCAT_ENEMY) && ((g.lastHp == 0) || (sFrame - g.hurt < 60));
+            bool killed = ((g.category == ACTORCAT_ENEMY) && ((g.lastHp == 0) || (sFrame - g.hurt < 60))) ||
+                          TakeSlain(g.actor); // (or an NPC Ganondorf cut down)
             bool taken = (g.id == ACTOR_EN_ITEM00) && (sFrame - g.born > 2);
             if (g.world && (killed || taken)) {
                 SendWorldHit(it->first.first, it->first.second, 0);
@@ -4631,3 +4649,88 @@ static void RegisterWorldMovers() {
 }
 
 static RegisterShipInitFunc worldMoverInitFunc(RegisterWorldMovers, {});
+
+// ---- The guard hunt, in the Links' games ----
+
+extern "C" void GdfInvasion_MirrorActor(Actor* actor) {
+    if (GdfInvasion_IsInvader()) {
+        Mirror(actor);
+    }
+}
+
+static std::set<Actor*> sSlain;
+
+extern "C" void GdfInvasion_NoteSlain(Actor* actor) {
+    if (GdfInvasion_Role() != GDF_INVASION_OFF) {
+        sSlain.insert(actor);
+    }
+}
+
+static bool TakeSlain(Actor* actor) {
+    return sSlain.erase(actor) > 0;
+}
+
+extern "C" s32 GdfInvasion_IsRemoteCopy(Actor* actor) {
+    if (GdfInvasion_Role() == GDF_INVASION_OFF) {
+        return false;
+    }
+    for (auto& [key, g] : sGhosts) {
+        if (g.actor == actor) {
+            return true;
+        }
+    }
+    return false;
+}
+
+extern "C" s32 GdfInvasion_GanondorfPos(Vec3f* out) {
+    if ((Anchor::Instance == nullptr) || (gPlayState == nullptr)) {
+        return false;
+    }
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (!client.self && GdfInvasion_IsClientGanondorf(clientId) && InSameScene(clientId)) {
+            *out = client.posRot.pos;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool IsMarket(s16 scene) {
+    switch (scene) {
+        case SCENE_MARKET_DAY:
+        case SCENE_MARKET_NIGHT:
+        case SCENE_MARKET_ENTRANCE_DAY:
+        case SCENE_MARKET_ENTRANCE_NIGHT:
+        case SCENE_BACK_ALLEY_DAY:
+        case SCENE_BACK_ALLEY_NIGHT:
+        case SCENE_TEMPLE_OF_TIME_EXTERIOR_DAY:
+        case SCENE_TEMPLE_OF_TIME_EXTERIOR_NIGHT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The same slow, low bell Ganondorf hears, while he's wanted in the market this Link is in
+static void RingAlarmBell() {
+    static s16 sBellTimer = 20;
+    static f32 sBellFreq = 0.55f;
+    static f32 sBellVol = 1.0f;
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || !GdfInvasion_IsHero() || GdfInvasion_IsInvader() || !sGanonWanted ||
+        (sFrame - sGanonWantedHeard > 40) || !IsMarket(play->sceneNum)) {
+        sBellTimer = 20;
+        return;
+    }
+    if (--sBellTimer <= 0) {
+        sBellTimer = 75;
+        Audio_PlaySfxGeneral(NA_SE_EV_SHIP_BELL, &gSfxDefaultPos, 4, &sBellFreq, &sBellVol, &gSfxDefaultReverb);
+    }
+}
+
+static void RegisterGuardHunt() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(RingAlarmBell);
+}
+
+static RegisterShipInitFunc guardHuntInitFunc(RegisterGuardHunt, {});

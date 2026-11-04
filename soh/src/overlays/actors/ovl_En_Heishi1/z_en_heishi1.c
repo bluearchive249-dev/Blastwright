@@ -10,6 +10,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h" // SoH: guards hunting the player Ganondorf
+#include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 
 // SoH: "Play as Ganondorf", the guards fear him (GanondorfGuards.cpp)
 s32 GanondorfGuards_Fear(void);
@@ -130,8 +131,19 @@ static void EnHeishi1_HunterChase(EnHeishi1* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EV_KNIGHT_WALK);
     }
 
-    if ((this->hunterTimer == 0) && (this->actor.xzDistToPlayer < HUNTER_STAB_RANGE) &&
-        (fabsf(this->actor.yDistToPlayer) < 60.0f)) {
+    f32 xzDist = this->actor.xzDistToPlayer;
+    f32 yDist = this->actor.yDistToPlayer;
+    Vec3f gdf;
+
+    // A copy in a Link's game (online): he goes for Ganondorf there too, never for Link
+    if (GdfInvasion_IsRemoteCopy(&this->actor)) {
+        if (!GdfInvasion_GanondorfPos(&gdf)) {
+            return;
+        }
+        xzDist = Math_Vec3f_DistXZ(&this->actor.world.pos, &gdf);
+        yDist = gdf.y - this->actor.world.pos.y;
+    }
+    if ((this->hunterTimer == 0) && (xzDist < HUNTER_STAB_RANGE) && (fabsf(yDist) < 60.0f)) {
         Animation_Change(&this->skelAnime, &gEnHeishiSlamSpearAnim, 1.6f, 0.0f,
                          Animation_GetLastFrame(&gEnHeishiSlamSpearAnim), ANIMMODE_ONCE, -3.0f);
         this->actor.speedXZ = 0.0f;
@@ -150,7 +162,8 @@ static void EnHeishi1_HunterStab(EnHeishi1* this, PlayState* play) {
     Math_ApproachZeroF(&this->actor.speedXZ, 1.0f, 1.0f);
 
     frame = (s32)this->skelAnime.curFrame;
-    if (this->hunterStabbing && (frame >= HUNTER_STAB_HIT_START) && (frame <= HUNTER_STAB_HIT_END)) {
+    if (this->hunterStabbing && (frame >= HUNTER_STAB_HIT_START) && (frame <= HUNTER_STAB_HIT_END) &&
+        !GdfInvasion_IsRemoteCopy(&this->actor)) {
         // The spear point, in front of him
         this->hunterSpear.dim.pos.x = (s16)(this->actor.world.pos.x + Math_SinS(this->actor.shape.rot.y) * 45.0f);
         this->hunterSpear.dim.pos.y = (s16)this->actor.world.pos.y;

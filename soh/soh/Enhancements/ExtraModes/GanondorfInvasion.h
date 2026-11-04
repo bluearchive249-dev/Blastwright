@@ -14,7 +14,7 @@ extern "C" {
 
 // Ganondorf's pose as sent to the other players (PLAYER_UPDATE), and what his puppet on their screen is drawn with
 #define GDF_NET_JOINTS 26 // gGanondorfSkel: the root translation and 25 limbs
-#define GDF_NET_BALLS 8   // his light balls and Big Magic in flight
+#define GDF_NET_BALLS 12  // his light balls and Big Magic in flight
 #define GDF_NET_FX 72     // his effect state (cape, glows, aura, organ, ...), packed as numbers
 #define GDF_NET_SFX 16    // sounds he made since the last packet
 
@@ -90,6 +90,11 @@ void GdfInvasion_NetGrabEnd(u32 clientId, s32 thrown, s16 yaw);
 s32 GdfInvasion_PayAttack(s32 cost);
 // Made by a Dark Art (or its copy in his game): stays put by day and away from its home (Stalchildren)
 s32 GdfInvasion_IsSummoned(Actor* actor);
+// The guard hunt: his hunters and the alarm bell shown in the Links' games too
+void GdfInvasion_MirrorActor(Actor* actor);
+void GdfInvasion_NoteSlain(Actor* actor);
+s32 GdfInvasion_IsRemoteCopy(Actor* actor);
+s32 GdfInvasion_GanondorfPos(Vec3f* out);
 // Pacified: he kneels as if beaten, then is gone in a burst of smoke until he's back
 s32 GdfInvasion_IsPacified(void);
 s32 GdfInvasion_IsVanished(void);
