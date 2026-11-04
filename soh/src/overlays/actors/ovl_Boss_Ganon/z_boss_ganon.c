@@ -12623,6 +12623,7 @@ static void BossGanon_Puppet_PackFx(BossGanon* this, EnGanonMant* cape, f32* fx)
     fx[69] = sGdfTridentPos.z;
     fx[70] = sGdfTridentSpin;
     fx[71] = this->playerOrganMusic; // his organ's music, heard by the Links too
+    fx[72] = this->actor.shape.yOffset; // lowered onto the organ bench (and the like)
 }
 
 static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const f32* fx) {
@@ -12676,6 +12677,7 @@ static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const 
     this->playerOrganPos.y = fx[44];
     this->playerOrganPos.z = fx[45];
     this->playerOrganYaw = (s16)fx[46];
+    this->actor.shape.yOffset = fx[72]; // seated at his organ, not standing on its keys
     for (i = 0; i < 18; i++) {
         this->unk_49C[i] = fx[GDF_FX_SHOCK + i];
     }

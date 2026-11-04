@@ -15,7 +15,7 @@ extern "C" {
 // Ganondorf's pose as sent to the other players (PLAYER_UPDATE), and what his puppet on their screen is drawn with
 #define GDF_NET_JOINTS 26 // gGanondorfSkel: the root translation and 25 limbs
 #define GDF_NET_BALLS 12  // his light balls and Big Magic in flight
-#define GDF_NET_FX 72     // his effect state (cape, glows, aura, organ, ...), packed as numbers
+#define GDF_NET_FX 73     // his effect state (cape, glows, aura, organ, ...), packed as numbers
 #define GDF_NET_SFX 16    // sounds he made since the last packet
 
 typedef struct {
