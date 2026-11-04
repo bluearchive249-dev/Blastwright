@@ -13031,6 +13031,14 @@ void BossGanon_Puppet_Update_Impl(Actor* thisx, PlayState* play) {
     thisx->focus.pos.y += 120.0f;
     this->playerFloorY = pose.floorY;
     this->playerHidden = pose.hidden;
+    // A Link can Z-target him: the one drawn (his hits still land on Ganondorf's hitbox, the player dummy)
+    if (GdfInvasion_IsHero() && !pose.hidden) {
+        thisx->flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE;
+        thisx->flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED;
+        thisx->targetMode = 5;
+    } else {
+        thisx->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    }
     sPlayerSwordState = pose.swordState;
     n = MIN(this->skelAnime.limbCount, GDF_NET_JOINTS);
     memcpy(this->skelAnime.jointTable, pose.joints, n * sizeof(Vec3s));

@@ -2482,14 +2482,14 @@ extern "C" void GdfInvasion_FilterLinkInput(PlayState* play, Input* input) {
 // ---- Resolve ----
 static const DamageTable sResolveTable = {
     /* Deku nut      */ DMG_ENTRY(0, 1), // stuns him
-    /* Deku stick    */ DMG_ENTRY(2, 0),
+    /* Deku stick    */ DMG_ENTRY(3, 0),
     /* Slingshot     */ DMG_ENTRY(1, 0),
     /* Explosive     */ DMG_ENTRY(4, 0),
     /* Boomerang     */ DMG_ENTRY(0, 1),
     /* Normal arrow  */ DMG_ENTRY(2, 0),
     /* Hammer swing  */ DMG_ENTRY(5, 3),
     /* Hookshot      */ DMG_ENTRY(0, 1),
-    /* Kokiri sword  */ DMG_ENTRY(2, 0),
+    /* Kokiri sword  */ DMG_ENTRY(5, 0), // (a young Link's main weapon: 12 hits empty his half meter)
     /* Master sword  */ DMG_ENTRY(3, 0),
     /* Giant's Knife */ DMG_ENTRY(5, 0),
     /* Fire arrow    */ DMG_ENTRY(5, 0),
@@ -2503,10 +2503,10 @@ static const DamageTable sResolveTable = {
     /* Light magic   */ DMG_ENTRY(8, 2),
     /* Shield        */ DMG_ENTRY(0, 0),
     /* Mirror Ray    */ DMG_ENTRY(0, 0),
-    /* Kokiri spin   */ DMG_ENTRY(4, 0),
+    /* Kokiri spin   */ DMG_ENTRY(8, 0),
     /* Giant spin    */ DMG_ENTRY(10, 3),
     /* Master spin   */ DMG_ENTRY(6, 0),
-    /* Kokiri jump   */ DMG_ENTRY(4, 0),
+    /* Kokiri jump   */ DMG_ENTRY(8, 0),
     /* Giant jump    */ DMG_ENTRY(10, 3),
     /* Master jump   */ DMG_ENTRY(6, 3),
     /* Unknown 1     */ DMG_ENTRY(0, 0),
@@ -2534,7 +2534,18 @@ bool GdfInvasion_UpdateGanondorfDummy(Actor* actor, uint32_t clientId) {
         actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
         return true;
     }
-    actor->flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED; // Links can lock on to him
+    // Links can Z-target him (and Ganon): a hostile target, from further off, aimed at his chest or Ganon's
+    // (his puppet is the Z-target while he's Ganondorf; as Ganon this hitbox is)
+    if (ganon) {
+        actor->flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED;
+        actor->flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE;
+    } else {
+        actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
+        actor->flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
+    }
+    actor->targetMode = 5; // (from far off: Ganon too, whose bulk keeps a Link at a distance)
+    actor->focus.pos = actor->world.pos;
+    actor->focus.pos.y += ganon ? 200.0f : 110.0f;
     actor->colChkInfo.damageTable = (DamageTable*)&sResolveTable;
     dummy->cylinder.info.bumperFlags &= ~BUMP_NO_HITMARK;
     dummy->cylinder.dim.radius = (s16)radius;
@@ -3181,7 +3192,7 @@ static void DrawHeroHud(ImGuiViewport* vp, float scale) {
         int alpha = (since < 3 * GDF_FPS) ? 255 : 255 - (int)((since - 3 * GDF_FPS) * 255 / GDF_FPS);
         // Over his head, on the screen
         Vec3f top = him->world.pos;
-        top.y += (c.ganonPuppet != nullptr) ? 330.0f : 170.0f;
+        top.y += (c.ganonPuppet != nullptr) ? 290.0f : 140.0f;
         MtxF* m = &play->viewProjectionMtxF;
         float cx = m->xx * top.x + m->xy * top.y + m->xz * top.z + m->xw;
         float cy = m->yx * top.x + m->yy * top.y + m->yz * top.z + m->yw;
