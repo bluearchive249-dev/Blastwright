@@ -891,6 +891,7 @@ s32 sOcarinaD4BtnMap = BTN_A;
 static u8 sIsOcarinaInputEnabled = false;
 static s8 sOcarinaInstrumentId = OCARINA_INSTRUMENT_OFF;
 volatile s32 gAudioOcarinaPipeOrgan = false; // SoH: "Play as Ganondorf"
+static u8 sGdfRemoteInstrument = false;     // SoH: "Ganondorf: Invasion", another player's song
 static u8 sCurOcarinaPitch = OCARINA_PITCH_NONE;
 static u8 sPrevOcarinaPitch = OCARINA_PITCH_C4;
 static u8 sCurOcarinaButtonIndex = OCARINA_BTN_A;
@@ -1990,7 +1991,9 @@ void AudioOcarina_SetInstrument(u8 ocarinaInstrumentId) {
     // SoH: "Play as Ganondorf", his ocarina is his pipe organ. The ocarina channel asks for the grind organ, and the
     // instrument lookup swaps in the church organ from the soundfont of his organ theme (loaded on the audio thread
     // first). If that soundfont can't be loaded, the grind organ plays instead.
-    if ((ocarinaInstrumentId == OCARINA_INSTRUMENT_DEFAULT) && PlayAsGanondorf_UseOrganOcarina()) {
+    if (sGdfRemoteInstrument) {
+        // (set by AudioOcarina_SetRemoteInstrument)
+    } else if ((ocarinaInstrumentId == OCARINA_INSTRUMENT_DEFAULT) && PlayAsGanondorf_UseOrganOcarina()) {
         ocarinaInstrumentId = OCARINA_INSTRUMENT_GRIND_ORGAN;
         if (!gAudioOcarinaPipeOrgan) {
             Audio_QueueCmdS32(0xF8000000 | (AUDIO_FONT_GANON_ORGAN << 16), 0);
@@ -2085,6 +2088,23 @@ void AudioOcarina_PlayCustomSong(OcarinaNote* notes) {
     if (sPlaybackNotePos == 0) {
         sPlaybackNotePos = 1; // never look at the entry before the first
     }
+}
+
+// SoH: "Ganondorf: Invasion", another player's song heard here: his pipe organ (Ganondorf) or the ocarina (a Link),
+// whichever this player's own ocarina would be
+void AudioOcarina_SetRemoteInstrument(s32 organ) {
+    sGdfRemoteInstrument = true;
+    if (organ) {
+        if (!gAudioOcarinaPipeOrgan) {
+            Audio_QueueCmdS32(0xF8000000 | (AUDIO_FONT_GANON_ORGAN << 16), 0);
+        }
+        gAudioOcarinaPipeOrgan = true;
+        AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_GRIND_ORGAN);
+    } else {
+        gAudioOcarinaPipeOrgan = false;
+        AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_DEFAULT);
+    }
+    sGdfRemoteInstrument = false;
 }
 
 s32 AudioOcarina_IsPlayingBack(void) {

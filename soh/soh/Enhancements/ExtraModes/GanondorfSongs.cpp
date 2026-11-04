@@ -32,6 +32,7 @@ extern PlayState* gPlayState;
 }
 
 #include "GanondorfSongs.h"
+#include "GanondorfInvasion.h"
 
 #define CVAR_SONGS(name) CVAR_ENHANCEMENT("PlayAsGanondorf.Songs." name)
 
@@ -318,6 +319,7 @@ void Stop() {
     if (sPlaying) {
         AudioOcarina_PlayCustomSong(NULL);
         sPlaying = false;
+        GdfInvasion_SendSong(nullptr, 0); // (online: the others stop hearing it)
     }
 }
 
@@ -334,6 +336,7 @@ void Play() {
     }
     AudioOcarina_PlayCustomSong(sNotes.data());
     sPlaying = true;
+    GdfInvasion_SendSong(sNotes.data(), (int)sNotes.size()); // (online: everyone in the area hears it)
     Notify("Playing", sSongs[index].name);
 }
 
@@ -386,6 +389,7 @@ void OnFrame() {
     if (sPlaying && !AudioOcarina_IsPlayingBack()) {
         if (CVarGetInteger(CVAR_SONGS("Loop"), 1)) {
             AudioOcarina_PlayCustomSong(sNotes.data());
+            GdfInvasion_SendSong(sNotes.data(), (int)sNotes.size());
         } else {
             sPlaying = false;
         }

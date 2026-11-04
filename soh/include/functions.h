@@ -1972,6 +1972,7 @@ void* AudioLoad_SyncLoadFont(u32 fontId);
 #define AUDIO_SFX_CHANNEL_OCARINA 13
 extern volatile s32 gAudioOcarinaPipeOrgan;
 void AudioOcarina_PlayCustomSong(OcarinaNote* notes);
+void AudioOcarina_SetRemoteInstrument(s32 organ);
 s32 AudioOcarina_IsPlayingBack(void);
 s32 AudioLoad_IsSeqLoadComplete(s32 seqId);
 void AudioLoad_SetFontLoadStatus(s32 fontId, s32 status);

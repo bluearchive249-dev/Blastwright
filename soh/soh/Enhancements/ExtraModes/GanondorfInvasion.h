@@ -165,6 +165,11 @@ struct Actor;
 
 // Anchor's side
 void GdfInvasion_WritePose(nlohmann::json& payload);
+// The song player: a song started (notes, ending with a zero-length one) or stopped (nullptr), heard by the others
+struct OcarinaNote;
+void GdfInvasion_SendSong(const OcarinaNote* notes, int count);
+// Another player's song is playing here (the local song player leaves the ocarina alone meanwhile)
+bool GdfInvasion_HearingSong();
 void GdfInvasion_ReadPose(uint32_t clientId, const nlohmann::json& payload);
 // Called from the Anchor dummy of each other player: true when that player is Ganondorf (the dummy Link isn't drawn)
 bool GdfInvasion_UpdateDummy(Actor* dummy, uint32_t clientId, bool inScene);

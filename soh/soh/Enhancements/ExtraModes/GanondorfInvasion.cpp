@@ -1016,6 +1016,8 @@ static RegisterShipInitFunc lobbyInitFunc(RegisterGanondorfInvasionLobby, {});
 #define GDF_PKT_WORLD_HIT "GDF_WORLD_HIT"
 #define GDF_PKT_WORLD_HOLD "GDF_WORLD_HOLD"
 #define GDF_PKT_DOOR_KICK "GDF_DOOR_KICK"
+#define GDF_PKT_SONG "GDF_SONG"
+static void HandleSong(const nlohmann::json& payload);
 #define GDF_PKT_BOSS_HIT "GDF_BOSS_HIT"
 static void HandleBossHit(const nlohmann::json& payload);
 static void HandleWorldHold(const nlohmann::json& payload);
@@ -2680,6 +2682,8 @@ void GdfInvasion_HandlePacket(const nlohmann::json& payload) {
             Vec3f pos = { payload.value("x", 0.0f), payload.value("y", 0.0f), payload.value("z", 0.0f) };
             BossGanon_Player_BallBurstAt(&pos);
         }
+    } else if (type == GDF_PKT_SONG) {
+        HandleSong(payload);
     } else if (type == GDF_PKT_DOOR_KICK) {
         PlayState* play = gPlayState;
         std::vector<float> d = payload.value("d", std::vector<float>{});
@@ -4734,3 +4738,111 @@ static void RegisterGuardHunt() {
 }
 
 static RegisterShipInitFunc guardHuntInitFunc(RegisterGuardHunt, {});
+
+// ---- Songs: a MIDI song played on the ocarina (or his organ) is heard by everyone in the area ----
+
+void GdfInvasion_SendSong(const OcarinaNote* notes, int count) {
+    if ((GdfInvasion_Role() == GDF_INVASION_OFF) || !AnchorOn() || (gPlayState == nullptr)) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["type"] = GDF_PKT_SONG;
+    payload["scene"] = gPlayState->sceneNum;
+    payload["organ"] = GdfInvasion_IsInvader(); // his ocarina is his pipe organ
+    nlohmann::json list = nlohmann::json::array();
+    if (notes != nullptr) {
+        for (int i = 0; (i < count) && (i < 3000); i++) {
+            list.push_back({ notes[i].pitch, notes[i].length, notes[i].volume, notes[i].vibrato, notes[i].bend });
+        }
+    }
+    payload["n"] = list;
+    Anchor::Instance->SendJsonToRemote(payload);
+}
+
+static std::vector<OcarinaNote> sHeardNotes; // must stay put while it plays
+static uint32_t sHeardFrom = 0;
+static bool sHearing = false;
+
+bool GdfInvasion_HearingSong() {
+    return sHearing;
+}
+
+static bool OwnOcarinaBusy(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    return ((player != nullptr) && (player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING)) ||
+           (play->msgCtx.msgMode != MSGMODE_NONE) || (play->csCtx.state != CS_STATE_IDLE);
+}
+
+static void StopHearing() {
+    if (!sHearing) {
+        return;
+    }
+    sHearing = false;
+    AudioOcarina_PlayCustomSong(NULL);
+    if ((gPlayState != nullptr) && !OwnOcarinaBusy(gPlayState)) {
+        AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_OFF);
+    }
+}
+
+static void HandleSong(const nlohmann::json& payload) {
+    PlayState* play = gPlayState;
+    uint32_t from = payload.value("clientId", 0u);
+    auto list = payload.value("n", nlohmann::json::array());
+
+    if (list.empty()) {
+        if (from == sHeardFrom) {
+            StopHearing();
+        }
+        return;
+    }
+    if ((play == nullptr) || (payload.value("scene", -1) != play->sceneNum) || OwnOcarinaBusy(play)) {
+        return; // elsewhere, or this player's own ocarina (or a cutscene's) has the ocarina channel
+    }
+    sHeardNotes.clear();
+    for (const auto& e : list) {
+        if (!e.is_array() || (e.size() < 5)) {
+            continue;
+        }
+        OcarinaNote n;
+        n.pitch = (u8)e[0].get<int>();
+        n.length = (u16)e[1].get<int>();
+        n.volume = (u8)e[2].get<int>();
+        n.vibrato = (u8)e[3].get<int>();
+        n.bend = (s8)e[4].get<int>();
+        n.bFlat4Flag = 0;
+        sHeardNotes.push_back(n);
+    }
+    if (sHeardNotes.empty() || (sHeardNotes.back().length != 0)) {
+        sHeardNotes.push_back({ OCARINA_PITCH_NONE, 0, 0, 0, 0, 0 }); // (the end)
+    }
+    AudioOcarina_SetRemoteInstrument(payload.value("organ", false));
+    AudioOcarina_PlayCustomSong(sHeardNotes.data());
+    sHeardFrom = from;
+    sHearing = true;
+}
+
+// It ends, the player who plays it leaves the area (or goes offline), or this player takes out his own ocarina
+static void UpdateHearing() {
+    PlayState* play = gPlayState;
+
+    if (!sHearing) {
+        return;
+    }
+    if ((play == nullptr) || !AudioOcarina_IsPlayingBack() || !InSameScene(sHeardFrom) ||
+        !Anchor::Instance->clients[sHeardFrom].online) {
+        StopHearing();
+        return;
+    }
+    Player* player = GET_PLAYER(play);
+    if ((player != nullptr) && (player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING)) {
+        sHearing = false; // his own ocarina takes the channel over
+        AudioOcarina_PlayCustomSong(NULL);
+    }
+}
+
+static void RegisterSongHearing() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(UpdateHearing);
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) { StopHearing(); });
+}
+
+static RegisterShipInitFunc songHearingInitFunc(RegisterSongHearing, {});
