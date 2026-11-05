@@ -137,6 +137,7 @@ static void func_808E1EB4_Impl(Actor* thisx, PlayState* play);
 static void func_808E2544_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play);
+static void BossGanon_FireballFlames(PlayState* play, Vec3f* pos, s16 frame);
 static void BossGanon_PlayerBigMagic_Update_Impl(Actor* thisx, PlayState* play);
 static ActorFunc sPlayerCapeDraw = NULL;
 // Phantom Ganon's energy ball uses the custom lens flare too, so only clear it if Ganondorf turned it on
@@ -3637,6 +3638,11 @@ static u8 sGdfTridentState = GDF_TRIDENT_IN_HAND;
 static Vec3f sGdfTridentPos;
 static Vec3f sGdfTridentVel;
 static s16 sGdfTridentSpin = 0;
+// The hidden move: the trident spun for 5 s raises a ring of fireballs around him, scattered at the Links on the throw
+#define GDF_FIRE_RING_COUNT 8
+#define GDF_FIRE_RING_FRAMES 100
+#define GDF_FIRE_RING_COST 20
+static Actor* sGdfFireRing[GDF_FIRE_RING_COUNT];
 static Actor* sGdfTridentTarget = NULL;
 static s16 sGdfTridentTimer = 0;
 static f32 sGdfTridentTravel = 0.0f;
@@ -7746,6 +7752,10 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
             }
             return true;
         }
+        if ((sPlayerSwordState == GDF_SWORD_OFF) && BossGanon_Player_HasTrident() && this->playerGrounded) {
+            BossGanon_Player_SetupSummonTrident(this, play); // raised overhead, it bursts into his hand
+            return true;
+        }
         if (sPlayerSwordState == GDF_SWORD_OFF) {
             sPlayerSwordState = GDF_SWORD_SHEATHED;
             Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
@@ -11254,11 +11264,36 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
 
     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_FIRE - SFX_FLAG));
     Actor_SetScale(&this->actor, ((this->unk_1A2 % 2) != 0) ? 6.0f : 5.25f);
+    if (this->actor.home.rot.z == 1) {
+        BossGanon_FireballFlames(play, &this->actor.world.pos, this->unk_1A2); // the fireball ring's
+    }
     this->actor.shape.rot.z += (s16)(Rand_ZeroOne() * 20000.0f) + 0x4000;
 
     for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
         if (this->timers[i] != 0) {
             this->timers[i]--;
+        }
+    }
+
+    // The fireball ring: circling him while he spins the trident
+    if (this->unk_1A6 == 2) {
+        BossGanon* dorf = (BossGanon*)this->actor.parent;
+
+        if ((dorf == NULL) || (dorf->actor.update == NULL) || (dorf->actionFunc != BossGanon_Player_TridentSpin)) {
+            this->unk_1A6 = 0; // he stopped: it bursts
+            this->timers[2] = 0;
+        } else {
+            s16 angle = (s16)(this->unk_1AC * (0x10000 / GDF_FIRE_RING_COUNT)) + sGdfTridentSpin / 2;
+
+            this->actor.world.pos.x = dorf->actor.world.pos.x + Math_SinS(angle) * 120.0f;
+            this->actor.world.pos.y = dorf->actor.world.pos.y + 80.0f + Math_SinS(angle * 2 + this->unk_1A2 * 0x400) * 10.0f;
+            this->actor.world.pos.z = dorf->actor.world.pos.z + Math_CosS(angle) * 120.0f;
+            this->timers[2] = 90;
+            Collider_UpdateCylinder(&this->actor, &this->collider);
+            if (!BossGanon_PlayerBall_NearLink(this, play)) {
+                BossGanon_Player_SetAT(this, play);
+            }
+            return;
         }
     }
 
@@ -12525,8 +12560,47 @@ void BossGanon_Player_TridentSpin(BossGanon* this, PlayState* play) {
     sCape->backSwayMagnitude = 1.0f;
     sCape->sideSwayMagnitude = -3.0f;
 
+    // Five seconds of spinning: the fireball ring (costs magic)
+    if ((sGdfTridentTimer == GDF_FIRE_RING_FRAMES) && GdfInvasion_PayAttack(GDF_FIRE_RING_COST)) {
+        s32 k;
+
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_FIRE);
+        for (k = 0; k < GDF_FIRE_RING_COUNT; k++) {
+            BossGanon* ball = (BossGanon*)Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON,
+                                                             this->actor.world.pos.x, this->actor.world.pos.y + 80.0f,
+                                                             this->actor.world.pos.z, 0, 0, 1,
+                                                             GDF_PARAMS_PLAYER_LIGHT_BALL); // (rot z 1: a fireball)
+            sGdfFireRing[k] = (ball != NULL) ? &ball->actor : NULL;
+            if (ball != NULL) {
+                ball->unk_1A6 = 2; // circling him
+                ball->unk_1AC = k;
+                ball->actor.speedXZ = 0.0f;
+            }
+        }
+    }
+
     if (CHECK_BTN_ALL(input->cur.button, BTN_CRIGHT) || (sGdfTridentTimer < 10)) {
         return;
+    }
+
+    // The ring scatters: each fireball flies at a Link (or outward)
+    {
+        s32 k;
+
+        for (k = 0; k < GDF_FIRE_RING_COUNT; k++) {
+            BossGanon* ball = (BossGanon*)sGdfFireRing[k];
+
+            if ((ball != NULL) && (ball->actor.update != NULL) && (ball->unk_1A6 == 2)) {
+                ball->unk_1A6 = 0;
+                ball->actor.speedXZ = 16.0f;
+                ball->timers[2] = 90;
+                ball->actor.world.rot.x = 0;
+                ball->actor.world.rot.y = (s16)(ball->unk_1AC * (0x10000 / GDF_FIRE_RING_COUNT)) + sGdfTridentSpin;
+                BossGanon_PlayerBall_Aim(ball, play, NULL);
+            }
+            sGdfFireRing[k] = NULL;
+        }
     }
 
     // Let go: the throw, at what he's targeting or the nearest enemy in front of him
@@ -13620,7 +13694,7 @@ static void BossGanon_Puppet_PackBalls(BossGanon* this, GdfNetPose* out) {
                 continue;
             }
             b = &out->balls[out->ballCount++];
-            b->kind = (actor->params == GDF_PARAMS_PLAYER_LIGHT_BALL) ? 0 : 1;
+            b->kind = (actor->params != GDF_PARAMS_PLAYER_LIGHT_BALL) ? 1 : (actor->home.rot.z == 1) ? 2 : 0;
             b->pos = actor->world.pos;
             b->rot = actor->world.rot;
             b->scale = actor->scale.x;
@@ -13657,6 +13731,22 @@ s32 BossGanon_Player_GetNetPose(GdfNetPose* out) {
 // the Links), each one placed where his is
 static void BossGanon_PuppetBall_Update(Actor* thisx, PlayState* play) {
     // Moved by the puppet
+}
+
+// The fireball ring's balls burn: flames licking up and trailing off them
+static void BossGanon_FireballFlames(PlayState* play, Vec3f* pos, s16 frame) {
+    Vec3f vel = { 0.0f, 1.5f, 0.0f };
+    Vec3f accel = { 0.0f, 0.4f, 0.0f };
+    Vec3f p;
+    s32 i;
+
+    for (i = 0; i < 2; i++) {
+        p.x = pos->x + Rand_CenteredFloat(22.0f);
+        p.y = pos->y + Rand_CenteredFloat(22.0f);
+        p.z = pos->z + Rand_CenteredFloat(22.0f);
+        EffectSsDeadDb_Spawn(play, &p, &vel, &accel, 35 + (s16)Rand_ZeroFloat(25.0f), -2, 255, 220, 60, 255, 255, 40,
+                             0, 1, 8, false);
+    }
 }
 
 // A Link's game: his sword swung at the ball as it reaches him sends it back to Ganondorf; if it reaches him first,
@@ -13748,7 +13838,10 @@ static void BossGanon_Puppet_UpdateBalls(BossGanon* this, PlayState* play, GdfNe
                 ball->unk_3C4[j].y = BINANG_TO_RAD(b->rot.y);
             }
         }
-        ball->actor.draw = (b->kind == 0) ? BossGanon_LightBall_Draw : func_808E324C;
+        ball->actor.draw = (b->kind != 1) ? BossGanon_LightBall_Draw : func_808E324C;
+        if (b->kind == 2) {
+            BossGanon_FireballFlames(play, &b->pos, ball->unk_1A2);
+        }
         ball->actor.world.pos = b->pos;
         ball->actor.world.rot = ball->actor.shape.rot = b->rot;
         Actor_SetScale(&ball->actor, b->scale);
@@ -13784,7 +13877,7 @@ static void BossGanon_Puppet_UpdateBalls(BossGanon* this, PlayState* play, GdfNe
         ball->unk_3C4[ball->unk_1A6].y = BINANG_TO_RAD(b->rot.y);
         // The volley: this Link's game decides whether he sent it back or was hit
         if (GdfInvasion_IsHero() && !GdfInvasion_LinkAtPeace(0)) {
-            if (b->kind == 0) {
+            if (b->kind != 1) {
                 BossGanon_PuppetBall_Volley(ball, play);
             } else {
                 BossGanon_PuppetBall_BigMagic(ball, play);
