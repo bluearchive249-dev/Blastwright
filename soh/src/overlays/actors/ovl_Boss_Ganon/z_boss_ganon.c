@@ -6481,6 +6481,16 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     }
 
     BossGanon_Player_ApplyWalk(this);
+    // Running (the stick pushed far): his torso leans into it, more the faster he goes (up to 11 degrees). Upright,
+    // with the run's long stride reaching out ahead, he looked like he was leaning back. (The sprint adds its own.)
+    {
+        f32 run = CLAMP((this->playerWalkStride - 1.0f) / (GDF_WALK_MAX_STRIDE - 1.0f), 0.0f, 1.0f);
+
+        run *= this->playerWalkWeight * (1.0f - this->playerSprintWeight);
+        if (run > 0.0f) {
+            BossGanon_Player_TwistLean(this, 0.0f, 0x0800 * run);
+        }
+    }
     if (this->playerSprintWeight > 0.0f) {
         f32 runWeight = this->playerSprintWeight * this->playerWalkWeight;
         // Shoulders turn against the hips with each stride (the right shoulder comes forward with the right arm)
