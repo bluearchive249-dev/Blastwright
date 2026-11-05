@@ -8353,12 +8353,6 @@ static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play) {
     BossGanon_Player_TwistLean(this, 0.0f, -0x0C00 * w);
 }
 
-// Sprinting arms: a runner's swing, heavy and wide. Each upper arm swings forward and back about his shoulders'
-// sideways axis, opposite to its leg (the right arm is back when the right foot is forward, at walk frame 0), and the
-// elbows bend so his fists pump. Added on top of the walk's own arm swing.
-#define GDF_RUN_ARM_SWING_DEG 46.0f
-#define GDF_RUN_ELBOW_DEG 85.0f
-
 static void BossGanon_Pg_RotX(f32 deg, GdfMat3 out) {
     f32 a = deg * (M_PI / 180.0f);
 
@@ -8366,68 +8360,6 @@ static void BossGanon_Pg_RotX(f32 deg, GdfMat3 out) {
     out[1][0] = 0.0f; out[1][1] = cosf(a);  out[1][2] = -sinf(a);
     out[2][0] = 0.0f; out[2][1] = sinf(a);  out[2][2] = cosf(a);
 }
-
-static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight) {
-    static const s8 sArmChains[2][3] = { { 2, 3, 4 }, { 6, 7, 8 } }; // shoulder, upper arm, forearm (left, right)
-    Vec3s* joints = this->skelAnime.jointTable;
-    f32 cycle = Math_CosS((s16)(this->playerWalkFrame * (0x10000 / GDF_WALK_CYCLE_FRAMES)));
-    GdfMat3 body;
-    GdfMat3 rootRot;
-    GdfMat3 tmp;
-    s32 side;
-
-    if (weight <= 0.0f) {
-        return;
-    }
-
-    // Root and torso, the arms' parents
-    BossGanon_Pg_FromRot(&joints[1 + 0], rootRot);
-    BossGanon_Pg_FromRot(&joints[1 + 1], tmp);
-    BossGanon_Pg_Mul(rootRot, tmp, body, false);
-
-    for (side = 0; side < 2; side++) {
-        GdfMat3 shoulder;
-        GdfMat3 upper;
-        GdfMat3 fore;
-        GdfMat3 rot;
-        GdfMat3 upperNew;
-        GdfMat3 foreNew;
-        GdfMat3 local;
-        // Right arm back at frame 0, left arm forward
-        f32 armCycle = (side == 1) ? -cycle : cycle;
-        // Swings further in front than behind, and the fist pumps up toward the chest as the arm comes forward
-        f32 swing = (GDF_RUN_ARM_SWING_DEG * armCycle + 8.0f) * weight;
-        f32 elbow = (GDF_RUN_ELBOW_DEG + 15.0f * MAX(armCycle, 0.0f)) * weight;
-        s32 sh = sArmChains[side][0];
-        s32 up = sArmChains[side][1];
-        s32 fo = sArmChains[side][2];
-
-        BossGanon_Pg_FromRot(&joints[1 + sh], tmp);
-        BossGanon_Pg_Mul(body, tmp, shoulder, false);
-        BossGanon_Pg_FromRot(&joints[1 + up], tmp);
-        BossGanon_Pg_Mul(shoulder, tmp, upper, false);
-        BossGanon_Pg_FromRot(&joints[1 + fo], tmp);
-        BossGanon_Pg_Mul(upper, tmp, fore, false);
-
-        // Forward is +z: turning about x by a negative angle swings a hanging limb forward
-        BossGanon_Pg_RotX(-swing, rot);
-        BossGanon_Pg_Mul(rot, upper, upperNew, false);
-        BossGanon_Pg_RotX(-(swing + elbow), rot);
-        BossGanon_Pg_Mul(rot, fore, foreNew, false);
-
-        BossGanon_Pg_Mul(shoulder, upperNew, local, true);
-        BossGanon_Pg_ToRot(local, &joints[1 + up]);
-        BossGanon_Pg_Mul(upperNew, foreNew, local, true);
-        BossGanon_Pg_ToRot(local, &joints[1 + fo]);
-    }
-}
-
-// Sprinting legs, after a runner's cycle (reference: a sprint animation the user found): on top of the walk's stride,
-// the trailing leg's heel kicks up behind him after it pushes off, then the knee drives up high in front with the shin
-// hanging under it, and the leg reaches down for the next step. Each leg's phase is 0 when its heel comes down (the
-// right one at walk frame 1, the left half a cycle later).
-#define GDF_RUN_KNEE_DRIVE_DEG 38.0f // extra thigh lift in front, late in the swing
-#define GDF_RUN_HEEL_KICK_DEG 80.0f  // extra knee bend behind, early in the swing
 
 static f32 BossGanon_Player_RunBump(f32 phase, f32 center, f32 width) {
     f32 d = phase - center;
@@ -8444,56 +8376,180 @@ static f32 BossGanon_Player_RunBump(f32 phase, f32 center, f32 width) {
     return 0.5f * (1.0f + cosf(M_PI * d / width));
 }
 
-static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight) {
-    static const s8 sLegChains[2][2] = { { 22, 23 }, { 19, 20 } }; // thigh, shin (right, left)
-    Vec3s* joints = this->skelAnime.jointTable;
-    GdfMat3 rootRot;
-    GdfMat3 pelvis;
+// Sprinting, from motion capture: a jogging man's run cycle from the CMU Graphics Lab Motion Capture Database
+// (mocap.cs.cmu.edu, clips 16_35 and 16_36; the database was created with funding from NSF EIA-0196217; free for all
+// uses), averaged over its two runs and retargeted to him. For
+// each limb only its swing forward and back is taken (the angle off straight down, in his body's side view): his own
+// spread (broad arms, wide stance) and twist stay his. The heel kicks up a little less than the runner's, for his
+// weight. Phase 0 is the right heel coming down; tenths of a degree, forward positive.
+#define GDF_MOCAP_RUN_SAMPLES 32
+
+// Left thigh, left shin, right thigh, right shin, left upper arm, left forearm, right upper arm, right forearm
+static const s16 sGdfMocapRun[GDF_MOCAP_RUN_SAMPLES][8] = {
+    { -158, -493, 292, -24, -199, 889, -414, 749 },
+    { -135, -539, 272, -23, -222, 843, -406, 766 },
+    { -99, -573, 246, -33, -235, 818, -382, 791 },
+    { -53, -597, 217, -57, -248, 794, -355, 817 },
+    { -1, -610, 188, -95, -260, 773, -332, 844 },
+    { 53, -611, 159, -142, -271, 757, -310, 873 },
+    { 107, -599, 127, -191, -283, 742, -285, 904 },
+    { 158, -571, 91, -234, -297, 726, -256, 938 },
+    { 205, -525, 48, -266, -315, 712, -226, 973 },
+    { 245, -463, -3, -291, -335, 705, -205, 1009 },
+    { 274, -392, -54, -314, -352, 704, -193, 1042 },
+    { 292, -314, -99, -339, -367, 707, -184, 1071 },
+    { 301, -236, -133, -367, -381, 709, -177, 1090 },
+    { 301, -165, -157, -395, -392, 710, -172, 1097 },
+    { 296, -108, -170, -422, -399, 713, -173, 1091 },
+    { 285, -63, -173, -450, -402, 720, -178, 1078 },
+    { 274, -33, -162, -483, -400, 730, -183, 1059 },
+    { 265, -22, -138, -517, -391, 743, -190, 1035 },
+    { 256, -30, -101, -549, -378, 760, -198, 1006 },
+    { 243, -53, -51, -576, -359, 781, -209, 971 },
+    { 227, -89, 5, -594, -338, 802, -226, 931 },
+    { 208, -136, 63, -599, -316, 825, -246, 892 },
+    { 181, -187, 120, -591, -291, 850, -267, 852 },
+    { 141, -234, 175, -565, -262, 877, -288, 811 },
+    { 95, -273, 226, -520, -232, 902, -310, 774 },
+    { 46, -304, 268, -456, -208, 926, -333, 750 },
+    { -7, -326, 297, -378, -191, 949, -353, 740 },
+    { -60, -343, 313, -296, -180, 967, -369, 736 },
+    { -107, -361, 318, -216, -172, 980, -382, 736 },
+    { -141, -382, 318, -144, -166, 985, -390, 737 },
+    { -161, -407, 313, -84, -162, 982, -395, 740 },
+    { -167, -443, 305, -43, -171, 951, -404, 743 },
+};
+
+static f32 BossGanon_Player_MocapPitch(f32 phase, s32 bone) {
+    f32 t = phase * GDF_MOCAP_RUN_SAMPLES;
+    s32 i = (s32)floorf(t);
+    f32 w = t - i;
+    s32 a = ((i % GDF_MOCAP_RUN_SAMPLES) + GDF_MOCAP_RUN_SAMPLES) % GDF_MOCAP_RUN_SAMPLES;
+    s32 b = (a + 1) % GDF_MOCAP_RUN_SAMPLES;
+    f32 va = sGdfMocapRun[a][bone];
+    f32 vb = sGdfMocapRun[b][bone];
+
+    while (vb - va > 1800.0f) {
+        vb -= 3600.0f;
+    }
+    while (vb - va < -1800.0f) {
+        vb += 3600.0f;
+    }
+    return ((va + (vb - va) * w) * 0.1f) * (M_PI / 180.0f);
+}
+
+// Turns `limb` (a limb's rotation in his model space; the bone runs along its x) so the bone swings to `pitch`, keeping
+// how far out to the side it already leans; by `weight` of the way
+static void BossGanon_Player_SwingBoneTo(GdfMat3 limb, f32 pitch, f32 weight) {
+    f32 cur[3] = { limb[0][0], limb[1][0], limb[2][0] };
+    f32 side = CLAMP(cur[0], -0.95f, 0.95f);
+    f32 r = sqrtf(1.0f - SQ(side));
+    f32 want[3] = { side, -cosf(pitch) * r, sinf(pitch) * r };
+    f32 axis[3] = { cur[1] * want[2] - cur[2] * want[1], cur[2] * want[0] - cur[0] * want[2],
+                    cur[0] * want[1] - cur[1] * want[0] };
+    f32 len = sqrtf(SQ(axis[0]) + SQ(axis[1]) + SQ(axis[2]));
+    f32 dot = CLAMP(cur[0] * want[0] + cur[1] * want[1] + cur[2] * want[2], -1.0f, 1.0f);
+    f32 angle = atan2f(len, dot) * weight;
+    f32 c;
+    f32 sn;
+    f32 v;
+    GdfMat3 rot;
+    GdfMat3 out;
+
+    if (len < 1e-5f) {
+        return;
+    }
+    axis[0] /= len;
+    axis[1] /= len;
+    axis[2] /= len;
+    c = cosf(angle);
+    sn = sinf(angle);
+    v = 1.0f - c;
+    rot[0][0] = c + axis[0] * axis[0] * v;
+    rot[0][1] = axis[0] * axis[1] * v - axis[2] * sn;
+    rot[0][2] = axis[0] * axis[2] * v + axis[1] * sn;
+    rot[1][0] = axis[1] * axis[0] * v + axis[2] * sn;
+    rot[1][1] = c + axis[1] * axis[1] * v;
+    rot[1][2] = axis[1] * axis[2] * v - axis[0] * sn;
+    rot[2][0] = axis[2] * axis[0] * v - axis[1] * sn;
+    rot[2][1] = axis[2] * axis[1] * v + axis[0] * sn;
+    rot[2][2] = c + axis[2] * axis[2] * v;
+    BossGanon_Pg_Mul(rot, limb, out, false);
+    memcpy(limb, out, sizeof(GdfMat3));
+}
+
+// A two-bone chain (thigh and shin, or upper arm and forearm) under `parent`, swung to the run cycle's angles
+static void BossGanon_Player_MocapChain(Vec3s* joints, GdfMat3 parent, s32 upper, s32 lower, f32 pitchUpper,
+                                        f32 pitchLower, f32 weight) {
     GdfMat3 tmp;
-    f32 basePhase = (this->playerWalkFrame - 1.0f) / GDF_WALK_CYCLE_FRAMES;
-    s32 side;
+    GdfMat3 up;
+    GdfMat3 lo;
+    GdfMat3 local;
+
+    BossGanon_Pg_FromRot(&joints[1 + upper], tmp);
+    BossGanon_Pg_Mul(parent, tmp, up, false);
+    BossGanon_Pg_FromRot(&joints[1 + lower], local);
+    BossGanon_Player_SwingBoneTo(up, pitchUpper, weight);
+    BossGanon_Pg_Mul(up, local, lo, false); // the lower bone rides along, then swings on its own
+    BossGanon_Player_SwingBoneTo(lo, pitchLower, weight);
+
+    BossGanon_Pg_Mul(parent, up, local, true);
+    BossGanon_Pg_ToRot(local, &joints[1 + upper]);
+    BossGanon_Pg_Mul(up, lo, local, true);
+    BossGanon_Pg_ToRot(local, &joints[1 + lower]);
+}
+
+static f32 BossGanon_Player_RunPhase(BossGanon* this) {
+    f32 phase = (this->playerWalkFrame - 1.0f) / GDF_WALK_CYCLE_FRAMES; // the right heel comes down at walk frame 1
+
+    return phase - floorf(phase);
+}
+
+static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight) {
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 phase = BossGanon_Player_RunPhase(this);
+    GdfMat3 rootRot;
+    GdfMat3 body;
+    GdfMat3 tmp;
+    GdfMat3 shoulder;
 
     if (weight <= 0.0f) {
         return;
     }
+    BossGanon_Pg_FromRot(&joints[1 + 0], rootRot);
+    BossGanon_Pg_FromRot(&joints[1 + 1], tmp);
+    BossGanon_Pg_Mul(rootRot, tmp, body, false);
 
+    // Left: shoulder 2, upper arm 3, forearm 4. Right: 6, 7, 8.
+    BossGanon_Pg_FromRot(&joints[1 + 2], tmp);
+    BossGanon_Pg_Mul(body, tmp, shoulder, false);
+    BossGanon_Player_MocapChain(joints, shoulder, 3, 4, BossGanon_Player_MocapPitch(phase, 4),
+                                BossGanon_Player_MocapPitch(phase, 5), weight);
+    BossGanon_Pg_FromRot(&joints[1 + 6], tmp);
+    BossGanon_Pg_Mul(body, tmp, shoulder, false);
+    BossGanon_Player_MocapChain(joints, shoulder, 7, 8, BossGanon_Player_MocapPitch(phase, 6),
+                                BossGanon_Player_MocapPitch(phase, 7), weight);
+}
+
+static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight) {
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 phase = BossGanon_Player_RunPhase(this);
+    GdfMat3 rootRot;
+    GdfMat3 pelvis;
+    GdfMat3 tmp;
+
+    if (weight <= 0.0f) {
+        return;
+    }
     BossGanon_Pg_FromRot(&joints[1 + 0], rootRot);
     BossGanon_Pg_FromRot(&joints[1 + 18], tmp);
     BossGanon_Pg_Mul(rootRot, tmp, pelvis, false);
 
-    for (side = 0; side < 2; side++) {
-        GdfMat3 thigh;
-        GdfMat3 shin;
-        GdfMat3 rot;
-        GdfMat3 thighNew;
-        GdfMat3 shinNew;
-        GdfMat3 local;
-        f32 phase = basePhase + ((side == 1) ? 0.5f : 0.0f);
-        f32 drive;
-        f32 kick;
-        s32 th = sLegChains[side][0];
-        s32 sh = sLegChains[side][1];
-
-        phase -= floorf(phase);
-        drive = GDF_RUN_KNEE_DRIVE_DEG * BossGanon_Player_RunBump(phase, 0.82f, 0.22f) * weight;
-        kick = GDF_RUN_HEEL_KICK_DEG * BossGanon_Player_RunBump(phase, 0.55f, 0.22f) * weight;
-
-        BossGanon_Pg_FromRot(&joints[1 + th], tmp);
-        BossGanon_Pg_Mul(pelvis, tmp, thigh, false);
-        BossGanon_Pg_FromRot(&joints[1 + sh], tmp);
-        BossGanon_Pg_Mul(thigh, tmp, shin, false);
-
-        // Thigh up in front (negative turns forward); the shin hangs under the raised knee, and folds back for the kick
-        BossGanon_Pg_RotX(-drive, rot);
-        BossGanon_Pg_Mul(rot, thigh, thighNew, false);
-        BossGanon_Pg_RotX(-drive + drive * 0.85f + kick, rot);
-        BossGanon_Pg_Mul(rot, shin, shinNew, false);
-
-        BossGanon_Pg_Mul(pelvis, thighNew, local, true);
-        BossGanon_Pg_ToRot(local, &joints[1 + th]);
-        BossGanon_Pg_Mul(thighNew, shinNew, local, true);
-        BossGanon_Pg_ToRot(local, &joints[1 + sh]);
-    }
+    // Left: thigh 19, shin 20. Right: 22, 23.
+    BossGanon_Player_MocapChain(joints, pelvis, 19, 20, BossGanon_Player_MocapPitch(phase, 0),
+                                BossGanon_Player_MocapPitch(phase, 1), weight);
+    BossGanon_Player_MocapChain(joints, pelvis, 22, 23, BossGanon_Player_MocapPitch(phase, 2),
+                                BossGanon_Player_MocapPitch(phase, 3), weight);
 }
 
 // The opening in Link's house: instead of lying in Link's bed, Ganondorf leans against the wall beside it, arms crossed
