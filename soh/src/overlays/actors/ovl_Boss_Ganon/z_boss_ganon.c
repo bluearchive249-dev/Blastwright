@@ -6505,16 +6505,49 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
 // Keeps his lowest ankle or knee at the floor (from the last draw), so any animation stands on the ground. Knees
 // count too: kneeling (the heavy landing) puts a knee lower than either foot, and his knee pad is about as thick as
 // his sole.
+// His lowest knee or ankle above his origin, from this frame's pose (not the last draw, a frame behind: after a fall
+// that put him a whole fall's step too low on landing, and while the landing's pose changed fast it was always off)
+static f32 BossGanon_Player_PoseLowest(BossGanon* this) {
+    static const s8 sChains[2][5] = { { 0, 18, 19, 20, 21 }, { 0, 18, 22, 23, 24 } };
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 lowest = FLT_MAX;
+    s32 leg;
+    s32 k;
+
+    for (leg = 0; leg < 2; leg++) {
+        f32 rot[3][3];
+        f32 local[3][3];
+        f32 pos[3] = { joints[0].x, joints[0].y, joints[0].z };
+
+        BossGanon_Player_RotToMtx(&joints[1 + 0], rot);
+        for (k = 1; k < 5; k++) {
+            s32 limb = sChains[leg][k];
+            StandardLimb* l = SEGMENTED_TO_VIRTUAL(this->skelAnime.skeleton[limb]);
+            f32 jp[3] = { l->jointPos.x, l->jointPos.y, l->jointPos.z };
+            s32 r;
+
+            for (r = 0; r < 3; r++) {
+                pos[r] += rot[r][0] * jp[0] + rot[r][1] * jp[1] + rot[r][2] * jp[2];
+            }
+            if (k >= 3) { // the knee (the shin's origin) and the ankle (the foot's)
+                lowest = MIN(lowest, pos[1]);
+            }
+            BossGanon_Player_RotToMtx(&joints[1 + limb], local);
+            BossGanon_Player_Mul3(rot, local, rot, false);
+        }
+    }
+    return (lowest + this->actor.shape.yOffset) * this->actor.scale.y;
+}
+
 static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
-    f32 lowestAnkle = MIN(this->unk_2EC[GDF_LEFT_FOOT_BODYPART].y, this->unk_2EC[GDF_RIGHT_FOOT_BODYPART].y);
-    f32 lowestKnee = MIN(this->unk_2EC[GDF_LEFT_KNEE_BODYPART].y, this->unk_2EC[GDF_RIGHT_KNEE_BODYPART].y);
-    f32 ankleAboveRoot = MIN(lowestAnkle, lowestKnee) - this->actor.world.pos.y;
+    f32 ankleAboveRoot = BossGanon_Player_PoseLowest(this);
     f32 target = GDF_ANKLE_HEIGHT - ankleAboveRoot + (this->playerFloorY - player->actor.world.pos.y);
+    s32 fast = (this->actionFunc == BossGanon_Player_Land) || (sGdfFastGroundTimer > 0);
 
     // Better: the lowest point of the model itself (toes, heels, knees, knuckles), kept just above the floor. The
     // joints alone let tucked toes and a planted hand go through the floor when kneeling.
-    if (sGdfMeshLowValid) {
+    if (sGdfMeshLowValid && !fast) { // (the mesh is from the last draw: not while the pose changes fast)
         f32 meshAboveRoot = sGdfMeshLowY - this->actor.world.pos.y;
 
         if ((meshAboveRoot > -300.0f) && (meshAboveRoot < 100.0f)) {
@@ -6526,7 +6559,9 @@ static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play
         return; // not drawn (stale), or not a sensible pose
     }
 
-    target = CLAMP(target, -20.0f, BossGanon_Player_GetHoverHeight() + 60.0f);
+    // (on the ground, as high as a pose needs: the landing's root sits far lower than his idle's, and capped at 60 he
+    // sank into the floor until he stood)
+    target = CLAMP(target, -20.0f, BossGanon_Player_GetHoverHeight() + (this->playerGrounded ? 200.0f : 60.0f));
     // The landing drops him onto one knee in two frames: follow it at once, or he sinks into the floor first. Same
     // while he blends from getting up into his standing idle afterwards: the get-up ends with his root far lower than
     // the idle's, and a slow follow let the blend lift him off the floor for a moment.
@@ -6537,13 +6572,8 @@ static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play
         Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
     } else if ((this->actionFunc == BossGanon_Player_Land) || (sGdfFastGroundTimer > 0)) {
         // Getting up (and blending into his idle after): follow the pose at once both ways, so his feet never sink
-        // and he never rises slowly out of the floor afterwards. The pose it follows is a frame old, which used to
-        // overshoot him upward as he stood: never higher than where he stands normally, which no part of the get-up
-        // reaches (his root only goes up to the standing height).
-        Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
-        if (sGdfStandOffsetValid && (this->playerGroundOffset > sGdfStandOffset)) {
-            this->playerGroundOffset = sGdfStandOffset;
-        }
+        // and he never rises slowly out of the floor afterwards (this frame's pose, so it no longer overshoots)
+        Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 60.0f);
     } else {
         Math_ApproachF(&this->playerGroundOffset, target, 0.5f, 6.0f);
         // Settled on his feet, standing still in his normal idle: remember the height, the ceiling for the next
