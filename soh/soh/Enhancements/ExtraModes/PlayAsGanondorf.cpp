@@ -649,10 +649,10 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
     input->press.button &= ~blocked;
     input->rel.button &= ~blocked;
 
-    // R3: Z-targeting (not while levitating, where Z sinks him)
+    // R3: Z-targeting, in the air too (his levitation reads Z from the controller itself, so this Z doesn't sink him)
     {
         static bool sWasTargetHeld = false;
-        bool held = CVarGetInteger(CVAR_PLAY_AS_GDF("R3Targeting"), 1) && !sLevitating && IsRightStickClicked();
+        bool held = CVarGetInteger(CVAR_PLAY_AS_GDF("R3Targeting"), 1) && IsRightStickClicked();
 
         if (held) {
             input->cur.button |= BTN_Z;

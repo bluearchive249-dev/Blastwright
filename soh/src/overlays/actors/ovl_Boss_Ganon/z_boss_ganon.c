@@ -12848,6 +12848,25 @@ static void BossGanon_Puppet_UpdateBalls(BossGanon* this, PlayState* play, GdfNe
         ball->fwork[GDF_FWORK_0] = b->fwork0;
         ball->fwork[GDF_FWORK_1] = b->fwork1;
         ball->unk_1A2++;
+        if ((b->kind != 1) && (b->scale < 6.5f)) {
+            // In flight (not bursting): it flickers, spins and sheds sparkles here as it does in his game, where
+            // those are made each frame rather than sent
+            static Color_RGBA8 sSparklePrim = { 255, 255, 200, 255 };
+            static Color_RGBA8 sSparkleEnv = { 255, 255, 0, 0 };
+            Vec3f vel = { 0.0f, 0.0f, 0.0f };
+            Vec3f accel = { 0.0f, 0.2f, 0.0f };
+            Vec3f p;
+
+            Actor_SetScale(&ball->actor, ((ball->unk_1A2 % 2) != 0) ? 6.0f : 5.25f);
+            ball->actor.shape.rot.z += (s16)(Rand_ZeroOne() * 20000.0f) + 0x4000;
+            for (j = 0; j < 2; j++) {
+                p.x = b->pos.x + Rand_CenteredFloat(30.0f);
+                p.y = b->pos.y + Rand_CenteredFloat(30.0f);
+                p.z = b->pos.z + Rand_CenteredFloat(30.0f);
+                EffectSsKiraKira_SpawnDispersed(play, &p, &vel, &accel, &sSparklePrim, &sSparkleEnv,
+                                                (s16)(Rand_ZeroFloat(500.0f) + 1500.0f), 15);
+            }
+        }
         // Big Magic's trail
         if (++ball->unk_1A6 >= 15) {
             ball->unk_1A6 = 0;
