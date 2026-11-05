@@ -3612,6 +3612,8 @@ static const Vec3f sGdfContactPoints[6][8] = {
     { { -372, -592, -565 }, { 237, -592, 1277 }, { 2324, -351, -312 }, { -596, -586, 772 }, { 391, -592, -565 },
       { -273, -156, 1161 }, { 2324, -351, 312 }, { 538, -586, 773 } },
 };
+static f32 sGdfStandOffset = 0.0f;   // his ground offset standing still on his feet
+static s32 sGdfStandOffsetValid = false;
 static s16 sGdfFastGroundTimer = 0;   // frames left where the ground offset follows his pose at once
 static f32 sGdfMeshLowY = 0.0f;       // world height of his lowest point, last draw
 static f32 sGdfMeshLowYNext = 1.0e9f; // being gathered during this draw
@@ -6516,16 +6518,21 @@ static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play
     if ((this->actionFunc == BossGanon_Player_Land) && (this->unk_1C2 < 2)) {
         Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
     } else if ((this->actionFunc == BossGanon_Player_Land) || (sGdfFastGroundTimer > 0)) {
-        // Getting up (and blending into his idle after): down at once, up only eased. The pose it follows is a frame
-        // old: following it in full both ways bobbed him upward as he rose, and easing both ways left him hanging in
-        // the air after the get-up
-        if (target < this->playerGroundOffset) {
-            Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
-        } else {
-            Math_ApproachF(&this->playerGroundOffset, target, 0.35f, 8.0f);
+        // Getting up (and blending into his idle after): follow the pose at once both ways, so his feet never sink
+        // and he never rises slowly out of the floor afterwards. The pose it follows is a frame old, which used to
+        // overshoot him upward as he stood: never higher than where he stands normally, which no part of the get-up
+        // reaches (his root only goes up to the standing height).
+        Math_ApproachF(&this->playerGroundOffset, target, 1.0f, 40.0f);
+        if (sGdfStandOffsetValid && (this->playerGroundOffset > sGdfStandOffset)) {
+            this->playerGroundOffset = sGdfStandOffset;
         }
     } else {
         Math_ApproachF(&this->playerGroundOffset, target, 0.5f, 6.0f);
+        // Settled on his feet: remember the height, the ceiling for the next get-up
+        if (this->playerGrounded && (fabsf(target - this->playerGroundOffset) < 1.5f)) {
+            sGdfStandOffset = this->playerGroundOffset + 1.0f;
+            sGdfStandOffsetValid = true;
+        }
     }
 }
 
