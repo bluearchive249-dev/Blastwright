@@ -5929,6 +5929,11 @@ static void BossGanon_Player_DrawOrgan(BossGanon* this, PlayState* play);
 static s32 BossGanon_Player_CanStartAttack(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupSwordIdle(BossGanon* this, PlayState* play);
 void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play);
+void BossGanon_Player_SummonTrident(BossGanon* this, PlayState* play);
+static void BossGanon_Player_SetupSummonTrident(BossGanon* this, PlayState* play);
+static void BossGanon_Player_TridentBurst(BossGanon* this, PlayState* play, Vec3f* hand, s32 own);
+static const Vec3s sGdfTridentArmPoses[2][3];
+static u8 sGdfSummonBurst = 0; // counts down after the trident bursts into his hand (sent to the others)
 void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play);
 void BossGanon_Player_SwordDash(BossGanon* this, PlayState* play);
 void BossGanon_Player_Land(BossGanon* this, PlayState* play);
@@ -6034,7 +6039,8 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
            (this->actionFunc == BossGanon_Player_Block) || (this->actionFunc == BossGanon_Player_Laugh) ||
            (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
            (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land) ||
-           (this->actionFunc == BossGanon_Player_TridentSpin) || (this->actionFunc == BossGanon_Player_GrabThrow);
+           (this->actionFunc == BossGanon_Player_TridentSpin) || (this->actionFunc == BossGanon_Player_GrabThrow) ||
+           (this->actionFunc == BossGanon_Player_SummonTrident);
     // Not the dark aura: he moves freely while holding it. Nor the trident's flight: he walks about while it's out
 }
 
@@ -7696,6 +7702,10 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
         return true;
     }
     sPlayerDarkAuraMode = false;
+    if ((sPlayerSwordState == GDF_SWORD_OFF) && BossGanon_Player_HasTrident() && this->playerGrounded) {
+        BossGanon_Player_SetupSummonTrident(this, play); // raised overhead, it bursts into his hand
+        return true;
+    }
     if (sPlayerSwordState == GDF_SWORD_OFF) {
         sPlayerSwordState = GDF_SWORD_SHEATHED;
         Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
@@ -8563,6 +8573,111 @@ static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight) {
                                 BossGanon_Player_MocapPitch(phase, 1), weight);
     BossGanon_Player_MocapChain(joints, pelvis, 22, 23, BossGanon_Player_MocapPitch(phase, 2),
                                 BossGanon_Player_MocapPitch(phase, 3), weight);
+}
+
+// ---- Summoning the trident ----
+// D-Pad Left into the trident stance: Ganondorf thrusts his right arm up over his head, and the trident explodes into
+// existence in his fist with a crack of thunder - dark fire, sparks and light flying off it - then he brings it down
+// into his stance. Drawn from the start (no drawing it from his side first).
+#define GDF_SUMMON_FRAMES 26
+#define GDF_SUMMON_BURST_FRAME 9
+
+static void BossGanon_Player_SetupSummonTrident(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+    Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -6.0f);
+    this->actionFunc = BossGanon_Player_SummonTrident;
+    this->playerSwordTimer = 0;
+    this->playerWalkWeight = 0.0f;
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+}
+
+// The burst (on his screen, `own`, with his own flair on top: his shock and rays of light; the others' screens get the
+// fire, sparks, sound and shake)
+static void BossGanon_Player_TridentBurst(BossGanon* this, PlayState* play, Vec3f* hand, s32 own) {
+    static Color_RGBA8 sSparkPrim = { 255, 230, 255, 255 };
+    static Color_RGBA8 sSparkEnv = { 170, 60, 255, 0 };
+    Vec3f vel;
+    Vec3f accel;
+    Vec3f p;
+    s32 i;
+
+    Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_LIGHT);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EV_LIGHTNING);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_BIG));
+    Actor_RequestQuakeAndRumble(&this->actor, play, 4, 10);
+
+    // Dark fire bursting out of his fist
+    for (i = 0; i < 24; i++) {
+        vel.x = Rand_CenteredFloat(9.0f);
+        vel.y = Rand_CenteredFloat(9.0f) + 1.5f;
+        vel.z = Rand_CenteredFloat(9.0f);
+        accel.x = vel.x * -0.08f;
+        accel.y = 0.15f;
+        accel.z = vel.z * -0.08f;
+        EffectSsDeadDb_Spawn(play, hand, &vel, &accel, 60 + (s16)Rand_ZeroFloat(40.0f), -3, 200, 120, 255, 255, 90,
+                             0, 170, 1, 10, false);
+    }
+    // Sparks flying off it
+    for (i = 0; i < 20; i++) {
+        vel.x = Rand_CenteredFloat(14.0f);
+        vel.y = Rand_CenteredFloat(14.0f);
+        vel.z = Rand_CenteredFloat(14.0f);
+        accel.x = accel.z = 0.0f;
+        accel.y = -0.3f;
+        p = *hand;
+        EffectSsKiraKira_SpawnDispersed(play, &p, &vel, &accel, &sSparkPrim, &sSparkEnv,
+                                        (s16)(Rand_ZeroFloat(1000.0f) + 2000.0f), 20);
+    }
+    if (!own) {
+        return;
+    }
+    // His own flair: the shock over his body and rays of light from his fist
+    BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
+    for (i = 0; i < 30; i++) {
+        vel.x = Rand_CenteredFloat(20.0f);
+        vel.y = Rand_CenteredFloat(20.0f);
+        vel.z = Rand_CenteredFloat(20.0f);
+        BossGanonEff_SpawnLightRay(play, hand, &vel, &sZeroVec, Rand_ZeroFloat(200.0f) + 300.0f, 10.0f, 0x1E);
+    }
+}
+
+void BossGanon_Player_SummonTrident(BossGanon* this, PlayState* play) {
+    s16 t = this->playerSwordTimer;
+    f32 up;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->playerWalkWeight, 1.0f, 0.3f);
+
+    // Up over his head (in 7 frames), held through the burst, then back down into his stance
+    if (t < 7) {
+        up = t / 7.0f;
+    } else if (t < 17) {
+        up = 1.0f;
+    } else {
+        up = (GDF_SUMMON_FRAMES - t) / (f32)(GDF_SUMMON_FRAMES - 17);
+    }
+    up = CLAMP(up, 0.0f, 1.0f);
+    up = up * up * (3.0f - 2.0f * up);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfTridentArmPoses[0], up);
+
+    sCape->backPush = -2.0f;
+    sCape->backSwayMagnitude = 0.5f;
+    sCape->sideSwayMagnitude = -1.0f;
+
+    if (t == GDF_SUMMON_BURST_FRAME) {
+        sPlayerSwordState = GDF_SWORD_DRAWN;
+        BossGanon_Player_TridentBurst(this, play, &this->unk_2EC[8], true);
+        sGdfSummonBurst = 8;
+    }
+    if (sGdfSummonBurst > 0) {
+        sGdfSummonBurst--;
+    }
+
+    this->playerSwordTimer++;
+    if (this->playerSwordTimer >= GDF_SUMMON_FRAMES) {
+        sGdfSummonBurst = 0;
+        BossGanon_Player_SetupSwordIdle(this, play);
+    }
 }
 
 // ---- The trident's moves, from motion capture ----
@@ -13113,6 +13228,7 @@ static void BossGanon_Puppet_PackFx(BossGanon* this, EnGanonMant* cape, f32* fx)
     fx[70] = sGdfTridentSpin;
     fx[71] = this->playerOrganMusic; // his organ's music, heard by the Links too
     fx[72] = this->actor.shape.yOffset; // lowered onto the organ bench (and the like)
+    fx[73] = sGdfSummonBurst;           // the trident bursting into his hand
 }
 
 static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const f32* fx) {
@@ -13167,6 +13283,16 @@ static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const 
     this->playerOrganPos.z = fx[45];
     this->playerOrganYaw = (s16)fx[46];
     this->actor.shape.yOffset = fx[72]; // seated at his organ, not standing on its keys
+    {
+        // The trident bursting into his hand: the burst on this screen too, once
+        static u8 sPrevBurst = 0;
+        u8 burst = (u8)fx[73];
+
+        if ((burst > sPrevBurst) && (sPrevBurst == 0)) {
+            BossGanon_Player_TridentBurst(this, gPlayState, &this->unk_2EC[8], false);
+        }
+        sPrevBurst = burst;
+    }
     for (i = 0; i < 18; i++) {
         this->unk_49C[i] = fx[GDF_FX_SHOCK + i];
     }
