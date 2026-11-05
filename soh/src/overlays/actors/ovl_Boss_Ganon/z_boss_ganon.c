@@ -6545,7 +6545,21 @@ static f32 BossGanon_Player_PoseLowest(BossGanon* this) {
             if (k >= 3) { // the knee (the shin's origin) and the ankle (the foot's)
                 lowest = MIN(lowest, pos[1]);
             }
-            BossGanon_Player_RotToMtx(&joints[1 + limb], local);
+            {
+                // As drawn: the leg bends the limb draw adds (OverrideLimbDraw's legRot, the vanilla boss's floating
+                // legs; still bent after some landings, which left him floating above the floor)
+                Vec3s r = joints[1 + limb];
+                s32 side = (limb >= 22) ? -1 : 1;
+                s32 seg = (limb - 19) % 3; // thigh, shin, foot
+
+                if ((limb >= 19) && (seg != 1)) {
+                    r.y += (s16)(this->legRot.x + side * this->legRot.z);
+                    r.z += (s16)this->legRot.y;
+                } else if ((limb >= 19) && (this->legRot.y > 0.0f)) {
+                    r.z += (s16)this->legRot.y;
+                }
+                BossGanon_Player_RotToMtx(&r, local);
+            }
             BossGanon_Player_Mul3(rot, local, rot, false);
         }
     }
