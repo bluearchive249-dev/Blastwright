@@ -8911,8 +8911,11 @@ static void BossGanon_Player_ClipRot(const Vec3s (*clip)[13], s32 a, s32 b, f32 
     BossGanon_Player_BlendRot(ra, rb, w, out);
 }
 
+// `body`: how much of its pelvis, chest and head turns to take (less in the run: its runner's shoulders swing a lot
+// for a man his size). His feet keep how they sit on his shins (the clip's are set for a different foot: angled
+// wrong on his).
 static void BossGanon_Player_ApplyClip(BossGanon* this, const Vec3s (*clip)[13], s32 count, f32 frame, s32 loop,
-                                       f32 weight) {
+                                       f32 weight, f32 body) {
     static const s8 sLegs[2][4] = { { 19, 20, 21, 0 }, { 22, 23, 24, 2 } }; // thigh, shin, foot, first direction
     static const s8 sArms[2][4] = { { 2, 3, 4, 4 }, { 6, 7, 8, 6 } };       // shoulder, upper arm, forearm, direction
     Vec3s* joints = this->skelAnime.jointTable;
@@ -8951,14 +8954,14 @@ static void BossGanon_Player_ApplyClip(BossGanon* this, const Vec3s (*clip)[13],
     BossGanon_Pg_FromRot(&joints[1 + 18], tmp);
     BossGanon_Pg_Mul(root, tmp, cur, false);
     BossGanon_Player_ClipRot(clip, a, b, w, 0, target);
-    BossGanon_Player_BlendRot(cur, target, weight, pelvis);
+    BossGanon_Player_BlendRot(cur, target, weight * body, pelvis);
     BossGanon_Pg_Mul(root, pelvis, local, true);
     BossGanon_Pg_ToRot(local, &joints[1 + 18]);
 
     BossGanon_Pg_FromRot(&joints[1 + 1], tmp);
     BossGanon_Pg_Mul(root, tmp, cur, false);
     BossGanon_Player_ClipRot(clip, a, b, w, 1, target);
-    BossGanon_Player_BlendRot(cur, target, weight, chest);
+    BossGanon_Player_BlendRot(cur, target, weight * body, chest);
     BossGanon_Pg_Mul(root, chest, local, true);
     BossGanon_Pg_ToRot(local, &joints[1 + 1]);
 
@@ -8966,14 +8969,13 @@ static void BossGanon_Player_ApplyClip(BossGanon* this, const Vec3s (*clip)[13],
     BossGanon_Pg_FromRot(&joints[1 + 10], tmp);
     BossGanon_Pg_Mul(chest, tmp, cur, false);
     BossGanon_Player_ClipRot(clip, a, b, w, 2, target);
-    BossGanon_Player_BlendRot(cur, target, weight, tmp);
+    BossGanon_Player_BlendRot(cur, target, weight * body, tmp);
     BossGanon_Pg_Mul(chest, tmp, local, true);
     BossGanon_Pg_ToRot(local, &joints[1 + 10]);
 
     for (side = 0; side < 2; side++) {
         GdfMat3 thigh;
         GdfMat3 shin;
-        GdfMat3 foot;
 
         BossGanon_Pg_FromRot(&joints[1 + sLegs[side][0]], tmp);
         BossGanon_Pg_Mul(pelvis, tmp, thigh, false);
@@ -8983,17 +8985,11 @@ static void BossGanon_Player_ApplyClip(BossGanon* this, const Vec3s (*clip)[13],
         BossGanon_Pg_Mul(thigh, tmp, shin, false);
         BossGanon_Player_ClipDir(clip, a, b, w, sLegs[side][3] + 1, dir);
         BossGanon_Player_SwingBoneToward(shin, dir, weight);
-        BossGanon_Pg_FromRot(&joints[1 + sLegs[side][2]], tmp);
-        BossGanon_Pg_Mul(shin, tmp, cur, false);
-        BossGanon_Player_ClipRot(clip, a, b, w, 3 + side, target);
-        BossGanon_Player_BlendRot(cur, target, weight, foot);
 
         BossGanon_Pg_Mul(pelvis, thigh, local, true);
         BossGanon_Pg_ToRot(local, &joints[1 + sLegs[side][0]]);
         BossGanon_Pg_Mul(thigh, shin, local, true);
         BossGanon_Pg_ToRot(local, &joints[1 + sLegs[side][1]]);
-        BossGanon_Pg_Mul(shin, foot, local, true);
-        BossGanon_Pg_ToRot(local, &joints[1 + sLegs[side][2]]);
     }
 
     for (side = 0; side < 2; side++) {
@@ -9058,22 +9054,22 @@ static s32 BossGanon_Player_ApplyTridentAttack(BossGanon* this) {
         case GDF_SWORD_ATK_COMBO1:
             BossGanon_Player_ApplyClip(this, sGdfClipSlash, ARRAY_COUNT(sGdfClipSlash),
                                        BossGanon_Player_ClipFrame(sGdfTridentSlash1, ARRAY_COUNT(sGdfTridentSlash1), t),
-                                       false, weight);
+                                       false, weight, 1.0f);
             return true;
         case GDF_SWORD_ATK_COMBO2:
             BossGanon_Player_ApplyClip(this, sGdfClipSlash, ARRAY_COUNT(sGdfClipSlash),
                                        BossGanon_Player_ClipFrame(sGdfTridentSlash2, ARRAY_COUNT(sGdfTridentSlash2), t),
-                                       false, weight);
+                                       false, weight, 1.0f);
             return true;
         case GDF_SWORD_ATK_THRUST:
             BossGanon_Player_ApplyClip(this, sGdfClipStab, ARRAY_COUNT(sGdfClipStab),
                                        BossGanon_Player_ClipFrame(sGdfTridentStab, ARRAY_COUNT(sGdfTridentStab), t),
-                                       false, weight);
+                                       false, weight, 1.0f);
             return true;
         case GDF_SWORD_ATK_SPIN:
             BossGanon_Player_ApplyClip(this, sGdfClipSpin, ARRAY_COUNT(sGdfClipSpin),
                                        BossGanon_Player_ClipFrame(sGdfTridentSpinClip, ARRAY_COUNT(sGdfTridentSpinClip), t),
-                                       false, weight);
+                                       false, weight, 1.0f);
             return true;
         default:
             return false;
@@ -9090,7 +9086,7 @@ static void BossGanon_Player_ApplyTridentRun(BossGanon* this) {
     phase = (this->playerWalkFrame - 1.0f) / GDF_WALK_CYCLE_FRAMES;
     phase -= floorf(phase);
     BossGanon_Player_ApplyClip(this, sGdfClipRun, ARRAY_COUNT(sGdfClipRun),
-                               17.0f + phase * ARRAY_COUNT(sGdfClipRun), true, this->playerWalkWeight);
+                               17.0f + phase * ARRAY_COUNT(sGdfClipRun), true, this->playerWalkWeight, 0.3f);
 }
 
 // The opening in Link's house: instead of lying in Link's bed, Ganondorf leans against the wall beside it, arms crossed
