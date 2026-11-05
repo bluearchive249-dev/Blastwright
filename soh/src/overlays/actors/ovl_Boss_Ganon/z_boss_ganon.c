@@ -6536,8 +6536,11 @@ static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play
         }
     } else {
         Math_ApproachF(&this->playerGroundOffset, target, 0.5f, 6.0f);
-        // Settled on his feet: remember the height, the ceiling for the next get-up
-        if (this->playerGrounded && (fabsf(target - this->playerGroundOffset) < 1.5f)) {
+        // Settled on his feet, standing still in his normal idle: remember the height, the ceiling for the next
+        // get-up (not while running or in a stance: bent knees there put it too low, and he sank into the ground on
+        // landing)
+        if (this->playerGrounded && (this->actionFunc == BossGanon_Player_Float) &&
+            (this->playerWalkWeight < 0.05f) && (fabsf(target - this->playerGroundOffset) < 1.5f)) {
             sGdfStandOffset = this->playerGroundOffset + 1.0f;
             sGdfStandOffsetValid = true;
         }
@@ -8435,6 +8438,12 @@ static const s16 sGdfMocapRun[GDF_MOCAP_RUN_SAMPLES][8] = {
     { -167, -443, 305, -43, -171, 951, -404, 743 },
 };
 
+// His stride is centred under his hips: the runner's legs reach on average 11 degrees ahead of straight down (under a
+// torso leaning forward as far), which on him - his torso leans by its own amount - read as leaning back. Legs swing
+// this much further back, arms this much further forward.
+#define GDF_MOCAP_LEG_SHIFT_DEG -10.0f
+#define GDF_MOCAP_ARM_SHIFT_DEG 8.0f
+
 static f32 BossGanon_Player_MocapPitch(f32 phase, s32 bone) {
     f32 t = phase * GDF_MOCAP_RUN_SAMPLES;
     s32 i = (s32)floorf(t);
@@ -8450,7 +8459,8 @@ static f32 BossGanon_Player_MocapPitch(f32 phase, s32 bone) {
     while (vb - va < -1800.0f) {
         vb += 3600.0f;
     }
-    return ((va + (vb - va) * w) * 0.1f) * (M_PI / 180.0f);
+    return (((va + (vb - va) * w) * 0.1f) + ((bone < 4) ? GDF_MOCAP_LEG_SHIFT_DEG : GDF_MOCAP_ARM_SHIFT_DEG)) *
+           (M_PI / 180.0f);
 }
 
 // Turns `limb` (a limb's rotation in his model space; the bone runs along its x) so the bone swings to `pitch`, keeping
