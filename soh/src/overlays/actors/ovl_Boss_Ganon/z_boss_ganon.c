@@ -7102,6 +7102,12 @@ static const GdfSwordBodyKey sGdfSwordBody[][6] = {
 // Persists across areas (the player Ganondorf is spawned again in every scene)
 static u8 sPlayerSwordState = GDF_SWORD_OFF;
 
+// His sword or trident is out: the C-buttons are its moves, not Link's items
+s32 BossGanon_Player_InStance(void) {
+    return sPlayerSwordState != GDF_SWORD_OFF;
+}
+
+
 static ColliderQuadInit sPlayerSwordQuadInit = {
     {
         COLTYPE_NONE,

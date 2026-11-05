@@ -626,8 +626,10 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
     if (CVarGetInteger(CVAR_PLAY_AS_GDF("SwordStance"), 1)) {
         blocked |= BTN_DLEFT;
     }
-    // Ganon's claws can't hold items
-    if ((ganon != NULL) || !PlayAsGanondorf_KeepItems()) {
+    // Ganon's claws can't hold items. With his sword or trident out, the C-buttons are its moves (spin, slam,
+    // wave or the trident's spin and fireball ring): Link mustn't use his items with them too (holding C-Right fired
+    // his item and broke off the trident's spin before the ring came)
+    if ((ganon != NULL) || !PlayAsGanondorf_KeepItems() || ((ganon == NULL) && BossGanon_Player_InStance())) {
         blocked |= BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT;
     }
 
