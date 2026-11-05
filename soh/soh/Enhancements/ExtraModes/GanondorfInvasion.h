@@ -79,6 +79,9 @@ void GdfInvasion_NoteSkel(SkelAnime* skelAnime);
 void GdfInvasion_ForgetActor(Actor* actor);
 void GdfInvasion_AfterBossUpdate(Actor* actor);
 void GdfInvasion_AfterBgUpdate(Actor* actor);
+// A door he kicked open (unlocked or unbarred) stays so in his game, whatever the host's flags say
+void GdfInvasion_KeepKickedSwitch(s32 flag);
+void GdfInvasion_KeepKickedClear(s32 room);
 
 // The throat grab on another player's Link: whether he may, which player a dummy is, and what his fist does
 u32 GdfInvasion_DummyClientId(Actor* actor);

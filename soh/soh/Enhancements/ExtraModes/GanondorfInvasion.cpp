@@ -4641,6 +4641,24 @@ extern "C" void GdfInvasion_AfterBgUpdate(Actor* actor) {
     SmoothApply(actor, true);
 }
 
+static u32 sKickedSwch = 0;      // doors he kicked open in this area (his own game only)
+static u32 sKickedTempSwch = 0;
+static u32 sKickedTempClear = 0;
+
+extern "C" void GdfInvasion_KeepKickedSwitch(s32 flag) {
+    if (flag < 0x20) {
+        sKickedSwch |= 1u << flag;
+    } else if (flag < 0x40) {
+        sKickedTempSwch |= 1u << (flag - 0x20);
+    }
+}
+
+extern "C" void GdfInvasion_KeepKickedClear(s32 room) {
+    if ((room >= 0) && (room < 32)) {
+        sKickedTempClear |= 1u << room;
+    }
+}
+
 static void ReadSceneFlags(const nlohmann::json& f) {
     PlayState* play = gPlayState;
 
@@ -4649,10 +4667,10 @@ static void ReadSceneFlags(const nlohmann::json& f) {
         (Anchor::Instance->clients[sWorldFrom].sceneNum != play->sceneNum)) {
         return;
     }
-    play->actorCtx.flags.swch = f[0].get<u32>();
-    play->actorCtx.flags.tempSwch = f[1].get<u32>();
+    play->actorCtx.flags.swch = f[0].get<u32>() | sKickedSwch;
+    play->actorCtx.flags.tempSwch = f[1].get<u32>() | sKickedTempSwch;
     play->actorCtx.flags.clear = f[2].get<u32>();
-    play->actorCtx.flags.tempClear = f[3].get<u32>();
+    play->actorCtx.flags.tempClear = f[3].get<u32>() | sKickedTempClear;
 }
 
 static void RegisterWorldMovers() {
@@ -4660,6 +4678,7 @@ static void RegisterWorldMovers() {
         sHostMovers.clear();
         sMovedBg.clear();
         sSmooth.clear();
+        sKickedSwch = sKickedTempSwch = sKickedTempClear = 0;
     });
 }
 

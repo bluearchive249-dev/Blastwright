@@ -626,6 +626,11 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
     if (CVarGetInteger(CVAR_PLAY_AS_GDF("SwordStance"), 1)) {
         blocked |= BTN_DLEFT;
     }
+    // A at a locked, chained or barred door, a cell, gate or grate: he kicks it in (and Link doesn't try the door)
+    if ((ganon == NULL) && CHECK_BTN_ALL(input->press.button, BTN_A) && BossGanon_Player_TryBreakKick(&dorf->actor, play)) {
+        input->cur.button &= ~BTN_A;
+        input->press.button &= ~BTN_A;
+    }
     // Ganon's claws can't hold items. With his sword or trident out, the C-buttons are its moves (spin, slam,
     // wave or the trident's spin and fireball ring): Link mustn't use his items with them too (holding C-Right fired
     // his item and broke off the trident's spin before the ring came)

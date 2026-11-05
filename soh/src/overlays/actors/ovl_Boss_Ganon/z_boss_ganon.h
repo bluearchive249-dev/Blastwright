@@ -250,6 +250,7 @@ typedef struct BossGanon {
 s32 BossGanon_Player_IsBusy(Actor* thisx);
 s32 BossGanon_Player_IsHolding(void);
 s32 BossGanon_Player_InStance(void); // his sword or trident is out
+s32 BossGanon_Player_TryBreakKick(Actor* thisx, PlayState* play); // A at a shut door: he kicks it in
 s32 BossGanon_Player_IsPhantom(void);
 // The guards hunt him (he murdered someone in the market and hasn't left by the drawbridge)
 s32 BossGanon_Player_IsWanted(void);

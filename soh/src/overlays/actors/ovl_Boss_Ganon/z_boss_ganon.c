@@ -25,6 +25,8 @@
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h" // SoH: riding his horse
 #include "overlays/actors/ovl_En_Heishi1/z_en_heishi1.h" // SoH: guards hunting him after a murder
 #include "overlays/actors/ovl_En_Door/z_en_door.h" // SoH: he kicks doors open
+#include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h" // SoH: ...locked, barred and chained ones too
+#include "overlays/effects/ovl_Effect_Ss_Hahen/z_eff_ss_hahen.h"
 #include "overlays/actors/ovl_En_Box/z_en_box.h"   // SoH: ...and chests
 #include "overlays/actors/ovl_En_GeldB/z_en_geldb.h" // SoH: his Gerudo bodyguards
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h" // SoH: shocks on enemies in his dark aura
@@ -119,6 +121,9 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play);
 static void BossGanon_Player_DrawSword(struct BossGanon* this, PlayState* play);
 static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF* base);
 static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play);
+static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play);
+static s16 sGdfBreakTimer = 0; // kicking in a locked door, bars or a grate
+static Actor* sGdfBreakTarget = NULL;
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyIntroCs(BossGanon* this, PlayState* play);
@@ -6045,7 +6050,7 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
            (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
            (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land) ||
            (this->actionFunc == BossGanon_Player_TridentSpin) || (this->actionFunc == BossGanon_Player_GrabThrow) ||
-           (this->actionFunc == BossGanon_Player_SummonTrident);
+           (this->actionFunc == BossGanon_Player_SummonTrident) || (sGdfBreakTimer > 0);
     // Not the dark aura: he moves freely while holding it. Nor the trident's flight: he walks about while it's out
 }
 
@@ -8310,6 +8315,178 @@ static void BossGanon_Player_KickPose(BossGanon* this, f32 w, f32 deg) {
     BossGanon_Pg_ToRot(tmp2, &joints[1 + 22]);
 
     BossGanon_Player_TwistLean(this, 0.0f, -0x0C00 * w);
+}
+
+// ---- No door holds him ----
+// Locked doors (small key or boss key), chained doors, barred doors waiting on a switch or a cleared room, the
+// Gerudo cells, gates, grates and breakable walls: A in front of one and he kicks it in. A door he unlocks or unbars
+// (and then kicks open as he goes through, like any door); a cell, gate, grate or wall he smashes to pieces.
+#define GDF_BREAK_KICK_FRAMES 22
+#define GDF_BREAK_KICK_IMPACT 8
+#define GDF_BREAK_RANGE 95.0f
+
+static s32 BossGanon_Player_IsSmashable(s16 id) {
+    switch (id) {
+        case ACTOR_DOOR_GERUDO:
+        case ACTOR_BG_GATE_SHUTTER:
+        case ACTOR_BG_SPOT12_GATE:
+        case ACTOR_BG_SPOT12_SAKU:
+        case ACTOR_BG_SPOT15_SAKU:
+        case ACTOR_BG_HAKA_GATE:
+        case ACTOR_BG_MIZU_SHUTTER:
+        case ACTOR_BG_ICE_SHUTTER:
+        case ACTOR_BG_SPOT18_SHUTTER:
+        case ACTOR_BG_JYA_KANAAMI:
+        case ACTOR_BG_BREAKWALL:
+        case ACTOR_BG_HIDAN_KOWARERUKABE:
+        case ACTOR_BG_INGATE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Shut to him: locked, chained or barred (and so not opened the normal way)
+static s32 BossGanon_Player_IsShut(PlayState* play, Actor* a) {
+    if (a->id == ACTOR_EN_DOOR) {
+        return ((EnDoor*)a)->lockTimer != 0;
+    }
+    if (a->id == ACTOR_DOOR_SHUTTER) {
+        DoorShutter* d = (DoorShutter*)a;
+        s32 flag = a->params & 0x3F;
+
+        if (d->unlockTimer != 0) {
+            return true; // small key or boss key
+        }
+        switch (d->doorType) {
+            case SHUTTER_FRONT_CLEAR:
+                return !Flags_GetClear(play, a->room) && !Flags_GetTempClear(play, a->room);
+            case SHUTTER_FRONT_SWITCH:
+            case SHUTTER_FRONT_SWITCH_BACK_CLEAR:
+                return !Flags_GetSwitch(play, flag);
+            default:
+                return false;
+        }
+    }
+    return BossGanon_Player_IsSmashable(a->id);
+}
+
+static Actor* BossGanon_Player_FindShutDoor(PlayState* play) {
+    static const u8 sCats[] = { ACTORCAT_DOOR, ACTORCAT_BG, ACTORCAT_PROP };
+    Player* player = GET_PLAYER(play);
+    Actor* best = NULL;
+    f32 bestDist = GDF_BREAK_RANGE;
+    s32 c;
+
+    for (c = 0; c < ARRAY_COUNT(sCats); c++) {
+        Actor* a;
+
+        for (a = play->actorCtx.actorLists[sCats[c]].head; a != NULL; a = a->next) {
+            f32 d;
+            s16 dyaw;
+
+            if ((a->update == NULL) || !BossGanon_Player_IsShut(play, a)) {
+                continue;
+            }
+            d = Math_Vec3f_DistXZ(&player->actor.world.pos, &a->world.pos);
+            dyaw = Math_Vec3f_Yaw(&player->actor.world.pos, &a->world.pos) - player->actor.shape.rot.y;
+            if ((d < bestDist) && (ABS(dyaw) < 0x2C00) && (fabsf(a->world.pos.y - player->actor.world.pos.y) < 120.0f)) {
+                best = a;
+                bestDist = d;
+            }
+        }
+    }
+    return best;
+}
+
+// A in front of a shut door (from the input filter, before Link reads A): the kick starts
+s32 BossGanon_Player_TryBreakKick(Actor* thisx, PlayState* play) {
+    BossGanon* this = (BossGanon*)thisx;
+    Player* player = GET_PLAYER(play);
+    Actor* door;
+
+    if ((sGdfBreakTimer > 0) || !this->playerGrounded || this->playerHidden || BossGanon_Player_IsBusy(thisx) ||
+        !PlayAsGanondorf_ShouldKickDoors()) {
+        return false;
+    }
+    door = BossGanon_Player_FindShutDoor(play);
+    if (door == NULL) {
+        return false;
+    }
+    sGdfBreakTarget = door;
+    sGdfBreakTimer = 1;
+    // Square up to it
+    player->actor.shape.rot.y = player->actor.world.rot.y = Math_Vec3f_Yaw(&player->actor.world.pos, &door->world.pos);
+    player->linearVelocity = 0.0f;
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_ATTACK_DEMO));
+    return true;
+}
+
+static void BossGanon_Player_BreakDoor(BossGanon* this, PlayState* play, Actor* a) {
+    Vec3f pos = a->world.pos;
+    s32 flag = a->params & 0x3F;
+
+    pos.y += 50.0f;
+    Actor_RequestQuakeAndRumble(&this->actor, play, 5, 8);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EV_WOODBOX_BREAK);
+    Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
+    EffectSsHahen_SpawnBurst(play, &pos, 12.0f, 0, 12, 10, 24, HAHEN_OBJECT_DEFAULT, 10, NULL);
+
+    if (a->id == ACTOR_EN_DOOR) {
+        // Unlocked for good (no key spent): he kicks it open as he goes through
+        ((EnDoor*)a)->lockTimer = 0;
+        Flags_SetSwitch(play, flag);
+        GdfInvasion_KeepKickedSwitch(flag);
+        Audio_PlayActorSound2(a, NA_SE_EV_CHAIN_KEY_UNLOCK);
+    } else if (a->id == ACTOR_DOOR_SHUTTER) {
+        DoorShutter* d = (DoorShutter*)a;
+
+        if (d->unlockTimer != 0) {
+            d->unlockTimer = 0; // the chains (or the boss lock) burst off
+            Flags_SetSwitch(play, flag);
+            GdfInvasion_KeepKickedSwitch(flag);
+            Audio_PlayActorSound2(a, NA_SE_EV_CHAIN_KEY_UNLOCK);
+        } else if (d->doorType == SHUTTER_FRONT_CLEAR) {
+            Flags_SetTempClear(play, a->room); // the bars give way (until he leaves the room)
+            GdfInvasion_KeepKickedClear(a->room);
+        } else {
+            Flags_SetSwitch(play, flag);
+            GdfInvasion_KeepKickedSwitch(flag);
+        }
+    } else {
+        // Smashed to pieces (back when the area is loaded again; a cell stays open)
+        if (a->id == ACTOR_DOOR_GERUDO) {
+            Flags_SetSwitch(play, flag);
+            GdfInvasion_KeepKickedSwitch(flag);
+        }
+        EffectSsHahen_SpawnBurst(play, &pos, 18.0f, 0, 16, 14, 30, HAHEN_OBJECT_DEFAULT, 10, NULL);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EV_WALL_BROKEN);
+        Actor_Kill(a);
+    }
+}
+
+static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play) {
+    f32 w;
+
+    if (sGdfBreakTimer <= 0) {
+        return;
+    }
+    if (sGdfBreakTimer < GDF_BREAK_KICK_IMPACT) {
+        w = sGdfBreakTimer / (f32)GDF_BREAK_KICK_IMPACT;
+    } else if (sGdfBreakTimer < GDF_BREAK_KICK_IMPACT + 5) {
+        w = 1.0f;
+    } else {
+        w = (GDF_BREAK_KICK_FRAMES - sGdfBreakTimer) / (f32)(GDF_BREAK_KICK_FRAMES - GDF_BREAK_KICK_IMPACT - 5);
+    }
+    BossGanon_Player_KickPose(this, CLAMP(w, 0.0f, 1.0f), GDF_KICK_LIFT_DEG);
+    if ((sGdfBreakTimer == GDF_BREAK_KICK_IMPACT) && (sGdfBreakTarget != NULL) &&
+        (sGdfBreakTarget->update != NULL)) {
+        BossGanon_Player_BreakDoor(this, play, sGdfBreakTarget);
+    }
+    if (++sGdfBreakTimer > GDF_BREAK_KICK_FRAMES) {
+        sGdfBreakTimer = 0;
+        sGdfBreakTarget = NULL;
+    }
 }
 
 // Chests: while Link opens one, he boots the lid open instead, the foot landing on the frame the lid bursts open
@@ -10666,6 +10843,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     // He kicks doors open
     BossGanon_Player_ApplyDoorKick(this, play);
     BossGanon_Player_ApplyChestKick(this, play);
+    BossGanon_Player_ApplyBreakKick(this, play);
     BossGanon_Player_ApplyDoorDuck(this, play);
     BossGanon_Player_UpdateBodyguards(this, play);
 
