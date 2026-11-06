@@ -11478,7 +11478,13 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         BossGanon_Player_Follow(this, play, controlY);
     }
 
-    if ((this->actionFunc == BossGanon_Player_SwordAttack) && (this->playerSwordAttack == GDF_SWORD_ATK_SPIN) &&
+    if (sGdfRoaming) {
+        // Walking about on his own in a cutscene: he faces where he walks, all the way round. (Turned toward Link's
+        // facing first, as below, and then toward his own way, the two pulls met halfway: he could only face within
+        // a half circle around Link's facing.)
+        Math_ApproachS(&this->actor.shape.rot.y, sGdfRoamYaw, 3, 0x1800);
+        this->actor.yawTowardsPlayer = this->actor.shape.rot.y;
+    } else if ((this->actionFunc == BossGanon_Player_SwordAttack) && (this->playerSwordAttack == GDF_SWORD_ATK_SPIN) &&
         (this->playerSpinYaw != 0)) {
         this->actor.shape.rot.y = this->playerDashYaw + this->playerSpinYaw;
     } else if (BossGanon_Player_IsBusy(thisx)) {
@@ -11487,10 +11493,6 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Math_ApproachS(&this->actor.shape.rot.y, player->actor.shape.rot.y, 2, 0x2000);
         // Between attacks his aim is wherever Link faces, so an attack that doesn't aim itself goes straight ahead
         this->actor.yawTowardsPlayer = player->actor.shape.rot.y;
-    }
-    if (sGdfRoaming) {
-        Math_ApproachS(&this->actor.shape.rot.y, sGdfRoamYaw, 3, 0x1800);
-        this->actor.yawTowardsPlayer = this->actor.shape.rot.y;
     }
     this->actor.world.rot.y = this->actor.shape.rot.y;
     this->playerAimYaw = this->actor.yawTowardsPlayer;
