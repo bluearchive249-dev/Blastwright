@@ -2406,6 +2406,17 @@ void SohMenu::AddMenuEnhancements() {
         .Options(ButtonOptions().Tooltip("Watch the Gerudo intro now (START skips it). Afterwards you're back where "
                                          "you were.").Size(UIWidgets::Sizes::Inline))
         .Callback([](WidgetInfo& info) { GanondorfIntro_Start(false); });
+    AddWidget(path, "Animations", WIDGET_SEPARATOR_TEXT).PreFunc([](WidgetInfo& info) {
+        info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+    });
+    AddWidget(path, "Strut Walk", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.StrutWalk"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "He struts instead of walking: shoulders back, a swagger in every step. (Off: his ordinary walk.) "
+            "At a full run, and walking backwards while Z-targeting, he moves as usual."));
     AddWidget(path, "Dance: Suavemente (Test Emote)", WIDGET_BUTTON)
         .PreFunc([](WidgetInfo& info) {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
