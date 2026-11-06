@@ -9074,9 +9074,25 @@ void BossGanon_Player_UnsummonTrident(BossGanon* this, PlayState* play) {
             BossGanon_Player_SlerpRot(&this->playerArmFrom[i], &over, up,
                                       &this->skelAnime.jointTable[1 + GDF_RIGHT_ARM_LIMB + i]);
         }
+    } else if (t < 15) {
+        BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfTridentArmPoses[0], 1.0f); // held
     } else {
-        // Held, then down to his side (the arm as the standing animation has it)
-        BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfTridentArmPoses[0], up);
+        // Down the way it went up, to his side as it was in the stance, and only then hanging loose: straight from
+        // overhead to hanging, the shortest turn swung it out sideways and rolled it, like out of its socket
+        f32 s = (t - 15) / (f32)(GDF_SUMMON_FRAMES - 15);
+        f32 down = CLAMP(s / 0.7f, 0.0f, 1.0f);
+        f32 loose = CLAMP((s - 0.7f) / 0.3f, 0.0f, 1.0f);
+
+        down = down * down * (3.0f - 2.0f * down);
+        loose = loose * loose * (3.0f - 2.0f * loose);
+        for (s32 i = 0; i < 3; i++) {
+            Vec3s over = sGdfTridentArmPoses[0][i];
+            Vec3s side;
+            Vec3s* joint = &this->skelAnime.jointTable[1 + GDF_RIGHT_ARM_LIMB + i];
+
+            BossGanon_Player_SlerpRot(&over, &this->playerArmFrom[i], down, &side);
+            BossGanon_Player_SlerpRot(&side, joint, loose, joint);
+        }
     }
 
     sCape->backPush = -1.0f;
