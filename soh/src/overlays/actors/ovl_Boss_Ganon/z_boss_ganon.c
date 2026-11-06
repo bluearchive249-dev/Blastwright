@@ -671,6 +671,25 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
         }
     }
     if (GDF_IS_PLAYER(this)) {
+        // His cape goes with him. It's an actor of its own (spawned as his child), and nothing else removes it: when a
+        // remote player's Ganondorf left (or came back into) an area, the cape stayed behind, hanging where he'd been
+        // (the area's entrance), and the next one brought a cape of its own.
+        for (s32 cat = 0; cat < ACTORCAT_MAX; cat++) {
+            Actor* a = play->actorCtx.actorLists[cat].head;
+
+            for (; a != NULL; a = a->next) {
+                if ((a->id == ACTOR_EN_GANON_MANT) && (a->parent == &this->actor)) {
+                    a->draw = NULL;
+                    Actor_Kill(a);
+                    if (&sCape->actor == a) {
+                        sCape = NULL;
+                    }
+                    if (&sPlayerCape->actor == a) {
+                        sPlayerCape = NULL;
+                    }
+                }
+            }
+        }
         if (this->playerPgReady) {
             // Phantom Ganon's tables are part of the actor: only the skeleton registration goes
             ResourceMgr_UnregisterSkeleton(&this->playerPgSkel);
