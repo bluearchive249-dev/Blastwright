@@ -12349,14 +12349,14 @@ void BossGanon_Player_Climb(BossGanon* this, PlayState* play) {
     if (top >= 0.0f) {
         // Over the top: the last rung, a knee up onto it, and standing up, timed by Link's climb
         BossGanon_Player_ApplyClip(this, sGdfClipLadderTop, ARRAY_COUNT(sGdfClipLadderTop),
-                                   top * (ARRAY_COUNT(sGdfClipLadderTop) - 1), false, 1.0f, 0.8f);
+                                   top * (ARRAY_COUNT(sGdfClipLadderTop) - 1), false, 1.0f, 0.3f);
         return;
     }
     // Hand over hand, as far as Link has climbed (a cycle every 25 units, as before)
     this->playerClimbPhase += Math_Vec3f_DistXYZ(&player->actor.world.pos, &player->actor.prevPos) * 0.25f;
     BossGanon_Player_ApplyClip(this, sGdfClipLadder, ARRAY_COUNT(sGdfClipLadder),
                                this->playerClimbPhase * (ARRAY_COUNT(sGdfClipLadder) / (2.0f * M_PI)), true, 1.0f,
-                               0.8f);
+                               0.0f); // (his own body, square to the ladder: only his limbs climb)
 }
 
 // Ledges: while Link steps or pulls himself up onto a ledge (Link is already up there, his animation just shows him
