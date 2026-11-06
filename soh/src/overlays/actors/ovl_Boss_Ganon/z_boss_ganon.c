@@ -8400,10 +8400,11 @@ static s32 BossGanon_Player_IsShut(PlayState* play, Actor* a) {
 }
 
 static Actor* BossGanon_Player_FindShutDoor(PlayState* play) {
-    static const u8 sCats[] = { ACTORCAT_DOOR, ACTORCAT_BG, ACTORCAT_PROP };
+    // (the Kakariko gate to Death Mountain is an item-action actor)
+    static const u8 sCats[] = { ACTORCAT_DOOR, ACTORCAT_BG, ACTORCAT_PROP, ACTORCAT_ITEMACTION };
     Player* player = GET_PLAYER(play);
     Actor* best = NULL;
-    f32 bestDist = GDF_BREAK_RANGE;
+    f32 bestDist = 1e9f;
     s32 c;
 
     for (c = 0; c < ARRAY_COUNT(sCats); c++) {
@@ -8418,6 +8419,10 @@ static Actor* BossGanon_Player_FindShutDoor(PlayState* play) {
             }
             d = Math_Vec3f_DistXZ(&player->actor.world.pos, &a->world.pos);
             dyaw = Math_Vec3f_Yaw(&player->actor.world.pos, &a->world.pos) - player->actor.shape.rot.y;
+            // (gates and grates are wide, and their origin may be at one end: further for them)
+            if (d > (BossGanon_Player_IsSmashable(a->id) ? 170.0f : GDF_BREAK_RANGE)) {
+                continue;
+            }
             if ((d < bestDist) && (ABS(dyaw) < 0x2C00) && (fabsf(a->world.pos.y - player->actor.world.pos.y) < 120.0f)) {
                 best = a;
                 bestDist = d;
@@ -8446,7 +8451,7 @@ s32 BossGanon_Player_TryBreakKick(Actor* thisx, PlayState* play) {
     // Square up to it
     player->actor.shape.rot.y = player->actor.world.rot.y = Math_Vec3f_Yaw(&player->actor.world.pos, &door->world.pos);
     player->linearVelocity = 0.0f;
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_ATTACK_DEMO));
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW)); // (one grunt, not a loop)
     return true;
 }
 
