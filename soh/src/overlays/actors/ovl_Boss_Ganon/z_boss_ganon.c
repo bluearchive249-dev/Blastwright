@@ -6519,6 +6519,9 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
         // (the Mixamo run, as with the trident: its right heel comes down at its frame 17)
         BossGanon_Player_ApplyClip(this, sGdfClipRun, ARRAY_COUNT(sGdfClipRun),
                                    17.0f + phase * ARRAY_COUNT(sGdfClipRun), true, runWeight, 0.3f);
+        // Both arms swinging: the run's sword arm holds still, so his arms take the runner's swing from the CMU jog
+        // (left and right in turn, in step)
+        BossGanon_Player_ApplyRunArms(this, runWeight);
     }
 }
 
