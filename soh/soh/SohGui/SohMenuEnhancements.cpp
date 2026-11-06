@@ -2449,6 +2449,15 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Crawlspaces are too small for him: he goes through them as a flickering purple flame instead of "
             "turning back into Link. Off: Link is shown while crawling."));
+    AddWidget(path, "NPCs React to Ganondorf", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "The people of Hyrule talk to him as the King of Evil. Hylians fear him, the Gerudo respect their king, "
+            "the Gorons and Zoras hate the man who cursed their homes, and the Kokiri and Sheikah are wary of him or "
+            "stand up to him. Every hint and direction they give is kept. English text only."));
     AddWidget(path, "Organ Close-Up Camera", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.OrganCamera"))
         .PreFunc([](WidgetInfo& info) {
