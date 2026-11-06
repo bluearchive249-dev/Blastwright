@@ -7761,31 +7761,7 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
     if (!CVarGetInteger(CVAR_PLAY_AS_GDF("SwordStance"), 1) || !CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
         return false;
     }
-    // Outside Invasion games, the menu's D-Pad Left Mode: the insta-kill dark aura toggled, or the sword stance
-    if (GdfInvasion_Role() == GDF_INVASION_OFF) {
-        if (CVarGetInteger(CVAR_PLAY_AS_GDF("DPadLeftMode"), 0) == 0) {
-            sPlayerDarkAuraMode = !sPlayerDarkAuraMode;
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
-            if (sPlayerDarkAuraMode) {
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
-                BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
-                BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
-            }
-            return true;
-        }
-        if ((sPlayerSwordState == GDF_SWORD_OFF) && BossGanon_Player_HasTrident() && this->playerGrounded) {
-            BossGanon_Player_SetupSummonTrident(this, play); // raised overhead, it bursts into his hand
-            return true;
-        }
-        if (sPlayerSwordState == GDF_SWORD_OFF) {
-            sPlayerSwordState = GDF_SWORD_SHEATHED;
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
-            BossGanon_Player_SetupSwordIdle(this, play);
-            return true;
-        }
-        return false;
-    }
-    // Invasion games: D-Pad Left cycles: once the insta-kill dark aura (B, held, unleashes it), twice the trident
+    // D-Pad Left cycles (as in Invasion games, and outside them too): once the insta-kill dark aura (B, held, unleashes it), twice the trident
     // stance, a third time back to normal (from the stance, in BossGanon_Player_SwordIdle)
     if (!sPlayerDarkAuraMode && (sPlayerSwordState == GDF_SWORD_OFF)) {
         sPlayerDarkAuraMode = true;
@@ -7886,23 +7862,15 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
         return;
     }
 
-    // D-Pad Left: outside Invasion games the blade back into the sheath, or the sword away
-    if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT) && (GdfInvasion_Role() == GDF_INVASION_OFF)) {
-        if ((sPlayerSwordState == GDF_SWORD_DRAWN) && BossGanon_Player_HasTrident() && this->playerGrounded) {
-            BossGanon_Player_SetupUnsummonTrident(this, play); // raised overhead, it dissolves away
-        } else if (sPlayerSwordState == GDF_SWORD_DRAWN) {
-            BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_SHEATHE);
-        } else {
-            sPlayerSwordState = GDF_SWORD_OFF;
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
-            BossGanon_Player_SetupFloat(this, play);
-        }
-        return;
-    }
-    // Invasion games (the third press of the cycle): the trident away, back to normal
+    // D-Pad Left, the third press of the cycle: back to normal. On the ground the trident comes apart in his raised
+    // hand; in the air it's simply gone
     if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
-        sPlayerSwordState = GDF_SWORD_OFF;
         sPlayerDarkAuraMode = false;
+        if ((sPlayerSwordState == GDF_SWORD_DRAWN) && BossGanon_Player_HasTrident() && this->playerGrounded) {
+            BossGanon_Player_SetupUnsummonTrident(this, play);
+            return;
+        }
+        sPlayerSwordState = GDF_SWORD_OFF;
         Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
         BossGanon_Player_SetupFloat(this, play);
         return;

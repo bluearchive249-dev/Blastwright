@@ -240,12 +240,8 @@ bool ReadFile() {
 extern "C" s32 GdfInvasion_Role(void);
 
 extern "C" s32 GanondorfTrident_GetSelected(void) {
-    s32 weapon = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Weapon"), 0);
-
-    // In an Invasion game his stance always uses a trident (the first unless one was chosen)
-    if ((weapon < 1) && (GdfInvasion_Role() != 0)) {
-        weapon = 1;
-    }
+    // His stance always uses the Trident of Demise (in Invasion games and outside them alike)
+    s32 weapon = 4;
 
     if ((weapon < 1) || (weapon > GDF_TRIDENT_COUNT)) {
         return 0;

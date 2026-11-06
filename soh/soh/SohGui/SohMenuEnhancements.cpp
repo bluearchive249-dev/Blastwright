@@ -54,17 +54,6 @@ static std::map<int32_t, const char*> bunnyHoodEffectMap = {
     { BUNNY_HOOD_FAST_AND_JUMP, "Faster + Longer Jump" },
 };
 
-static const std::map<int32_t, const char*> ganondorfWeapons = {
-    { 0, "Sword" },
-    { 1, "Burning Trident" },
-    { 2, "King of Evil Trident" },
-    { 3, "Thief's Trident" },
-    { 4, "Trident of Demise" },
-};
-static const std::map<int32_t, const char*> ganondorfDPadLeftModes = {
-    { 0, "Insta-Kill Dark Aura" },
-    { 1, "Sword Stance" },
-};
 static const std::map<int32_t, const char*> dekuStickCheat = {
     { DEKU_STICK_NORMAL, "Normal" },
     { DEKU_STICK_UNBREAKABLE, "Unbreakable" },
@@ -2467,52 +2456,28 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "While he plays the organ, the camera lies on the keys a little to his right and looks up at him."));
-    AddWidget(path, "D-Pad Left Mode Toggle", WIDGET_CVAR_CHECKBOX)
+    AddWidget(path, "D-Pad Left Cycle", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"))
         .PreFunc([](WidgetInfo& info) {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "D-Pad Left toggles the mode picked below (Insta-Kill Dark Aura or Sword Stance).\n\n"
-            "Sword Stance: his sword appears sheathed, the sheath in his left hand.\n"
-            " - B: draw the blade (it cuts on the way out). Then B, B, B: three-hit combo.\n"
-            " - Stick + R: dash (B during it: lunging thrust). R alone: guard.\n"
-            " - C-Left: spin slash. C-Down: ground slam. C-Right: dark energy slash.\n"
-            " - D-Pad Left: sheathe the blade. D-Pad Left again: put the sword away.\n\n"
-            "The sword model is read from gdf_sword.bin next to the game; without it a plain blade is used."));
-    AddWidget(path, "D-Pad Left Mode", WIDGET_CVAR_COMBOBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0;
-        })
-        .Options(ComboboxOptions().ComboMap(ganondorfDPadLeftModes).DefaultIndex(0).Tooltip(
-            "What D-Pad Left toggles.\n"
-            " - Insta-Kill Dark Aura: while it's on, hold B to surround him with the dark aura from his throne room. "
-            "Move with the stick while holding it, on the ground or in the air. Enemies caught in it die (bosses "
-            "only take normal hits).\n"
-            " - Sword Stance: his sword moveset."));
-    AddWidget(path, "Weapon", WIDGET_CVAR_COMBOBOX)
-        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Weapon"))
-        .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"), 0) != 1;
-        })
-        .Options(ComboboxOptions().ComboMap(ganondorfWeapons).DefaultIndex(0).Tooltip(
-            "What he wields in his sword stance (D-Pad Left). The tridents use a spear's moveset: B, B and a stab to "
-            "finish the combo. Hold C-Right to spin the trident over his head, let go to hurl it: it homes in on the "
-            "nearest enemy in front of him (or the one he's targeting) and flies back to his hand. He carries a trident at his side when it's put away. The tridents need "
-            "gdf_tridents.bin next to the game; without it he keeps the sword."));
+            "D-Pad Left cycles, as in Ganondorf: Invasion:\n"
+            " - Once: the insta-kill dark aura. Hold B to surround him with it; move with the stick while holding "
+            "it, on the ground or in the air. Enemies caught in it die (bosses only take normal hits).\n"
+            " - Twice: the Trident of Demise. On the ground he raises his arm and it bursts into his hand.\n"
+            " - A third time: back to normal (on the ground the trident comes apart in his raised hand).\n\n"
+            "With the trident: B, B and a stab to finish the combo. Stick + R: dash. R alone: guard. Hold C-Right "
+            "to spin it over his head, let go to hurl it: it homes in on the nearest enemy in front of him (or the "
+            "one he's targeting) and flies back to his hand. The trident needs gdf_tridents.bin next to the game."));
     AddWidget(path, "Sword Size: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordSize"))
         .PreFunc([](WidgetInfo& info) {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0 ||
-                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.DPadLeftMode"), 0) != 1;
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.SwordStance"), 1) == 0;
         })
         .Options(FloatSliderOptions().Min(0.8f).Max(2.0f).DefaultValue(1.4f).Format("%.2fx").Tooltip(
-            "Size of his sword and sheath (or trident). 1.4 is a greatsword for his size; the hitbox follows the blade."));
+            "Size of his trident. 1.4 is a greatsword for his size; the hitbox follows the blade."));
     AddWidget(path, "Ganon Form (D-Pad Right)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GanonForm"))
         .PreFunc([](WidgetInfo& info) {
