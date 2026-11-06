@@ -7144,6 +7144,9 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
         }
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN) && BossGanon_Player_TryGrab(this, play)) {
         // by the throat
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN) && this->playerGrounded &&
+               (this->actionFunc == BossGanon_Player_Float)) {
+        BossGanon_Player_SetupDance(this, play); // nobody to grab: the dance
     } else if (PlayAsGanondorf_OrganButtonPressed() &&
                (GET_PLAYER(play)->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
         // The organ rises out of solid ground, so not while levitating
