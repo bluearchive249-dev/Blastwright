@@ -21,6 +21,7 @@ extern "C" {
 #include "macros.h"
 extern PlayState* gPlayState;
 }
+#include "soh/Enhancements/ExtraModes/GanondorfDance.h"
 #include "soh/Enhancements/ExtraModes/GanondorfSongs.h"
 #include "soh/Enhancements/ExtraModes/GanondorfIntro.h"
 extern "C" s32 GanondorfCastle_IsAvailable(void);
@@ -2416,6 +2417,18 @@ void SohMenu::AddMenuEnhancements() {
         .Options(ButtonOptions().Tooltip("Watch the Gerudo intro now (START skips it). Afterwards you're back where "
                                          "you were.").Size(UIWidgets::Sizes::Inline))
         .Callback([](WidgetInfo& info) { GanondorfIntro_Start(false); });
+    AddWidget(path, "Dance: Suavemente (Test Emote)", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.options->disabled = (gPlayState == NULL);
+        })
+        .Options(ButtonOptions().Tooltip(
+            "He dances the Cucui Ganon dance (from MMadness' Suavemente motion kit), standing on the ground with "
+            "nothing in his hands. Move the stick or press a button to stop.\n\n"
+            "The song: put a .wav in the ganondorf_songs folder next to the game (one named dance.wav is used "
+            "first). It plays over the area music, which fades down while he dances. Without one he dances in "
+            "silence.").Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo& info) { GanondorfDance_Request(); });
     AddWidget(path, "Organ on L3", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.L3Organ"))
         .PreFunc([](WidgetInfo& info) {
