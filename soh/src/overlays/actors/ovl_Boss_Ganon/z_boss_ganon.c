@@ -5950,8 +5950,12 @@ void BossGanon_Player_SetupSwordIdle(BossGanon* this, PlayState* play);
 void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play);
 void BossGanon_Player_SummonTrident(BossGanon* this, PlayState* play);
 static void BossGanon_Player_SetupSummonTrident(BossGanon* this, PlayState* play);
+void BossGanon_Player_UnsummonTrident(BossGanon* this, PlayState* play);
+static void BossGanon_Player_SetupUnsummonTrident(BossGanon* this, PlayState* play);
 static void BossGanon_Player_TridentBurst(BossGanon* this, PlayState* play, Vec3f* hand, s32 own);
 static const Vec3s sGdfTridentArmPoses[2][3];
+#define GDF_VANISH_BURST 100 // sGdfSummonBurst above this: the trident coming apart, not bursting in
+static void BossGanon_Player_TridentVanish(BossGanon* this, PlayState* play, Vec3f* hand, s32 own);
 static u8 sGdfSummonBurst = 0; // counts down after the trident bursts into his hand (sent to the others)
 void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play);
 void BossGanon_Player_SwordDash(BossGanon* this, PlayState* play);
@@ -6059,7 +6063,8 @@ s32 BossGanon_Player_IsBusy(Actor* thisx) {
            (this->actionFunc == BossGanon_Player_Organ) || (this->actionFunc == BossGanon_Player_SwordAttack) ||
            (this->actionFunc == BossGanon_Player_SwordDash) || (this->actionFunc == BossGanon_Player_Land) ||
            (this->actionFunc == BossGanon_Player_TridentSpin) || (this->actionFunc == BossGanon_Player_GrabThrow) ||
-           (this->actionFunc == BossGanon_Player_SummonTrident) || (sGdfBreakTimer > 0);
+           (this->actionFunc == BossGanon_Player_SummonTrident) ||
+           (this->actionFunc == BossGanon_Player_UnsummonTrident) || (sGdfBreakTimer > 0);
     // Not the dark aura: he moves freely while holding it. Nor the trident's flight: he walks about while it's out
 }
 
@@ -7874,7 +7879,9 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
 
     // D-Pad Left: outside Invasion games the blade back into the sheath, or the sword away
     if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT) && (GdfInvasion_Role() == GDF_INVASION_OFF)) {
-        if (sPlayerSwordState == GDF_SWORD_DRAWN) {
+        if ((sPlayerSwordState == GDF_SWORD_DRAWN) && BossGanon_Player_HasTrident() && this->playerGrounded) {
+            BossGanon_Player_SetupUnsummonTrident(this, play); // raised overhead, it dissolves away
+        } else if (sPlayerSwordState == GDF_SWORD_DRAWN) {
             BossGanon_Player_SetupSwordAttack(this, play, GDF_SWORD_ATK_SHEATHE);
         } else {
             sPlayerSwordState = GDF_SWORD_OFF;
@@ -8730,8 +8737,20 @@ static f32 BossGanon_Player_MocapPitch(f32 phase, s32 bone) {
     while (vb - va < -1800.0f) {
         vb += 3600.0f;
     }
-    return (((va + (vb - va) * w) * 0.1f) + ((bone < 4) ? GDF_MOCAP_LEG_SHIFT_DEG : GDF_MOCAP_ARM_SHIFT_DEG)) *
-           (M_PI / 180.0f);
+    f32 v = va + (vb - va) * w;
+
+    if (bone >= 4) {
+        // The jogger's arms barely swing (about 12 degrees each way, both behind him): on him that read as stiff, so
+        // they swing wider about their middle - the upper arms about three times as far, the forearms half as far
+        // again (they pump up as the arm comes forward)
+        static const f32 sMean[4] = { -287.0f, 814.0f, -281.0f, 895.0f };
+        f32 mean = sMean[bone - 4];
+        f32 gain = (bone & 1) ? 1.5f : 3.0f;
+        f32 shift = (bone & 1) ? 0.0f : 18.0f;
+
+        return ((mean + (v - mean) * gain) * 0.1f + shift) * (M_PI / 180.0f);
+    }
+    return ((v * 0.1f) + GDF_MOCAP_LEG_SHIFT_DEG) * (M_PI / 180.0f);
 }
 
 // Turns `limb` (a limb's rotation in his model space; the bone runs along its x) so the bone swings to `pitch`, keeping
@@ -8958,6 +8977,103 @@ void BossGanon_Player_SummonTrident(BossGanon* this, PlayState* play) {
     if (this->playerSwordTimer >= GDF_SUMMON_FRAMES) {
         sGdfSummonBurst = 0;
         BossGanon_Player_SetupSwordIdle(this, play);
+    }
+}
+
+// D-Pad Left out of the trident stance (outside Invasion games): the summon in reverse. He raises the trident over his
+// head and it comes apart into dark fire and sparks drawn in to his fist, then his empty hand comes down.
+static void BossGanon_Player_SetupUnsummonTrident(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
+    Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -6.0f);
+    this->actionFunc = BossGanon_Player_UnsummonTrident;
+    this->playerSwordTimer = 0;
+    this->playerWalkWeight = 0.0f;
+    this->playerSwordGuard = false;
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+}
+
+// The trident coming apart (on his screen, `own`, with his shock over it too)
+static void BossGanon_Player_TridentVanish(BossGanon* this, PlayState* play, Vec3f* hand, s32 own) {
+    static Color_RGBA8 sSparkPrim = { 255, 230, 255, 255 };
+    static Color_RGBA8 sSparkEnv = { 170, 60, 255, 0 };
+    static Vec3f sNoAccel = { 0.0f, 0.0f, 0.0f };
+    Vec3f vel;
+    Vec3f accel;
+    Vec3f p;
+    s32 i;
+
+    Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_LIGHT);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+    // Dark fire rising off where it was, slow
+    for (i = 0; i < 14; i++) {
+        vel.x = Rand_CenteredFloat(3.0f);
+        vel.y = Rand_ZeroFloat(2.0f) + 1.0f;
+        vel.z = Rand_CenteredFloat(3.0f);
+        accel.x = accel.z = 0.0f;
+        accel.y = 0.12f;
+        p = *hand;
+        p.y -= Rand_ZeroFloat(60.0f); // along the shaft, down from his fist
+        EffectSsDeadDb_Spawn(play, &p, &vel, &accel, 50 + (s16)Rand_ZeroFloat(30.0f), -2, 200, 120, 255, 255, 90,
+                             0, 170, 1, 10, false);
+    }
+    // Sparks drawn in to his fist from all round it
+    for (i = 0; i < 18; i++) {
+        s16 yaw = (s16)Rand_ZeroFloat(65536.0f);
+        f32 r = 50.0f + Rand_ZeroFloat(30.0f);
+        f32 dy = Rand_CenteredFloat(80.0f);
+
+        p.x = hand->x + Math_SinS(yaw) * r;
+        p.y = hand->y + dy;
+        p.z = hand->z + Math_CosS(yaw) * r;
+        vel.x = (hand->x - p.x) * 0.12f;
+        vel.y = (hand->y - p.y) * 0.12f;
+        vel.z = (hand->z - p.z) * 0.12f;
+        EffectSsKiraKira_SpawnDispersed(play, &p, &vel, &sNoAccel, &sSparkPrim, &sSparkEnv,
+                                        (s16)(Rand_ZeroFloat(1000.0f) + 1500.0f), 10);
+    }
+    if (own) {
+        BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
+    }
+}
+
+void BossGanon_Player_UnsummonTrident(BossGanon* this, PlayState* play) {
+    s16 t = this->playerSwordTimer;
+    f32 up;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachZeroF(&this->playerWalkWeight, 1.0f, 0.3f);
+
+    if (t < 7) {
+        up = t / 7.0f;
+    } else if (t < 15) {
+        up = 1.0f;
+    } else {
+        up = (GDF_SUMMON_FRAMES - t) / (f32)(GDF_SUMMON_FRAMES - 15);
+    }
+    up = CLAMP(up, 0.0f, 1.0f);
+    up = up * up * (3.0f - 2.0f * up);
+    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfTridentArmPoses[0], up);
+
+    sCape->backPush = -1.0f;
+    sCape->backSwayMagnitude = 0.3f;
+    sCape->sideSwayMagnitude = -0.5f;
+
+    if (t == GDF_SUMMON_BURST_FRAME) {
+        sPlayerSwordState = GDF_SWORD_OFF;
+        BossGanon_Player_TridentVanish(this, play, &this->unk_2EC[8], true);
+        sGdfSummonBurst = GDF_VANISH_BURST + 8; // (the others' screens tell it from the summon by its count)
+    }
+    if (sGdfSummonBurst > GDF_VANISH_BURST) {
+        sGdfSummonBurst--;
+        if (sGdfSummonBurst == GDF_VANISH_BURST) {
+            sGdfSummonBurst = 0;
+        }
+    }
+
+    this->playerSwordTimer++;
+    if (this->playerSwordTimer >= GDF_SUMMON_FRAMES) {
+        sGdfSummonBurst = 0;
+        BossGanon_Player_SetupFloat(this, play);
     }
 }
 
@@ -13720,7 +13836,11 @@ static void BossGanon_Puppet_UnpackFx(BossGanon* this, EnGanonMant* cape, const 
         u8 burst = (u8)fx[73];
 
         if ((burst > sPrevBurst) && (sPrevBurst == 0)) {
-            BossGanon_Player_TridentBurst(this, gPlayState, &this->unk_2EC[8], false);
+            if (burst > GDF_VANISH_BURST) {
+                BossGanon_Player_TridentVanish(this, gPlayState, &this->unk_2EC[8], false);
+            } else {
+                BossGanon_Player_TridentBurst(this, gPlayState, &this->unk_2EC[8], false);
+            }
         }
         sPrevBurst = burst;
     }
