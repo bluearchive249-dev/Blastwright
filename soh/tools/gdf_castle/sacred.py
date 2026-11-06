@@ -19,8 +19,66 @@ import numpy as np
 import castle as C
 import o2rgen as G
 
-Builder = C.Builder
 SURF = C.SURF
+
+
+class Builder(C.Builder):
+    """The castle's builder, lit the way the Temple of Time is: its surfaces cut into small pieces, each corner lit by
+    the room's lights (pools of warm light, the mirror's glow, the Sages' colours over their pillars) over a dim
+    ambient, so the rooms fall off into shadow between the lights instead of being one flat brightness.
+    lights: (position, radius, intensity, (r, g, b) tint)."""
+    CELL = 90.0
+    AMBIENT = 0.30
+
+    def __init__(self, lights=None, height=420.0):
+        super().__init__()
+        self.lights = lights
+        self.height = height
+
+    def lum(self, p, n):
+        k = np.full(3, self.AMBIENT)
+        for pos, radius, inten, tint in self.lights:
+            d = np.asarray(pos, float) - p
+            dist = np.linalg.norm(d)
+            fall = max(0.0, 1.0 - dist / radius) ** 2
+            if fall <= 0.0:
+                continue
+            facing = max(0.25, float(np.dot(n, d / max(dist, 1e-6))))
+            k = k + inten * fall * facing * np.asarray(tint, float)
+        k *= 1.0 - 0.3 * min(1.0, max(0.0, p[1] / self.height))  # dimmer up toward the ceiling
+        return np.minimum(k, 1.35)
+
+    def quad(self, mat, pts, collide=None, color=(255, 255, 255), uv=None, light=True):
+        if self.lights is None or not light:
+            return super().quad(mat, pts, collide=collide, color=color, uv=uv, light=light)
+        P = np.array(pts, float)
+        n = np.cross(P[1] - P[0], P[2] - P[0])
+        n /= max(np.linalg.norm(n), 1e-9)
+        # The texture coordinates as the castle's builder gives them, for the whole face
+        probe = C.Builder()
+        probe.quad(mat, pts, color=(255, 255, 255), uv=uv, light=False)
+        UV = np.array([(v[3], v[4]) for v in probe.faces[mat][0]], float)
+        if collide is not None:
+            idx = [self.cv(q) for q in P]
+            for tri in ((0, 1, 2), (0, 2, 3)) if len(idx) == 4 else ((0, 1, 2),):
+                self.col_polys.append((collide, idx[tri[0]], idx[tri[1]], idx[tri[2]], 0, 0))
+        def vert(q, t):
+            c = np.asarray(color, float) * self.lum(q, n)
+            return (q[0], q[1], q[2], t[0], t[1], int(min(255, c[0])), int(min(255, c[1])), int(min(255, c[2])), 255)
+        if len(P) != 4:
+            self.faces.setdefault(mat, []).append([vert(P[i], UV[i]) for i in range(len(P))])
+            return
+        nu = max(1, int(np.ceil(np.linalg.norm(P[1] - P[0]) / self.CELL)))
+        nv = max(1, int(np.ceil(np.linalg.norm(P[3] - P[0]) / self.CELL)))
+        def at(a, b):  # bilinear across the quad (0,0)=p0, (1,0)=p1, (1,1)=p2, (0,1)=p3
+            q = (1 - a) * (1 - b) * P[0] + a * (1 - b) * P[1] + a * b * P[2] + (1 - a) * b * P[3]
+            t = (1 - a) * (1 - b) * UV[0] + a * (1 - b) * UV[1] + a * b * UV[2] + (1 - a) * b * UV[3]
+            return q, t
+        for i in range(nu):
+            for j in range(nv):
+                cs = [at(i / nu, j / nv), at((i + 1) / nu, j / nv), at((i + 1) / nu, (j + 1) / nv),
+                      at(i / nu, (j + 1) / nv)]
+                self.faces.setdefault(mat, []).append([vert(q, t) for q, t in cs])
 C.FLOOR = 0
 C.MAT['mirror'] = C.tex('tokinoma_sceneTex_010FA0')   # the glass: plain marble, tinted by the actor each frame
 C.MAT['gold'] = C.tex('nakaniwa_room_0Tex_013E18')     # gilded bands (the stone band, tinted gold)
@@ -91,8 +149,18 @@ def build_mirror():
 
 # ---- The Mirror Room (SCENE_SASATEST) ----
 
+SAGE_TINTS = [(0.35, 1.0, 0.4), (1.0, 0.45, 0.25), (0.35, 0.6, 1.0), (0.8, 0.4, 1.0), (1.0, 0.7, 0.3), (1.0, 0.95, 0.5)]
+WARM = (1.0, 0.9, 0.72)
+
+
 def build_mirror_room():
-    B = Builder()
+    pillars = [(-240, -200), (-240, -20), (-240, 160), (240, 160), (240, -20), (240, -200)]
+    lights = [((0, 170, -320), 560, 0.95, (1.0, 0.95, 0.88)),   # the mirror's glow
+              ((0, 400, -40), 420, 0.4, WARM),                  # light from above, the middle of the hall,
+              ((0, 70, -40), 320, 0.6, WARM),                   # and its pool on the floor
+              ((0, 230, 470), 300, 0.45, WARM)]                 # the passage
+    lights += [((x, 340, z), 230, 0.4, t) for (x, z), t in zip(pillars, SAGE_TINTS)]  # each Sage's colour
+    B = Builder(lights, 420.0)
     H = 420
     # The passage from the broken door: south, z 300..620 (the door is at its far end)
     B.floor('marble_check', -90, 90, 300, 620, y=0)
@@ -120,7 +188,11 @@ def build_mirror_room():
 # ---- The Sacred Realm Temple's first hall (SCENE_SYOTES) ----
 
 def build_first_hall():
-    B = Builder()
+    lights = [((0, 460, z), 400, 0.35, WARM) for z in (150, -250, -650)]   # shafts of light down the hall,
+    lights += [((0, 70, z), 330, 0.65, WARM) for z in (150, -250, -650)]   # pooling on the floor
+    lights += [((0, 250, -1050), 520, 0.85, (1.0, 0.85, 0.5)),            # the great door, gilded
+               ((0, 170, 280), 360, 0.6, (1.0, 0.95, 0.88))]               # the mirror behind him
+    B = Builder(lights, 520.0)
     H = 520
     B.floor('marble_check', -320, 320, -1100, 300, y=0)
     B.floor('carpet_red', -70, 70, -1000, 220, y=1)
@@ -140,8 +212,11 @@ def build_first_hall():
     return B
 
 
-LIGHTING = [(90, 85, 100, 60, 100, 40, -1, -6, -6, -74, -100, 21, 70, 70, 90, 30, 30, 50, 2020, 12800),
-            (110, 105, 115, 78, 98, -17, -1, -1, -16, -82, -20, -94, 80, 80, 100, 60, 60, 80, 2020, 12800)]
+# The Temple of Time's own lighting and fog (its scene's first four settings): dim, the fog dark and close
+LIGHTING = [(50, 50, 50, 0, 112, -58, -56, -56, -56, 0, -112, 58, 80, 80, 80, 10, 10, 10, 2012, 6000),
+            (50, 50, 50, 0, 112, -58, -101, -101, -101, 0, -112, 58, 50, 50, 50, 10, 10, 10, 2004, 6000),
+            (60, 60, 60, 8, 26, -123, -1, -1, -1, 8, -26, 123, 50, 50, 50, 0, 0, 0, -28, 6000),
+            (50, 50, 50, 0, 112, -58, 120, 120, 120, 0, -112, 58, 50, 50, 50, 0, 0, 0, -28, 6000)]
 
 
 def scene(files, name, B, spawns, entrances, exits):
@@ -167,7 +242,16 @@ def emit():
     emit_obj(mframe, 'gGdfMirrorFrame', files)
     # (the glass's colour is the actor's: no colour of its own from the material)
     plain = C.material_cmds
-    C.material_cmds = lambda t: [c for c in plain(t) if c[3] != 0xFA]
+    # TEXEL0 x PRIMITIVE, then x SHADE in the second cycle; alpha 1 (the castle's materials leave PRIMITIVE out)
+    def cc(a, b, c, d):
+        return a, b, c, d
+    a0, b0, c0, d0, Aa0, Ab0, Ac0, Ad0 = 1, 15, 3, 7, 7, 7, 7, 6
+    a1, b1, c1, d1, Aa1, Ab1, Ac1, Ad1 = 0, 15, 4, 7, 7, 7, 7, 6
+    w0 = (0xFC << 24) | (a0 << 20) | (c0 << 15) | (Aa0 << 12) | (Ac0 << 9) | (a1 << 5) | c1
+    w1 = (b0 << 28) | (b1 << 24) | (Aa1 << 21) | (Ac1 << 18) | (d0 << 15) | (Ab0 << 12) | (Ad0 << 9) | (d1 << 6) | \
+         (Ab1 << 3) | Ad1
+    combine = __import__('struct').pack('<II', w0, w1)
+    C.material_cmds = lambda t: [c for c in plain(t) if c[3] not in (0xFA, 0xFC)] + [combine]
     emit_obj(glass, 'gGdfMirrorGlass', files)
     C.material_cmds = plain
     # The Mirror Room: in from the broken door (facing north), or back out of the mirror (facing south)
