@@ -12,6 +12,8 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "soh/ShipInit.hpp"
+#include "soh/cvar_prefixes.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
 extern "C" {
 #include "z64.h"
@@ -304,16 +306,22 @@ struct MinionEdit {
     const char* to;
 };
 
+// Malon, child and adult, and a market gossip: he's no "fairy boy from the forest", he's the desert thief from the
+// desert. (With Play as Ganondorf and its NPC dialogue on, Poe or no Poe.)
+static const std::unordered_map<uint16_t, std::vector<MinionEdit>> sDesertThiefEdits = {
+    { 0x2000, { { "the fairy boy from\x01the forest!", "the desert thief from\x01the desert!" } } },
+    { 0x2041, { { "a fairy boy from \x01the forest!", "a desert thief from \x01the desert!" } } },
+    { 0x2043, { { "fairy boy?", "desert thief?" } } },
+    { 0x2047,
+      { { "it's the fairy boy again", "it's the desert thief again" },
+        { "my friend, fairy boy!", "my friend, desert thief!" } } },
+    { 0x2048, { { "you, fairy boy...", "you, desert thief..." } } },
+    { 0x204A, { { "you, fairy boy.", "you, desert thief." } } },
+    { 0x7174, { { "Hi, fairy boy!", "Hi, desert thief!" } } },
+};
+
 static const std::unordered_map<uint16_t, std::vector<MinionEdit>> sMinionEdits = {
-    // Malon, child and adult: he isn't her "fairy boy" any more
-    { 0x2000, { { "the fairy boy from", "the Poe man from" } } },
-    { 0x2041, { { "a fairy boy from", "a Poe man from" } } },
-    { 0x2043, { { "fairy boy?", "Poe man?" } } },
-    { 0x2047, { { "it's the fairy boy again", "it's the Poe man again" }, { "my friend, fairy boy!", "my friend, Poe man!" } } },
-    { 0x2048, { { "you, fairy boy...", "you, Poe man..." } } },
-    { 0x204A, { { "you, fairy boy.", "you, Poe man." } } },
-    // Hyrule's townsfolk and the Zora composer brothers' friend
-    { 0x7174, { { "Hi, fairy boy!", "Hi, Poe man!" } } },
+    // The Zora composer brothers' friend
     { 0x40A3, { { "the fairy buddy I", "the ghost buddy I" } } },
     // Princess Zelda in the courtyard: "Is that... a Poe?!"
     { 0x70FA,
@@ -337,9 +345,10 @@ static const MessageTableEntry* FindMessageEntry(uint16_t textId) {
     return nullptr;
 }
 
-static bool BuildEditedMessage(uint16_t textId) {
-    auto edits = sMinionEdits.find(textId);
-    if (edits == sMinionEdits.end() || gSaveContext.language != LANGUAGE_ENG) {
+static bool BuildEditedMessage(uint16_t textId,
+                               const std::unordered_map<uint16_t, std::vector<MinionEdit>>& table = sMinionEdits) {
+    auto edits = table.find(textId);
+    if (edits == table.end() || gSaveContext.language != LANGUAGE_ENG) {
         return false;
     }
     const MessageTableEntry* entry = FindMessageEntry(textId);
@@ -369,6 +378,12 @@ static bool BuildEditedMessage(uint16_t textId) {
 }
 
 static void BuildMinionMessage(uint16_t* textId, bool* loadFromMessageTable) {
+    if (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) &&
+        CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 1) &&
+        BuildEditedMessage(*textId, sDesertThiefEdits)) {
+        *loadFromMessageTable = false;
+        return;
+    }
     if (!PlayAsGanondorf_UsePoeNavi()) {
         return;
     }
