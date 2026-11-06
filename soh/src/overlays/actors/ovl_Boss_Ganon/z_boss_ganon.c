@@ -8557,8 +8557,16 @@ static s32 BossGanon_Player_IsSmashable(s16 id) {
     }
 }
 
+// The sealed door in the Temple of Time (GanondorfSacred.cpp): no key fits it; only his kick opens it
+s32 GdfSacred_IsSealedDoor(Actor* a);
+s32 GdfSacred_IsShut(Actor* a);
+void GdfSacred_KickOpen(Actor* a, PlayState* play);
+
 // Shut to him: locked, chained or barred (and so not opened the normal way)
 static s32 BossGanon_Player_IsShut(PlayState* play, Actor* a) {
+    if (GdfSacred_IsSealedDoor(a)) {
+        return GdfSacred_IsShut(a);
+    }
     if (a->id == ACTOR_EN_DOOR) {
         return ((EnDoor*)a)->lockTimer != 0;
     }
@@ -8657,6 +8665,10 @@ static void BossGanon_Player_BreakDoor(BossGanon* this, PlayState* play, Actor* 
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
     EffectSsHahen_SpawnBurst(play, &pos, 12.0f, 0, 12, 10, 24, HAHEN_OBJECT_DEFAULT, 10, NULL);
 
+    if (GdfSacred_IsSealedDoor(a)) {
+        GdfSacred_KickOpen(a, play);
+        return;
+    }
     if ((a->id == ACTOR_BG_SPOT02_OBJECTS) && (a->params == 0)) {
         // The Shadow Temple's stone door: it grinds up as if the torches were lit
         s32 doorFlag = ((BgSpot02Objects*)a)->unk_16B;

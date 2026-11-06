@@ -26,6 +26,8 @@ extern PlayState* gPlayState;
 #include "soh/Enhancements/ExtraModes/GanondorfIntro.h"
 extern "C" s32 GanondorfCastle_IsAvailable(void);
 extern "C" void GanondorfCastle_VisitInterior(void);
+extern "C" s32 GdfSacred_IsAvailable(void);
+extern "C" void GdfSacred_VisitMirrorRoom(void);
 
 #define CVAR_INT_SHIP_INIT(cvar, val) \
     CVarSetInteger(cvar, val);        \
@@ -2369,6 +2371,25 @@ void SohMenu::AddMenuEnhancements() {
         .Options(ButtonOptions().Tooltip("Go straight inside Hyrule Castle (to try it out).")
                      .Size(UIWidgets::Sizes::Inline))
         .Callback([](WidgetInfo& info) { GanondorfCastle_VisitInterior(); });
+    AddWidget(path, "Sacred Realm Temple", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.SacredRealm"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "As an adult, a sealed door stands in the west wall of the Temple of Time: no keyhole, only a barred "
+            "window glowing with the Sages' colours. Only Ganondorf can open it: kick it in (A in front of it). Beyond "
+            "is the Sages' mirror; step into it to enter the Sacred Realm Temple.\n\n"
+            "Stage 1: the door, the Mirror Room and the temple's first hall. Needs gdf_sacred.o2r in the mods "
+            "folder."));
+    AddWidget(path, "Visit the Mirror Room", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.options->disabled = (gPlayState == NULL) || !GdfSacred_IsAvailable();
+        })
+        .Options(ButtonOptions().Tooltip("Go straight to the Sages' mirror (to try it out).")
+                     .Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo& info) { GdfSacred_VisitMirrorRoom(); });
     AddWidget(path, "Walk Around in Cutscenes", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.RoamInCutscenes"))
         .PreFunc([](WidgetInfo& info) {

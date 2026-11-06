@@ -393,7 +393,8 @@ def emit_dl(B, dl_path, vtx_path, files, obj=False):
             # Drawn by an actor (after an actor's setup, lights on): the shading is baked into the vertex colours,
             # so lighting goes off, and the tint the scene gives this texture goes with it
             dl.w(0xD9FDFFFF, 0x00000004)
-            dl.w(0xFA000000, OBJ_PRIM.get(mat, 0xFFFFFFFF))
+            if OBJ_PRIM.get(mat, 0xFFFFFFFF) is not None:  # (None: the actor sets the colour)
+                dl.w(0xFA000000, OBJ_PRIM.get(mat, 0xFFFFFFFF))
         batch = []
         def flush():
             if not batch:
