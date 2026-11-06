@@ -8526,6 +8526,77 @@ static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play) {
     }
 }
 
+// ---- The Master Sword: he kicks it out of the pedestal instead of drawing it ----
+// The pedestal's sword (Bg_Toki_Swd) stops drawing the moment Link takes it. Here it stays in the stone until his
+// foot meets it (the door kick, without a door), then the pedestal actor itself flies off spinning (its draw follows
+// its position and rotation) and, once out of sight, is no longer drawn. The cutscene and the sword in his inventory
+// go on as the game has them.
+#define GDF_SWD_FLIGHT_FRAMES 50
+static Actor* sGdfSwd = NULL;
+static ActorFunc sGdfSwdDraw = NULL;
+static s16 sGdfSwdTimer = -1; // -1: waiting; then the kick and the flight; 999: gone
+static Vec3f sGdfSwdVel;
+
+static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
+    Actor* swd;
+
+    if (play->sceneNum != SCENE_TEMPLE_OF_TIME) {
+        sGdfSwd = NULL;
+        sGdfSwdTimer = -1;
+        return;
+    }
+    swd = Actor_Find(&play->actorCtx, ACTOR_BG_TOKI_SWD, ACTORCAT_PROP);
+    if (swd != sGdfSwd) {
+        sGdfSwd = swd;
+        sGdfSwdDraw = NULL;
+        sGdfSwdTimer = -1;
+    }
+    if (swd == NULL) {
+        return;
+    }
+    if (sGdfSwdTimer < 0) {
+        // In the stone: remember how it's drawn. Gone from it as a child: Link has just taken it
+        if (swd->draw != NULL) {
+            sGdfSwdDraw = swd->draw;
+        } else if ((sGdfSwdDraw != NULL) && !LINK_IS_ADULT && !this->playerHidden) {
+            swd->draw = sGdfSwdDraw;
+            sGdfSwdTimer = 0;
+            sGdfBreakTimer = 1; // the door kick's pose
+            sGdfBreakTarget = NULL;
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+        }
+        return;
+    }
+    if (sGdfSwdTimer >= 999) {
+        return;
+    }
+    if (sGdfSwdTimer == GDF_BREAK_KICK_IMPACT) {
+        s16 yaw = this->actor.shape.rot.y;
+
+        // Out of the stone, forward and up over the pedestal
+        sGdfSwdVel.x = Math_SinS(yaw) * 16.0f;
+        sGdfSwdVel.y = 24.0f;
+        sGdfSwdVel.z = Math_CosS(yaw) * 16.0f;
+        Audio_PlayActorSound2(swd, NA_SE_IT_SHIELD_REFLECT_SW);
+        Audio_PlayActorSound2(swd, NA_SE_IT_HAMMER_HIT);
+    }
+    if (sGdfSwdTimer > GDF_BREAK_KICK_IMPACT) {
+        swd->world.pos.x += sGdfSwdVel.x;
+        swd->world.pos.y += sGdfSwdVel.y;
+        swd->world.pos.z += sGdfSwdVel.z;
+        sGdfSwdVel.y -= 0.6f;
+        swd->shape.rot.x += 0x2400; // end over end
+        swd->shape.rot.y += 0x0600;
+        if ((sGdfSwdTimer % 5) == 0) {
+            Audio_PlayActorSound2(swd, NA_SE_IT_SWORD_SWING_HARD);
+        }
+    }
+    if (++sGdfSwdTimer > GDF_BREAK_KICK_IMPACT + GDF_SWD_FLIGHT_FRAMES) {
+        swd->draw = NULL; // off-screen and away
+        sGdfSwdTimer = 999;
+    }
+}
+
 // Chests: while Link opens one, he boots the lid open instead, the foot landing on the frame the lid bursts open
 // (z_en_box.c, EN_BOX_GDF_KICK_FRAME). A lower kick than for doors, so the foot stops at the lid.
 #define GDF_CHEST_KICK_DEG 58.0f
@@ -11127,6 +11198,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     // He kicks doors open
     BossGanon_Player_ApplyDoorKick(this, play);
     BossGanon_Player_ApplyChestKick(this, play);
+    BossGanon_Player_MasterSwordKick(this, play);
     BossGanon_Player_ApplyBreakKick(this, play);
     BossGanon_Player_ApplyDoorDuck(this, play);
     BossGanon_Player_UpdateBodyguards(this, play);
