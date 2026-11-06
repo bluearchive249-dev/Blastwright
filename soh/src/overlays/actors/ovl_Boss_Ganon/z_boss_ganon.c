@@ -8998,6 +8998,11 @@ static void BossGanon_Player_SetupUnsummonTrident(BossGanon* this, PlayState* pl
     this->playerSwordTimer = 0;
     this->playerWalkWeight = 0.0f;
     this->playerSwordGuard = false;
+    // His arm as it is in the stance: it goes up from there by the shortest turn (left to the animation's morph, which
+    // mixes the joints' angles one by one, it tumbled on the way)
+    for (s32 i = 0; i < 3; i++) {
+        this->playerArmFrom[i] = this->skelAnime.jointTable[1 + GDF_RIGHT_ARM_LIMB + i];
+    }
     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
 }
 
@@ -9061,7 +9066,18 @@ void BossGanon_Player_UnsummonTrident(BossGanon* this, PlayState* play) {
     }
     up = CLAMP(up, 0.0f, 1.0f);
     up = up * up * (3.0f - 2.0f * up);
-    BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfTridentArmPoses[0], up);
+    if (t < 7) {
+        // Up from the stance
+        for (s32 i = 0; i < 3; i++) {
+            Vec3s over = sGdfTridentArmPoses[0][i];
+
+            BossGanon_Player_SlerpRot(&this->playerArmFrom[i], &over, up,
+                                      &this->skelAnime.jointTable[1 + GDF_RIGHT_ARM_LIMB + i]);
+        }
+    } else {
+        // Held, then down to his side (the arm as the standing animation has it)
+        BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfTridentArmPoses[0], up);
+    }
 
     sCape->backPush = -1.0f;
     sCape->backSwayMagnitude = 0.3f;
