@@ -26,6 +26,7 @@
 #include "overlays/actors/ovl_En_Heishi1/z_en_heishi1.h" // SoH: guards hunting him after a murder
 #include "overlays/actors/ovl_En_Door/z_en_door.h" // SoH: he kicks doors open
 #include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h" // SoH: ...locked, barred and chained ones too
+#include "overlays/actors/ovl_Bg_Spot02_Objects/z_bg_spot02_objects.h" // ...and the Shadow Temple's stone door
 #include "overlays/effects/ovl_Effect_Ss_Hahen/z_eff_ss_hahen.h"
 #include "overlays/actors/ovl_En_Box/z_en_box.h"   // SoH: ...and chests
 #include "overlays/actors/ovl_En_GeldB/z_en_geldb.h" // SoH: his Gerudo bodyguards
@@ -8379,6 +8380,14 @@ static s32 BossGanon_Player_IsShut(PlayState* play, Actor* a) {
     if (a->id == ACTOR_EN_DOOR) {
         return ((EnDoor*)a)->lockTimer != 0;
     }
+    if (a->id == ACTOR_BG_SPOT02_OBJECTS) {
+        // The graveyard: the great stone door to the Shadow Temple (raised by a switch, the torches), and the royal
+        // family's tombstone
+        BgSpot02Objects* o = (BgSpot02Objects*)a;
+
+        return ((a->params == 0) && !Flags_GetSwitch(play, o->unk_16B)) ||
+               ((a->params == 2) && (play->sceneNum == SCENE_GRAVEYARD));
+    }
     if (a->id == ACTOR_DOOR_SHUTTER) {
         DoorShutter* d = (DoorShutter*)a;
         s32 flag = a->params & 0x3F;
@@ -8420,7 +8429,8 @@ static Actor* BossGanon_Player_FindShutDoor(PlayState* play) {
             d = Math_Vec3f_DistXZ(&player->actor.world.pos, &a->world.pos);
             dyaw = Math_Vec3f_Yaw(&player->actor.world.pos, &a->world.pos) - player->actor.shape.rot.y;
             // (gates and grates are wide, and their origin may be at one end: further for them)
-            if (d > (BossGanon_Player_IsSmashable(a->id) ? 170.0f : GDF_BREAK_RANGE)) {
+            if (d > ((BossGanon_Player_IsSmashable(a->id) || (a->id == ACTOR_BG_SPOT02_OBJECTS)) ? 170.0f
+                                                                                                : GDF_BREAK_RANGE)) {
                 continue;
             }
             if ((d < bestDist) && (ABS(dyaw) < 0x2C00) && (fabsf(a->world.pos.y - player->actor.world.pos.y) < 120.0f)) {
@@ -8465,6 +8475,14 @@ static void BossGanon_Player_BreakDoor(BossGanon* this, PlayState* play, Actor* 
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
     EffectSsHahen_SpawnBurst(play, &pos, 12.0f, 0, 12, 10, 24, HAHEN_OBJECT_DEFAULT, 10, NULL);
 
+    if ((a->id == ACTOR_BG_SPOT02_OBJECTS) && (a->params == 0)) {
+        // The Shadow Temple's stone door: it grinds up as if the torches were lit
+        s32 doorFlag = ((BgSpot02Objects*)a)->unk_16B;
+
+        Flags_SetSwitch(play, doorFlag);
+        GdfInvasion_KeepKickedSwitch(doorFlag);
+        return;
+    }
     if (a->id == ACTOR_EN_DOOR) {
         // Unlocked for good (no key spent): he kicks it open as he goes through
         ((EnDoor*)a)->lockTimer = 0;
