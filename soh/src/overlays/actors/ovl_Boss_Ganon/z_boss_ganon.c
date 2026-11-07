@@ -6392,6 +6392,7 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
 #define GDF_ROAM_RADIUS 30.0f
 
 void BossGanon_Player_Dance(BossGanon* this, PlayState* play);
+void BossGanon_Player_CsKneel(BossGanon* this, PlayState* play);
 
 static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
@@ -6410,7 +6411,8 @@ static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
         return false;
     }
     return (this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_Brood) ||
-           (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Dance);
+           (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Dance) ||
+           (this->actionFunc == BossGanon_Player_CsKneel);
 }
 
 static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play) {
@@ -11098,6 +11100,99 @@ void BossGanon_Player_Hurt(BossGanon* this, PlayState* play) {
     }
 }
 
+// ---- Kneeling for young Link's conversations and cutscenes ----
+// The camera is framed for a child there, and standing he was cut off at the chest. He goes down on one knee (his
+// defeat's kneel) and turns his head to whoever is talking; he rises when it's over.
+static void BossGanon_Pg_RotY(f32 deg, GdfMat3 out);
+static u8 sGdfCsPoseCur; // (his cutscene pose, set further down)
+static f32 sGdfKneelYaw = 0.0f;
+static f32 sGdfKneelPitch = 0.0f;
+
+static s32 BossGanon_Player_ShouldKneel(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    return LINK_IS_CHILD && this->playerGrounded && !this->playerHidden && !sGdfRoaming && !gGdfIntroCs.active &&
+           !BossGanon_Player_ShouldBrood(play) && (sGdfCsPoseCur == GDF_CSPOSE_NONE) && (player->doorActor == NULL) &&
+           !(player->stateFlags1 & (PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_ON_HORSE |
+                                    PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_DEAD)) &&
+           ((player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
+            (play->csCtx.state != CS_STATE_IDLE));
+}
+
+// His head turned by (yaw, pitch) degrees in his body's frame (as the cutscene poses turn it)
+static void BossGanon_Player_TurnHead(BossGanon* this, f32 yaw, f32 pitch) {
+    Vec3s* joints = this->skelAnime.jointTable;
+    GdfMat3 rootRot;
+    GdfMat3 body;
+    GdfMat3 neck;
+    GdfMat3 rot;
+    GdfMat3 rotY;
+    GdfMat3 rotX;
+    GdfMat3 tmp;
+
+    BossGanon_Pg_FromRot(&joints[1 + 0], rootRot);
+    BossGanon_Pg_FromRot(&joints[1 + 1], tmp);
+    BossGanon_Pg_Mul(rootRot, tmp, body, false);
+    BossGanon_Pg_FromRot(&joints[1 + 10], tmp);
+    BossGanon_Pg_Mul(body, tmp, neck, false);
+    BossGanon_Pg_RotY(yaw, rotY);
+    BossGanon_Pg_RotX(pitch, rotX);
+    BossGanon_Pg_Mul(rotY, rotX, rot, false);
+    BossGanon_Pg_Mul(rot, neck, tmp, false);
+    BossGanon_Pg_Mul(body, tmp, neck, true);
+    BossGanon_Pg_ToRot(neck, &joints[1 + 10]);
+}
+
+void BossGanon_Player_CsKneel(BossGanon* this, PlayState* play);
+
+static void BossGanon_Player_SetupCsKneel(BossGanon* this, PlayState* play) {
+    BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
+    Animation_MorphToLoop(&this->skelAnime, &gGanondorfVulnerableAnim, -8.0f);
+    this->actionFunc = BossGanon_Player_CsKneel;
+    this->playerWalkWeight = 0.0f;
+    this->playerSprintWeight = 0.0f;
+    this->handLightBallScale = 0.0f;
+    sGdfKneelYaw = sGdfKneelPitch = 0.0f;
+}
+
+void BossGanon_Player_CsKneel(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Actor* talker = player->talkActor;
+    f32 wantYaw = 0.0f;
+    f32 wantPitch = 0.0f;
+
+    SkelAnime_Update(&this->skelAnime);
+    sCape->backPush = -1.0f;
+    sCape->backSwayMagnitude = 0.2f;
+    sCape->sideSwayMagnitude = -0.5f;
+    sCape->minDist = 0.0f;
+    if (!BossGanon_Player_ShouldKneel(this, play)) {
+        BossGanon_Player_SetupFloat(this, play); // over: he stands
+        return;
+    }
+    // Whoever is talking (or whoever Link is looking at): his head turns to them, eyes up from down on one knee
+    if ((talker == NULL) || (talker->update == NULL)) {
+        talker = player->focusActor;
+    }
+    if ((talker != NULL) && (talker->update != NULL) && (talker != &this->actor)) {
+        Vec3f head = this->actor.world.pos;
+        f32 dx = talker->focus.pos.x - head.x;
+        f32 dz = talker->focus.pos.z - head.z;
+        s16 dyaw;
+
+        head.y += 95.0f;
+        dyaw = Math_Atan2S(dz, dx) - this->actor.shape.rot.y;
+        wantYaw = CLAMP(dyaw * (360.0f / 65536.0f), -70.0f, 70.0f);
+        wantPitch = CLAMP(-Math_Atan2F(talker->focus.pos.y - head.y, sqrtf(SQ(dx) + SQ(dz))) * (180.0f / M_PI),
+                          -40.0f, 30.0f);
+    }
+    Math_ApproachF(&sGdfKneelYaw, wantYaw, 0.1f, 3.0f);
+    Math_ApproachF(&sGdfKneelPitch, wantPitch, 0.1f, 3.0f);
+    if ((fabsf(sGdfKneelYaw) > 0.1f) || (fabsf(sGdfKneelPitch) > 0.1f)) {
+        BossGanon_Player_TurnHead(this, sGdfKneelYaw, sGdfKneelPitch);
+    }
+}
+
 void BossGanon_Player_SetupDowned(BossGanon* this, PlayState* play) {
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME1);
     BossGanon_Player_CancelMagic(this);
@@ -11394,9 +11489,13 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         ((player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
          (play->csCtx.state != CS_STATE_IDLE)) &&
         ((this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_Brood) ||
-         (this->actionFunc == BossGanon_Player_Laugh)) &&
+         (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_CsKneel)) &&
         (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_DDOWN) || GanondorfDance_TakeRequest())) {
         BossGanon_Player_SetupDance(this, play);
+    }
+    // Young Link's conversations and cutscenes: down on one knee, so the child's camera sees all of him
+    if ((this->actionFunc == BossGanon_Player_Float) && BossGanon_Player_ShouldKneel(this, play)) {
+        BossGanon_Player_SetupCsKneel(this, play);
     }
 
     // The opening in Link's house: brooding against the wall while the cutscene runs (a taunt can interrupt it)
