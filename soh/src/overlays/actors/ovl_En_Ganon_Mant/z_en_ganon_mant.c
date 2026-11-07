@@ -18,7 +18,6 @@ void EnGanonMant_Init(Actor* thisx, PlayState* play);
 void EnGanonMant_Destroy(Actor* thisx, PlayState* play);
 void EnGanonMant_Update(Actor* thisx, PlayState* play);
 void EnGanonMant_Draw(Actor* thisx, PlayState* play);
-s32 BossGanon_Player_IsYoung(void);
 
 const ActorInit En_Ganon_Mant_InitVars = {
     ACTOR_EN_GANON_MANT,
@@ -547,11 +546,6 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
     s16 strandIdx;
     Vec3f midpoint;
     s16 nextStrandIdx;
-
-    // SoH: "Play as Ganondorf", young Ganondorf wears no cape
-    if ((this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) && BossGanon_Player_IsYoung()) {
-        return;
-    }
 
     if (this->isLinkCape && !LinkGanonCape_PrepareDraw(this, play)) {
         // SoH: Link isn't visible this frame (first person, hidden in a cutscene, ...)
