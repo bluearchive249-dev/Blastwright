@@ -3567,7 +3567,7 @@ static void BossGanon_Update_Impl(Actor* thisx, PlayState* play2) {
 #define GDF_YOUNG_SCALE 0.72f      // his height as a boy
 #define GDF_YOUNG_HEAD_SCALE 1.22f // his head, a boy's proportions
 s32 BossGanon_Player_IsYoung(void) {
-    return LINK_IS_CHILD && CVarGetInteger(CVAR_PLAY_AS_GDF("YoungGanondorf"), 1);
+    return LINK_IS_CHILD && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.YoungGanondorf"), 1);
 }
 
 s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
