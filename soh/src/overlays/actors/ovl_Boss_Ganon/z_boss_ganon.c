@@ -9678,12 +9678,22 @@ void BossGanon_Player_Dance(BossGanon* this, PlayState* play) {
     if (this->playerSwordTimer < 100) {
         this->playerSwordTimer++;
     }
-    // The stick or any button, or off the ground: he stops
-    if (!this->playerGrounded || (ABS(input->rel.stick_x) > 20) || (ABS(input->rel.stick_y) > 20) ||
-        CHECK_BTN_ANY(input->press.button, BTN_A | BTN_B | BTN_Z | BTN_R | BTN_L | BTN_CUP | BTN_CDOWN | BTN_CLEFT |
-                                               BTN_CRIGHT | BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT)) {
-        GanondorfDance_Stop();
-        BossGanon_Player_SetupFloat(this, play);
+    // The stick or any button, or off the ground: he stops. (In a cutscene or a conversation only the stick and the
+    // D-Pad: the other buttons move the scene or the text on, and he dances on through it.)
+    {
+        Player* player = GET_PLAYER(play);
+        bool inScene = (player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
+                       (play->csCtx.state != CS_STATE_IDLE);
+        u16 stopButtons = BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+
+        if (!inScene) {
+            stopButtons |= BTN_A | BTN_B | BTN_Z | BTN_R | BTN_L | BTN_CUP | BTN_CDOWN | BTN_CLEFT | BTN_CRIGHT;
+        }
+        if (!this->playerGrounded || (ABS(input->rel.stick_x) > 20) || (ABS(input->rel.stick_y) > 20) ||
+            (this->playerHidden && inScene) || ((this->playerSwordTimer > 1) && CHECK_BTN_ANY(input->press.button, stopButtons))) {
+            GanondorfDance_Stop();
+            BossGanon_Player_SetupFloat(this, play);
+        }
     }
 }
 
@@ -11386,10 +11396,20 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
          (this->actionFunc == BossGanon_Player_Brood))) {
         BossGanon_Player_SetupLaugh(this, play);
     }
+    // So does the dance: D-Pad Down, or the menu's button (on the ground)
+    if (!this->playerHidden && !GanondorfSongs_IsOcarinaOut() && !gGdfIntroCs.active && this->playerGrounded &&
+        ((player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
+         (play->csCtx.state != CS_STATE_IDLE)) &&
+        ((this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_Brood) ||
+         (this->actionFunc == BossGanon_Player_Laugh)) &&
+        (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_DDOWN) || GanondorfDance_TakeRequest())) {
+        BossGanon_Player_SetupDance(this, play);
+    }
 
     // The opening in Link's house: brooding against the wall while the cutscene runs (a taunt can interrupt it)
     if (BossGanon_Player_ShouldBrood(play) && !this->playerHidden && !sGdfRoaming) {
-        if ((this->actionFunc != BossGanon_Player_Brood) && (this->actionFunc != BossGanon_Player_Laugh)) {
+        if ((this->actionFunc != BossGanon_Player_Brood) && (this->actionFunc != BossGanon_Player_Laugh) &&
+            (this->actionFunc != BossGanon_Player_Dance)) {
             BossGanon_Player_SetupBrood(this, play);
             BossGanon_Player_Brood(this, play);
         }
