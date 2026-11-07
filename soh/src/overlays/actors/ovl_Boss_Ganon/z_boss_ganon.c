@@ -6391,6 +6391,8 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
 #define GDF_ROAM_MAX_SPEED 5.0f
 #define GDF_ROAM_RADIUS 30.0f
 
+void BossGanon_Player_Dance(BossGanon* this, PlayState* play);
+
 static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
@@ -6408,7 +6410,7 @@ static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
         return false;
     }
     return (this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_Brood) ||
-           (this->actionFunc == BossGanon_Player_Laugh);
+           (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Dance);
 }
 
 static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play) {
@@ -9678,19 +9680,10 @@ void BossGanon_Player_Dance(BossGanon* this, PlayState* play) {
     if (this->playerSwordTimer < 100) {
         this->playerSwordTimer++;
     }
-    // The stick or any button, or off the ground: he stops. (In a cutscene or a conversation only the stick and the
-    // D-Pad: the other buttons move the scene or the text on, and he dances on through it.)
+    // B stops him, and only B: the stick moves him (he dances his way about, in cutscenes too) and the other buttons
+    // do what they do (in a conversation, move the text on) while he dances on. (Hidden by the game, he stops.)
     {
-        Player* player = GET_PLAYER(play);
-        bool inScene = (player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
-                       (play->csCtx.state != CS_STATE_IDLE);
-        u16 stopButtons = BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
-
-        if (!inScene) {
-            stopButtons |= BTN_A | BTN_B | BTN_Z | BTN_R | BTN_L | BTN_CUP | BTN_CDOWN | BTN_CLEFT | BTN_CRIGHT;
-        }
-        if (!this->playerGrounded || (ABS(input->rel.stick_x) > 20) || (ABS(input->rel.stick_y) > 20) ||
-            (this->playerHidden && inScene) || ((this->playerSwordTimer > 1) && CHECK_BTN_ANY(input->press.button, stopButtons))) {
+        if (this->playerHidden || ((this->playerSwordTimer > 1) && CHECK_BTN_ALL(input->press.button, BTN_B))) {
             GanondorfDance_Stop();
             BossGanon_Player_SetupFloat(this, play);
         }
