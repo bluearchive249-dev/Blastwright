@@ -509,7 +509,13 @@ static void OnPlayerUpdate() {
     if (sSpawnPending) {
         sSpawnPending = false;
         if (play->sceneNum == SCENE_TEMPLE_OF_TIME) {
-            Actor_Spawn(&play->actorCtx, play, sDoorActorId, sDoorPos.x, sDoorPos.y, sDoorPos.z, 0, 0x4000, 0, 0);
+            Actor* door =
+                Actor_Spawn(&play->actorCtx, play, sDoorActorId, sDoorPos.x, sDoorPos.y, sDoorPos.z, 0, 0x4000, 0, 0);
+            // Belonging to no room: spawned while he stands in the Master Sword's chamber (as he does after the
+            // Sages' cutscene that makes him an adult) it would otherwise vanish as soon as he walks into the hall
+            if (door != NULL) {
+                door->room = -1;
+            }
             if (sArrival == 1) {
                 PlaceAt(player, sDoorPos.x + 70.0f, sDoorPos.y, sDoorPos.z, 0x4000); // out of the doorway
             }
