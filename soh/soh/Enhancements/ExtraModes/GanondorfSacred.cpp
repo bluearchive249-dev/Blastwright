@@ -58,7 +58,9 @@ static const Vec3f sPlatePos[3] = { { 0.0f, 0.0f, -960.0f }, { -130.0f, 0.0f, -8
 static const s8 sPlateOrder[3] = { 1, 2, 0 };
 
 // The door: in the main hall's west wall (x -520), between the two west pillars, facing into the hall
-static const Vec3f sDoorPos = { -520.0f, -40.0f, 2075.0f };
+// (it stands sPorch out from the wall: a porch, with a passage behind it back to the wall, fading into the dark)
+static const f32 sPorch = 140.0f; // (PORCH in tools/gdf_castle/sacred.py)
+static const Vec3f sDoorPos = { -520.0f + 140.0f, -40.0f, 2075.0f };
 // The Mirror Room: its mirror at the north end, on the dais; the passage's end (the broken door) at the south
 static const Vec3f sRoomMirrorPos = { 0.0f, 24.0f, -345.0f };
 // The first hall: its mirror on the south wall, facing north into the hall
@@ -150,6 +152,23 @@ static void Door_Update(Actor* thisx, PlayState* play) {
     Vec3f p = player->actor.world.pos;
 
     self->timer++;
+    // The porch is the actor's own model, without collision: keep him out of it while the door is shut, and between
+    // the passage's walls once it's open
+    if ((fabsf(p.y - sDoorPos.y) < 120.0f) && (p.x < sDoorPos.x + 22.0f) && (p.x > sDoorPos.x - sPorch - 10.0f)) {
+        if (!DoorIsOpen(play)) {
+            if (fabsf(p.z - sDoorPos.z) < 125.0f) {
+                player->actor.world.pos.x = sDoorPos.x + 22.0f;
+            }
+        } else if (p.x < sDoorPos.x + 4.0f) {
+            f32 dz = p.z - sDoorPos.z;
+            if (fabsf(dz) < 125.0f) {
+                player->actor.world.pos.z = sDoorPos.z + CLAMP(dz, -50.0f, 50.0f);
+            }
+        } else if ((fabsf(p.z - sDoorPos.z) > 80.0f) && (fabsf(p.z - sDoorPos.z) < 125.0f)) {
+            player->actor.world.pos.x = sDoorPos.x + 22.0f; // (the porch's front, either side of the doorway)
+        }
+    }
+    p = player->actor.world.pos;
     if (!DoorIsOpen(play)) {
         // The glow beyond the bars: sparks of the Sages' colours in the window now and then
         if ((self->timer % 6) == 0) {
@@ -160,7 +179,7 @@ static void Door_Update(Actor* thisx, PlayState* play) {
         return;
     }
     // Broken in: walking into the doorway takes him through
-    if (CanLeave(play) && (p.x < sDoorPos.x + 30.0f) && (fabsf(p.z - sDoorPos.z) < 70.0f) &&
+    if (CanLeave(play) && (p.x < sDoorPos.x - 50.0f) && (fabsf(p.z - sDoorPos.z) < 70.0f) &&
         (fabsf(p.y - sDoorPos.y) < 60.0f)) {
         Warp(play, MIRROR_ROOM_ENTRANCE);
     }

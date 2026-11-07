@@ -171,11 +171,28 @@ extern "C" s32 GanondorfCastle_IsAvailable(void) {
     return CastleAvailable();
 }
 
+static bool sBeamsPending = false;
+#define CASTLE_BEAM_SCALE 0.32f // (a beam that doesn't carry its own)
+
+// The windows' sunbeams: the Temple of Time's light plane, made for its great windows, scaled to each of the
+// castle's. The scene gives each beam its scale in its x rotation (x10000, tools/gdf_castle/castle.py): read here,
+// then cleared so the beam stands upright.
+static void ScaleBeams(PlayState* play) {
+    for (Actor* a = play->actorCtx.actorLists[ACTORCAT_BG].head; a != NULL; a = a->next) {
+        if ((a->id == ACTOR_DEMO_KANKYO) && (a->params == 0x0E)) {
+            s16 code = a->home.rot.x;
+            Actor_SetScale(a, (code > 0) ? (code / 10000.0f) : CASTLE_BEAM_SCALE);
+            a->world.rot.x = a->shape.rot.x = 0;
+        }
+    }
+}
+
 static void OnSceneInit(int16_t sceneNum) {
     PlayState* play = gPlayState;
     bool fromCastle = (sLastScene == CASTLE_SCENE);
 
     sLastScene = sceneNum;
+    sBeamsPending = (sceneNum == CASTLE_SCENE);
     sBridge = NULL;
     if (play == NULL) {
         return;
@@ -204,6 +221,10 @@ static void OnPlayerUpdate() {
     // Out through the interior's front doors (the threshold's floor exit, made sure of here: walking into the shut
     // doors at the south end of the entrance hall), back onto the drawbridge
     if (play->sceneNum == CASTLE_SCENE) {
+        if (sBeamsPending) {
+            sBeamsPending = false;
+            ScaleBeams(play);
+        }
         if ((play->transitionTrigger == TRANS_TRIGGER_OFF) && (play->msgCtx.msgMode == MSGMODE_NONE) &&
             (player->actor.world.pos.z > 2300.0f) && (fabsf(player->actor.world.pos.x + 960.0f) < 110.0f) &&
             (player->actor.world.pos.y < 120.0f)) {

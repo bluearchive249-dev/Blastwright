@@ -22,63 +22,10 @@ import o2rgen as G
 SURF = C.SURF
 
 
-class Builder(C.Builder):
-    """The castle's builder, lit the way the Temple of Time is: its surfaces cut into small pieces, each corner lit by
-    the room's lights (pools of warm light, the mirror's glow, the Sages' colours over their pillars) over a dim
-    ambient, so the rooms fall off into shadow between the lights instead of being one flat brightness.
-    lights: (position, radius, intensity, (r, g, b) tint)."""
-    CELL = 90.0
-    AMBIENT = 0.30
+class Builder(C.LitBuilder):
+    pass
 
-    def __init__(self, lights=None, height=420.0):
-        super().__init__()
-        self.lights = lights
-        self.height = height
 
-    def lum(self, p, n):
-        k = np.full(3, self.AMBIENT)
-        for pos, radius, inten, tint in self.lights:
-            d = np.asarray(pos, float) - p
-            dist = np.linalg.norm(d)
-            fall = max(0.0, 1.0 - dist / radius) ** 2
-            if fall <= 0.0:
-                continue
-            facing = max(0.25, float(np.dot(n, d / max(dist, 1e-6))))
-            k = k + inten * fall * facing * np.asarray(tint, float)
-        k *= 1.0 - 0.3 * min(1.0, max(0.0, p[1] / self.height))  # dimmer up toward the ceiling
-        return np.minimum(k, 1.35)
-
-    def quad(self, mat, pts, collide=None, color=(255, 255, 255), uv=None, light=True):
-        if self.lights is None or not light:
-            return super().quad(mat, pts, collide=collide, color=color, uv=uv, light=light)
-        P = np.array(pts, float)
-        n = np.cross(P[1] - P[0], P[2] - P[0])
-        n /= max(np.linalg.norm(n), 1e-9)
-        # The texture coordinates as the castle's builder gives them, for the whole face
-        probe = C.Builder()
-        probe.quad(mat, pts, color=(255, 255, 255), uv=uv, light=False)
-        UV = np.array([(v[3], v[4]) for v in probe.faces[mat][0]], float)
-        if collide is not None:
-            idx = [self.cv(q) for q in P]
-            for tri in ((0, 1, 2), (0, 2, 3)) if len(idx) == 4 else ((0, 1, 2),):
-                self.col_polys.append((collide, idx[tri[0]], idx[tri[1]], idx[tri[2]], 0, 0))
-        def vert(q, t):
-            c = np.asarray(color, float) * self.lum(q, n)
-            return (q[0], q[1], q[2], t[0], t[1], int(min(255, c[0])), int(min(255, c[1])), int(min(255, c[2])), 255)
-        if len(P) != 4:
-            self.faces.setdefault(mat, []).append([vert(P[i], UV[i]) for i in range(len(P))])
-            return
-        nu = max(1, int(np.ceil(np.linalg.norm(P[1] - P[0]) / self.CELL)))
-        nv = max(1, int(np.ceil(np.linalg.norm(P[3] - P[0]) / self.CELL)))
-        def at(a, b):  # bilinear across the quad (0,0)=p0, (1,0)=p1, (1,1)=p2, (0,1)=p3
-            q = (1 - a) * (1 - b) * P[0] + a * (1 - b) * P[1] + a * b * P[2] + (1 - a) * b * P[3]
-            t = (1 - a) * (1 - b) * UV[0] + a * (1 - b) * UV[1] + a * b * UV[2] + (1 - a) * b * UV[3]
-            return q, t
-        for i in range(nu):
-            for j in range(nv):
-                cs = [at(i / nu, j / nv), at((i + 1) / nu, j / nv), at((i + 1) / nu, (j + 1) / nv),
-                      at(i / nu, (j + 1) / nv)]
-                self.faces.setdefault(mat, []).append([vert(q, t) for q, t in cs])
 C.FLOOR = 0
 C.MAT['mirror'] = C.tex('tokinoma_sceneTex_010FA0')   # the glass: plain marble, tinted by the actor each frame
 C.MAT['gold'] = C.tex('nakaniwa_room_0Tex_013E18')     # gilded bands (the stone band, tinted gold)
@@ -93,7 +40,8 @@ def emit_obj(B, name, files):
     C.emit_dl(B, f'objects/gdf_sacred/{name}DL', f'objects/gdf_sacred/{name}Vtx', files, obj=True)
 
 
-# ---- The sealed door (front +z, its foot at the origin, the wall at z 0) ----
+# ---- The sealed door (front +z, its foot at the origin; the Temple of Time's wall PORCH behind it) ----
+PORCH = 140  # (sPorch in GanondorfSacred.cpp)
 
 def build_door():
     frame, slab, recess = Builder(), Builder(), Builder()
@@ -117,17 +65,22 @@ def build_door():
     for y in (v0 + 28, v0 + 58):
         slab.box('stone_band', w0, w1, y - 3, y + 3, 7, 17, collide=False, color=IRON)
     slab.box('gold', -60, 60, 40, 48, 12, 15, collide=False, color=GOLD)  # a gilded band, no lock
-    # Behind the window: a dark hollow (the glow is drawn in it by the actor)
-    slab.quad('ceiling', [(w0, v0, -40), (w1, v0, -40), (w1, v1, -40), (w0, v1, -40)], color=DARK, light=False)
-    for a, b in (((w0, -40), (w0, 12)), ((w1, 12), (w1, -40))):
-        slab.quad('ceiling', [(a[0], v0, a[1]), (b[0], v0, b[1]), (b[0], v1, b[1]), (a[0], v1, a[1])], color=DARK,
-                  light=False)
-    # Broken open: the dark doorway
-    recess.quad('ceiling', [(-75, 0, -60), (75, 0, -60), (75, 250, -60), (-75, 250, -60)], color=DARK, light=False)
-    recess.quad('ceiling', [(-75, 0, 0), (-75, 0, -60), (-75, 250, -60), (-75, 250, 0)], color=DARK, light=False)
-    recess.quad('ceiling', [(75, 0, -60), (75, 0, 0), (75, 250, 0), (75, 250, -60)], color=DARK, light=False)
-    recess.quad('ceiling', [(-75, 250, -60), (75, 250, -60), (75, 250, 0), (-75, 250, 0)], color=DARK, light=False)
-    recess.quad('marble_check', [(-75, 1, 0), (75, 1, 0), (75, 1, -60), (-75, 1, -60)], color=(110, 100, 95))
+    # The porch: the door stands PORCH out from the Temple of Time's wall (its own wall can't be cut), and behind the
+    # slab a passage runs back to the wall, its far end lost in darkness: what the bars look into, and once the door
+    # is broken in, the way he walks into the dark
+    D = PORCH
+    for x0, x1 in ((-112, -75), (75, 112)):
+        frame.box(('brick_white', 'brick_white'), x0, x1, 0, 282, -D, 0, collide=False)  # (inner sides: the passage's walls)
+    frame.box(('brick_white', 'brick_white'), -112, 112, 282, 290, -D, 0, collide=False)  # its roof
+    frame.fade_to_black((0, 0, 0), (0, 0, -D + 2), (-76, 76, -1, 283, -D, 1))
+    frame.quad('marble_check', [(-74, 0.5, 0), (74, 0.5, 0), (74, 0.5, -D + 1), (-74, 0.5, -D + 1)], color=(150, 140, 135),
+               light=False)
+    frame.quad('ceiling', [(-74, 250, -D + 1), (74, 250, -D + 1), (74, 250, 0), (-74, 250, 0)], color=(120, 115, 115),
+               light=False)
+    frame.quad('ceiling', [(-76, 0, -D + 1), (76, 0, -D + 1), (76, 252, -D + 1), (-76, 252, -D + 1)], color=(0, 0, 0),
+               light=False)
+    # Broken open: only the threshold where the slab stood
+    recess.quad('marble_check', [(-75, 1, 12), (75, 1, 12), (75, 1, 0), (-75, 1, 0)], color=(110, 100, 95))
     return frame, slab, recess
 
 
@@ -158,32 +111,7 @@ DEMO_KANKYO, LIGHT_PLANE, OBJECT_TOKI_OBJECTS = 0x008C, 0x000E, 0x005E
 MIRROR_ROOM_BEAM, FIRST_HALL_BEAM, HUB_BEAM = 0.26, 0.3, 0.38  # (the same in GanondorfSacred.cpp)
 
 
-def window(B, lights, beams, wall, pos, y0, scale, frame=True):
-    """A window in a wall with the sunbeam falling through it into the room.
-    wall: 'W' (x = pos[0], facing +x), 'E', 'S' (z = pos[1], facing -z) or 'N'; pos: (x, z) on the wall's plane;
-    y0: the beam's origin (the window's foot is a little above it)."""
-    inward = {'W': (1, 0), 'E': (-1, 0), 'N': (0, 1), 'S': (0, -1)}[wall]
-    yaw = {'W': 0x4000, 'E': -0x4000, 'N': 0, 'S': -0x8000}[wall]
-    ox, oz = pos[0] + inward[0] * 68 * scale, pos[1] + inward[1] * 68 * scale
-    beams.append(((ox, y0, oz), yaw))
-    w, y_lo, y_hi = 100 * scale, y0 + 100 * scale, y0 + 661 * scale
-    if frame:  # a gilded stone frame around the light, standing out of the wall
-        x, z = pos
-        d = 10
-        def slab(u0, u1, v0, v1, depth=d):
-            if wall in 'WE':
-                B.box(('stone_band', 'stone_band'), x - depth if wall == 'E' else x, x + depth if wall == 'W' else x,
-                      v0, v1, z + u0, z + u1, collide=False, color=GOLD)
-            else:
-                B.box(('stone_band', 'stone_band'), x + u0, x + u1, v0, v1, z - depth if wall == 'S' else z,
-                      z + depth if wall == 'N' else z, collide=False, color=GOLD)
-        slab(-w - 14, -w, y_lo - 10, y_hi - 40)
-        slab(w, w + 14, y_lo - 10, y_hi - 40)
-        slab(-w - 14, w + 14, y_lo - 18, y_lo - 4, d + 4)   # the sill
-    # Light: the window itself, and the pool where its rays reach the floor
-    reach = 825 * scale * min(1.0, y0 / (939 * scale))
-    lights.append(((pos[0] + inward[0] * 30, (y_lo + y_hi) / 2, pos[1] + inward[1] * 30), 300, 0.55, WARM))
-    lights.append(((ox + inward[0] * reach, 30, oz + inward[1] * reach), 230, 0.75, (1.0, 0.95, 0.8)))
+window = C.window
 
 
 # ---- The Mirror Room (SCENE_SASATEST) ----
@@ -201,7 +129,8 @@ def build_mirror_room(beams):
     for wall, x in (('W', -340), ('E', 340)):
         window(B, [], [], wall, (x, -110), 200, MIRROR_ROOM_BEAM)
     H = 420
-    # The passage from the broken door: south, z 300..620 (the door is at its far end)
+    # The passage from the broken door: south, z 300..620 (the door is at its far end), fading to black
+    B.fade_to_black((0, 0, 400), (0, 0, 620), (-90, 90, 0, 260, 300, 620))
     B.floor('marble_check', -90, 90, 300, 620, y=0)
     B.wall('brick_white', 'x', -90, 300, 620, 0, 260, 1)
     B.wall('brick_white', 'x', 90, 300, 620, 0, 260, -1)
@@ -244,7 +173,8 @@ def build_first_hall(beams):
     B.wall('brick_white2', 'x', 320, -1100, 300, 0, H, -1)
     B.wall('brick_white2', 'z', 300, -320, 320, 0, H, -1)
     B.wall('brick_white2', 'z', -1100, -320, 320, 0, H, 1, openings=[(-150, 150, 0, 340)])
-    # Behind the great door: a short dark passage to the Sanctum (walking into it leads on)
+    # Behind the great door: a short dark passage to the Sanctum (walking into it leads on), fading to black
+    B.fade_to_black((0, 0, -1100), (0, 0, -1260), (-150, 150, 0, 340, -1260, -1100))
     B.floor('marble_check', -150, 150, -1260, -1100, y=0)
     B.wall('brick_white2', 'x', -150, -1260, -1100, 0, 340, 1)
     B.wall('brick_white2', 'x', 150, -1260, -1100, 0, 340, -1)
@@ -276,12 +206,12 @@ def build_great_door():
                light=False)
         tris.append(t)
     plate = Builder()
-    plate.quad('mirror', [(-60, 1, 45), (60, 1, 45), (0, 1, -60)], color=(255, 255, 255), light=False)
+    plate.quad('mirror', [(-60, 4, 45), (60, 4, 45), (0, 4, -60)], color=(255, 255, 255), light=False)
     rim = Builder()
     for (ax, az), (bx, bz) in (((-60, 45), (60, 45)), ((60, 45), (0, -60)), ((0, -60), (-60, 45))):
         dx, dz = bx - ax, bz - az
         n = (dz / np.hypot(dx, dz) * 8, -dx / np.hypot(dx, dz) * 8)
-        rim.quad('gold', [(ax, 0.5, az), (bx, 0.5, bz), (bx + n[0], 0.5, bz + n[1]), (ax + n[0], 0.5, az + n[1])],
+        rim.quad('gold', [(ax, 3.5, az), (bx, 3.5, bz), (bx + n[0], 3.5, bz + n[1]), (ax + n[0], 3.5, az + n[1])],
                  color=GOLD)
     return door, tris, plate, rim
 
@@ -310,6 +240,8 @@ def build_hub(beams):
         lights.append(((o[0] + ix * reach, 30, o[2] + iz * reach), 240, 0.75, (1.0, 0.95, 0.8)))
     lights += [((0, 200, -HUB_A + 20), 380, 0.7, (1.0, 0.85, 0.5))]  # the gilded door north
     B = Builder(lights, float(H))
+    for mx, mz, ix, iz in diag:  # the Temple of Time's windows on the diagonal walls, where the beams fall from
+        C.tot_window(B, (ix, iz), (mx, mz), 96 * HUB_BEAM, 320 + 100 * HUB_BEAM, 320 + 661 * HUB_BEAM)
     E = HUB_A + 40
     B.floor('marble_check', -E, E, -E, E, y=0)
     B.floor('carpet_red', -70, 70, 140, HUB_A, y=1)
@@ -334,7 +266,8 @@ def build_hub(beams):
         if np.dot(n, [-(a[0] + b[0]), 0, -(a[1] + b[1])]) < 0:
             p = [p[1], p[0], p[3], p[2]]
         B.quad('brick_white2', p, collide=SURF['wall'])
-    # The way back: a short passage south, ending dark
+    # The way back: a short passage south, fading to black
+    B.fade_to_black((0, 0, HUB_A), (0, 0, HUB_A + 160), (-110, 110, 0, 300, HUB_A, HUB_A + 160))
     B.floor('marble_check', -110, 110, HUB_A, HUB_A + 160, y=0)
     B.wall('brick_white2', 'x', -110, HUB_A, HUB_A + 160, 0, 300, 1)
     B.wall('brick_white2', 'x', 110, HUB_A, HUB_A + 160, 0, 300, -1)
@@ -374,7 +307,7 @@ def scene(files, name, B, spawns, entrances, exits, beams=()):
     col = base + f'{name}_sceneCollisionHeader_main'
     files[col] = G.collision_file(B.col_verts, B.col_polys, C.SURFACES, cam_settings=(1, 1))
     room = base + f'{name}_room_0'
-    actors = [G.actor_entry(DEMO_KANKYO, pos, (0, yaw, 0), LIGHT_PLANE) for pos, yaw in beams]
+    actors = [G.actor_entry(DEMO_KANKYO, b[0], (0, b[1], 0), LIGHT_PLANE) for b in beams]
     files[room] = G.room_file([(base + f'{name}_room_0DL_main', '')], objects=(OBJECT_TOKI_OBJECTS,), actors=actors,
                               echo=12,
                               behavior=(0, 0), skymod=(0, 1))
