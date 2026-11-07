@@ -147,20 +147,59 @@ def build_mirror():
     return frame, glass
 
 
-# ---- The Mirror Room (SCENE_SASATEST) ----
-
 SAGE_TINTS = [(0.35, 1.0, 0.4), (1.0, 0.45, 0.25), (0.35, 0.6, 1.0), (0.8, 0.4, 1.0), (1.0, 0.7, 0.3), (1.0, 0.95, 0.5)]
 WARM = (1.0, 0.9, 0.72)
 
+# ---- Windows and their sunrays ----
+# The Temple of Time's own sunbeam (Demo_Kankyo's light plane, object_toki_objects_DL_008390, drawn by the actor):
+# a pointed window of light at its back (local z -68, y 100..661) and rays falling from its origin, down and forward
+# (to y -939 some 600..1040 ahead). The game code scales it to the room (GanondorfSacred.cpp, sBeamScale).
+DEMO_KANKYO, LIGHT_PLANE, OBJECT_TOKI_OBJECTS = 0x008C, 0x000E, 0x005E
+MIRROR_ROOM_BEAM, FIRST_HALL_BEAM, HUB_BEAM = 0.26, 0.3, 0.38  # (the same in GanondorfSacred.cpp)
 
-def build_mirror_room():
+
+def window(B, lights, beams, wall, pos, y0, scale, frame=True):
+    """A window in a wall with the sunbeam falling through it into the room.
+    wall: 'W' (x = pos[0], facing +x), 'E', 'S' (z = pos[1], facing -z) or 'N'; pos: (x, z) on the wall's plane;
+    y0: the beam's origin (the window's foot is a little above it)."""
+    inward = {'W': (1, 0), 'E': (-1, 0), 'N': (0, 1), 'S': (0, -1)}[wall]
+    yaw = {'W': 0x4000, 'E': -0x4000, 'N': 0, 'S': -0x8000}[wall]
+    ox, oz = pos[0] + inward[0] * 68 * scale, pos[1] + inward[1] * 68 * scale
+    beams.append(((ox, y0, oz), yaw))
+    w, y_lo, y_hi = 100 * scale, y0 + 100 * scale, y0 + 661 * scale
+    if frame:  # a gilded stone frame around the light, standing out of the wall
+        x, z = pos
+        d = 10
+        def slab(u0, u1, v0, v1, depth=d):
+            if wall in 'WE':
+                B.box(('stone_band', 'stone_band'), x - depth if wall == 'E' else x, x + depth if wall == 'W' else x,
+                      v0, v1, z + u0, z + u1, collide=False, color=GOLD)
+            else:
+                B.box(('stone_band', 'stone_band'), x + u0, x + u1, v0, v1, z - depth if wall == 'S' else z,
+                      z + depth if wall == 'N' else z, collide=False, color=GOLD)
+        slab(-w - 14, -w, y_lo - 10, y_hi - 40)
+        slab(w, w + 14, y_lo - 10, y_hi - 40)
+        slab(-w - 14, w + 14, y_lo - 18, y_lo - 4, d + 4)   # the sill
+    # Light: the window itself, and the pool where its rays reach the floor
+    reach = 825 * scale * min(1.0, y0 / (939 * scale))
+    lights.append(((pos[0] + inward[0] * 30, (y_lo + y_hi) / 2, pos[1] + inward[1] * 30), 300, 0.55, WARM))
+    lights.append(((ox + inward[0] * reach, 30, oz + inward[1] * reach), 230, 0.75, (1.0, 0.95, 0.8)))
+
+
+# ---- The Mirror Room (SCENE_SASATEST) ----
+
+def build_mirror_room(beams):
     pillars = [(-240, -200), (-240, -20), (-240, 160), (240, 160), (240, -20), (240, -200)]
     lights = [((0, 170, -320), 560, 0.95, (1.0, 0.95, 0.88)),   # the mirror's glow
               ((0, 400, -40), 420, 0.4, WARM),                  # light from above, the middle of the hall,
               ((0, 70, -40), 320, 0.6, WARM),                   # and its pool on the floor
               ((0, 230, 470), 300, 0.45, WARM)]                 # the passage
     lights += [((x, 340, z), 230, 0.4, t) for (x, z), t in zip(pillars, SAGE_TINTS)]  # each Sage's colour
+    for wall, x in (('W', -340), ('E', 340)):
+        window(None, lights, beams, wall, (x, -110), 200, MIRROR_ROOM_BEAM, frame=False)
     B = Builder(lights, 420.0)
+    for wall, x in (('W', -340), ('E', 340)):
+        window(B, [], [], wall, (x, -110), 200, MIRROR_ROOM_BEAM)
     H = 420
     # The passage from the broken door: south, z 300..620 (the door is at its far end)
     B.floor('marble_check', -90, 90, 300, 620, y=0)
@@ -187,28 +226,138 @@ def build_mirror_room():
 
 # ---- The Sacred Realm Temple's first hall (SCENE_SYOTES) ----
 
-def build_first_hall():
-    lights = [((0, 460, z), 400, 0.35, WARM) for z in (150, -250, -650)]   # shafts of light down the hall,
-    lights += [((0, 70, z), 330, 0.65, WARM) for z in (150, -250, -650)]   # pooling on the floor
+def build_first_hall(beams):
+    lights = [((0, 460, z), 400, 0.3, WARM) for z in (150, -250, -650)]    # light down the hall,
+    lights += [((0, 70, z), 330, 0.45, WARM) for z in (150, -250, -650)]   # pooling on the floor
     lights += [((0, 250, -1050), 520, 0.85, (1.0, 0.85, 0.5)),            # the great door, gilded
                ((0, 170, 280), 360, 0.6, (1.0, 0.95, 0.88))]               # the mirror behind him
+    spots = [(wall, x, z) for z in (-50, -350, -650) for wall, x in (('W', -320), ('E', 320))]
+    for wall, x, z in spots:
+        window(None, lights, beams, wall, (x, z), 300, FIRST_HALL_BEAM, frame=False)
     B = Builder(lights, 520.0)
+    for wall, x, z in spots:
+        window(B, [], [], wall, (x, z), 300, FIRST_HALL_BEAM)
     H = 520
     B.floor('marble_check', -320, 320, -1100, 300, y=0)
     B.floor('carpet_red', -70, 70, -1000, 220, y=1)
     B.wall('brick_white2', 'x', -320, -1100, 300, 0, H, 1)
     B.wall('brick_white2', 'x', 320, -1100, 300, 0, H, -1)
     B.wall('brick_white2', 'z', 300, -320, 320, 0, H, -1)
-    B.wall('brick_white2', 'z', -1100, -320, 320, 0, H, 1)
+    B.wall('brick_white2', 'z', -1100, -320, 320, 0, H, 1, openings=[(-150, 150, 0, 340)])
+    # Behind the great door: a short dark passage to the Sanctum (walking into it leads on)
+    B.floor('marble_check', -150, 150, -1260, -1100, y=0)
+    B.wall('brick_white2', 'x', -150, -1260, -1100, 0, 340, 1)
+    B.wall('brick_white2', 'x', 150, -1260, -1100, 0, 340, -1)
+    B.wall('brick_white2', 'z', -1260, -150, 150, 0, 340, 1)
+    B.ceiling('ceiling', -150, 150, -1260, -1100, 340)
     B.ceiling('ceiling', -320, 320, -1100, 300, H)
     for zc in (100, -200, -500, -800):
         for x in (-220, 220):
             B.pillar(x, zc, 30, 0, H)
-    # The great sealed door at the far end (opened in a later stage)
-    B.box(('marble2', 'marble2'), -150, 150, 0, 340, -1100, -1080)
-    B.box('gold', -160, 160, 340, 360, -1100, -1074, color=GOLD)
-    for cx, cy in ((0, 300), (-40, 230), (40, 230)):
-        B.quad('gold', [(cx - 40, cy - 70, -1079), (cx + 40, cy - 70, -1079), (cx, cy, -1079)], color=GOLD)
+    # The great door's lintel (the door itself is an actor: it rises when the plates are stepped in order)
+    B.box('gold', -170, 170, 340, 362, -1100, -1074, color=GOLD)
+    for x0 in (-170, 150):
+        B.box(('marble2', 'marble2'), x0, x0 + 20, 0, 340, -1100, -1080)
+    return B
+
+
+# ---- The great door and its Triforce plates (actors; front +z, the door's foot centre at the origin) ----
+GREAT_DOOR_TRIS = [(0, 290), (-46, 210), (46, 210)]  # top, left, right: the order the plates are named in
+
+
+def build_great_door():
+    door = Builder()
+    door.box(('marble2', 'marble2'), -150, 150, 0, 340, -10, 10, collide=True)
+    door.box('gold', -150, 150, 0, 14, -12, 12, collide=False, color=GOLD)
+    tris = []
+    for cx, cy in GREAT_DOOR_TRIS:
+        t = Builder()
+        t.quad('mirror', [(cx - 44, cy - 76, 12), (cx + 44, cy - 76, 12), (cx, cy, 12)], color=(255, 255, 255),
+               light=False)
+        tris.append(t)
+    plate = Builder()
+    plate.quad('mirror', [(-60, 1, 45), (60, 1, 45), (0, 1, -60)], color=(255, 255, 255), light=False)
+    rim = Builder()
+    for (ax, az), (bx, bz) in (((-60, 45), (60, 45)), ((60, 45), (0, -60)), ((0, -60), (-60, 45))):
+        dx, dz = bx - ax, bz - az
+        n = (dz / np.hypot(dx, dz) * 8, -dx / np.hypot(dx, dz) * 8)
+        rim.quad('gold', [(ax, 0.5, az), (bx, 0.5, bz), (bx + n[0], 0.5, bz + n[1]), (ax + n[0], 0.5, az + n[1])],
+                 color=GOLD)
+    return door, tris, plate, rim
+
+
+# ---- The Sanctum of Light: the hub (SCENE_SYOTES2) ----
+# An octagon (apothem 560, sides 464), 600 high. South: the way back to the first hall. North: the great door to
+# Rauru (a later stage). East and west: the sealed doors to the wings. A ring of eight pillars about a Triforce dais;
+# windows with sunrays in the four diagonal walls.
+HUB_A, HUB_S = 560, 232
+
+
+def build_hub(beams):
+    H = 600
+    lights = [((0, 80, 0), 380, 0.6, WARM), ((0, 560, 0), 500, 0.3, WARM)]
+    diag = []
+    for sx, sz in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+        # the middle of each diagonal wall, and its inward direction
+        mx, mz = sx * (HUB_A + HUB_S) / 2, sz * (HUB_A + HUB_S) / 2
+        diag.append((mx, mz, -sx / np.sqrt(2), -sz / np.sqrt(2)))
+    for mx, mz, ix, iz in diag:
+        yaw = int(np.degrees(np.arctan2(ix, iz)) / 360 * 65536)
+        o = (mx + ix * 68 * HUB_BEAM, 320, mz + iz * 68 * HUB_BEAM)
+        beams.append((o, yaw))
+        reach = 825 * HUB_BEAM * min(1.0, 320 / (939 * HUB_BEAM))
+        lights.append(((mx + ix * 30, 420, mz + iz * 30), 320, 0.55, WARM))
+        lights.append(((o[0] + ix * reach, 30, o[2] + iz * reach), 240, 0.75, (1.0, 0.95, 0.8)))
+    lights += [((0, 200, -HUB_A + 20), 380, 0.7, (1.0, 0.85, 0.5))]  # the gilded door north
+    B = Builder(lights, float(H))
+    E = HUB_A + 40
+    B.floor('marble_check', -E, E, -E, E, y=0)
+    B.floor('carpet_red', -70, 70, 140, HUB_A, y=1)
+    B.ceiling('ceiling', -E, E, -E, E, H)
+    door = (-110, 110, 0, 300)
+    B.wall('brick_white2', 'z', HUB_A, -HUB_S, HUB_S, 0, H, -1, openings=[door])     # south: the way back
+    B.wall('brick_white2', 'z', -HUB_A, -HUB_S, HUB_S, 0, H, 1)                      # north
+    B.wall('brick_white2', 'x', HUB_A, -HUB_S, HUB_S, 0, H, -1)                      # east
+    B.wall('brick_white2', 'x', -HUB_A, -HUB_S, HUB_S, 0, H, 1)                      # west
+    for sx, sz in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+        a = (sx * HUB_S, sz * HUB_A)
+        b = (sx * HUB_A, sz * HUB_S)
+        if sx * sz > 0:
+            a, b = b, a
+        if sz > 0:
+            a, b = b, a
+        if sx < 0:
+            a, b = b, a
+        # facing the centre
+        p = [(a[0], 0, a[1]), (b[0], 0, b[1]), (b[0], H, b[1]), (a[0], H, a[1])]
+        n = np.cross(np.subtract(p[1], p[0]), np.subtract(p[3], p[0]))
+        if np.dot(n, [-(a[0] + b[0]), 0, -(a[1] + b[1])]) < 0:
+            p = [p[1], p[0], p[3], p[2]]
+        B.quad('brick_white2', p, collide=SURF['wall'])
+    # The way back: a short passage south, ending dark
+    B.floor('marble_check', -110, 110, HUB_A, HUB_A + 160, y=0)
+    B.wall('brick_white2', 'x', -110, HUB_A, HUB_A + 160, 0, 300, 1)
+    B.wall('brick_white2', 'x', 110, HUB_A, HUB_A + 160, 0, 300, -1)
+    B.wall('brick_white2', 'z', HUB_A + 160, -110, 110, 0, 300, -1)
+    B.ceiling('ceiling', -110, 110, HUB_A, HUB_A + 160, 300)
+    # The sealed doors: north to Rauru (gilded, with the Triforce), east and west to the wings
+    B.box(('marble2', 'marble2'), -160, 160, 0, 380, -HUB_A, -HUB_A + 22)
+    B.box('gold', -170, 170, 380, 400, -HUB_A, -HUB_A + 26, color=GOLD)
+    for cx, cy in ((0, 330), (-46, 250), (46, 250)):
+        B.quad('gold', [(cx - 44, cy - 76, -HUB_A + 23), (cx + 44, cy - 76, -HUB_A + 23), (cx, cy, -HUB_A + 23)],
+               color=GOLD)
+    for sx in (-1, 1):
+        x0, x1 = (HUB_A - 20, HUB_A) if sx > 0 else (-HUB_A, -HUB_A + 20)
+        B.box(('marble2', 'marble2'), x0, x1, 0, 300, -120, 120)
+        B.box('gold', x0 - 2, x1 + 2, 300, 316, -130, 130, color=GOLD)
+    # The ring of pillars and the dais
+    for k in range(8):
+        a = np.pi / 8 + k * np.pi / 4
+        B.pillar(380 * np.cos(a), 380 * np.sin(a), 30, 0, H)
+    B.box(('marble', 'stone_band'), -150, 150, 0, 14, -150, 150)
+    B.box(('marble', 'stone_band'), -100, 100, 14, 28, -100, 100)
+    for cx, cz in ((0, -40), (-35, 20), (35, 20)):
+        B.quad('gold', [(cx - 34, 28.5, cz + 30), (cx + 34, 28.5, cz + 30), (cx, 28.5, cz - 30)], color=GOLD)
     return B
 
 
@@ -219,13 +368,15 @@ LIGHTING = [(50, 50, 50, 0, 112, -58, -56, -56, -56, 0, -112, 58, 80, 80, 80, 10
             (50, 50, 50, 0, 112, -58, 120, 120, 120, 0, -112, 58, 50, 50, 50, 0, 0, 0, -28, 6000)]
 
 
-def scene(files, name, B, spawns, entrances, exits):
+def scene(files, name, B, spawns, entrances, exits, beams=()):
     base = f'scenes/shared/{name}_scene/'
     C.emit_dl(B, base + f'{name}_room_0DL_main', base + f'{name}_room_0Vtx_main', files)
     col = base + f'{name}_sceneCollisionHeader_main'
     files[col] = G.collision_file(B.col_verts, B.col_polys, C.SURFACES, cam_settings=(1, 1))
     room = base + f'{name}_room_0'
-    files[room] = G.room_file([(base + f'{name}_room_0DL_main', '')], objects=(), actors=(), echo=12,
+    actors = [G.actor_entry(DEMO_KANKYO, pos, (0, yaw, 0), LIGHT_PLANE) for pos, yaw in beams]
+    files[room] = G.room_file([(base + f'{name}_room_0DL_main', '')], objects=(OBJECT_TOKI_OBJECTS,), actors=actors,
+                              echo=12,
                               behavior=(0, 0), skymod=(0, 1))
     files[base + f'{name}_scene'] = G.scene_file([room], col, spawns, entrances, exits=exits, lighting=LIGHTING,
                                                  sound=(0, 19, 0x56), special=(0, 3), sky=(0, 0, 0, 1),
@@ -255,14 +406,34 @@ def emit():
     emit_obj(glass, 'gGdfMirrorGlass', files)
     C.material_cmds = plain
     # The Mirror Room: in from the broken door (facing north), or back out of the mirror (facing south)
-    scene(files, 'sasatest', build_mirror_room(),
+    beams = []
+    room = build_mirror_room(beams)
+    scene(files, 'sasatest', room,
           [G.actor_entry(0, (0, 0, 560), (0, -0x8000, 0), 0x0FFF),
            G.actor_entry(0, (0, 24, -230), (0, 0, 0), 0x0FFF)],
-          [(0, 0), (1, 0)], exits=())
+          [(0, 0), (1, 0)], exits=(), beams=beams)
     # The first hall: out of its mirror on the south wall, facing north
-    scene(files, 'syotes', build_first_hall(),
+    beams = []
+    hall = build_first_hall(beams)
+    scene(files, 'syotes', hall,
           [G.actor_entry(0, (0, 0, 180), (0, -0x8000, 0), 0x0FFF)],
-          [(0, 0)], exits=())
+          [(0, 0)], exits=(), beams=beams)
+    # The great door and its plates (glowing parts tinted by the actor, like the mirror's glass)
+    door, tris, plate, rim = build_great_door()
+    emit_obj(door, 'gGdfGreatDoor', files)
+    files['objects/gdf_sacred/gGdfGreatDoorCol'] = G.collision_file(door.col_verts, door.col_polys, C.SURFACES,
+                                                                    cam_settings=(1,))
+    emit_obj(rim, 'gGdfTriPlateRim', files)
+    C.material_cmds = lambda t: [c for c in plain(t) if c[3] not in (0xFA, 0xFC)] + [combine]
+    for i, t in enumerate(tris):
+        emit_obj(t, f'gGdfGreatDoorTri{i}', files)
+    emit_obj(plate, 'gGdfTriPlate', files)
+    C.material_cmds = plain
+    # The Sanctum of Light: in from the first hall (facing north)
+    beams = []
+    scene(files, 'syotes2', build_hub(beams),
+          [G.actor_entry(0, (0, 0, HUB_A + 60), (0, -0x8000, 0), 0x0FFF)],
+          [(0, 0)], exits=(), beams=beams)
     return files
 
 

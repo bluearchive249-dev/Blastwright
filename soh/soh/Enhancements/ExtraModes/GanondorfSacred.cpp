@@ -32,12 +32,30 @@ extern PlayState* gPlayState;
 #define FIRST_HALL_SCENE SCENE_SYOTES
 #define FIRST_HALL_ENTRANCE ENTR_SYOTES_0
 #define SEALED_DOOR_FLAG 0x2F // (a Temple of Time switch flag nothing else uses: the door is broken in)
+#define HUB_SCENE SCENE_SYOTES2
+#define HUB_ENTRANCE ENTR_SYOTES2_0
+#define GREAT_DOOR_FLAG 0x01 // (the first hall's switch flag: the great door is open)
+#define GREAT_DOOR_RISE 345.0f
 
 static const char sDoorFrameDL[] = "__OTR__objects/gdf_sacred/gGdfSealedDoorFrameDL";
 static const char sDoorSlabDL[] = "__OTR__objects/gdf_sacred/gGdfSealedDoorSlabDL";
 static const char sDoorwayDL[] = "__OTR__objects/gdf_sacred/gGdfSealedDoorwayDL";
 static const char sMirrorFrameDL[] = "__OTR__objects/gdf_sacred/gGdfMirrorFrameDL";
 static const char sMirrorGlassDL[] = "__OTR__objects/gdf_sacred/gGdfMirrorGlassDL";
+static const char sGreatDoorDL[] = "__OTR__objects/gdf_sacred/gGdfGreatDoorDL";
+static const char sGreatDoorCol[] = "__OTR__objects/gdf_sacred/gGdfGreatDoorCol";
+static const char* sGreatDoorTriDL[3] = { "__OTR__objects/gdf_sacred/gGdfGreatDoorTri0DL",
+                                          "__OTR__objects/gdf_sacred/gGdfGreatDoorTri1DL",
+                                          "__OTR__objects/gdf_sacred/gGdfGreatDoorTri2DL" };
+static const char sTriPlateDL[] = "__OTR__objects/gdf_sacred/gGdfTriPlateDL";
+static const char sTriPlateRimDL[] = "__OTR__objects/gdf_sacred/gGdfTriPlateRimDL";
+
+// The first hall's great door (its foot, in the north wall's opening) and, before it, the three Triforce plates laid
+// out as the door's triangles are: top, left, right
+static const Vec3f sGreatDoorPos = { 0.0f, 0.0f, -1090.0f };
+static const Vec3f sPlatePos[3] = { { 0.0f, 0.0f, -960.0f }, { -130.0f, 0.0f, -840.0f }, { 130.0f, 0.0f, -840.0f } };
+// The order the door's triangles show, and the plates must be stepped in: left, right, then the top
+static const s8 sPlateOrder[3] = { 1, 2, 0 };
 
 // The door: in the main hall's west wall (x -520), between the two west pillars, facing into the hall
 static const Vec3f sDoorPos = { -520.0f, -40.0f, 2075.0f };
@@ -57,6 +75,21 @@ typedef struct {
     s16 timer;
 } GdfSacredActor;
 
+// The Temple of Time's sunbeams (Demo_Kankyo's light plane), as big as each room's windows (sacred.py)
+static f32 BeamScale(s16 scene) {
+    return (scene == MIRROR_ROOM_SCENE) ? 0.26f : (scene == FIRST_HALL_SCENE) ? 0.3f : 0.38f;
+}
+
+typedef struct {
+    DynaPolyActor dyna;
+    s16 timer;
+    s8 step;       // how many plates have been stepped in the right order
+    s8 onPlate;    // the plate he stands on (-1: none)
+    f32 rise;      // how far the door has risen
+    u8 opening;
+} GdfGreatDoor;
+
+static s32 sGreatDoorActorId = -1;
 static s32 sDoorActorId = -1;
 static s32 sMirrorActorId = -1;
 static s16 sLastScene = -1;
@@ -218,7 +251,149 @@ static void Mirror_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---- The great door and its Triforce plates ----
+
+static void GreatDoor_Init(Actor* thisx, PlayState* play) {
+    GdfGreatDoor* self = (GdfGreatDoor*)thisx;
+    CollisionHeader* col = NULL;
+
+    Actor_SetScale(thisx, 1.0f);
+    DynaPolyActor_Init(&self->dyna, 0);
+    CollisionHeader_GetVirtual((void*)sGreatDoorCol, &col);
+    self->dyna.bgId = DynaPoly_SetBgActor(play, &play->colCtx.dyna, thisx, col);
+    self->step = 0;
+    self->onPlate = -1;
+    self->opening = false;
+    self->rise = Flags_GetSwitch(play, GREAT_DOOR_FLAG) ? GREAT_DOOR_RISE : 0.0f;
+    thisx->world.pos.y = thisx->home.pos.y + self->rise;
+}
+
+static void GreatDoor_Destroy(Actor* thisx, PlayState* play) {
+    GdfGreatDoor* self = (GdfGreatDoor*)thisx;
+
+    DynaPoly_DeleteBgActor(play, &play->colCtx.dyna, self->dyna.bgId);
+}
+
+static void GreatDoor_Update(Actor* thisx, PlayState* play) {
+    GdfGreatDoor* self = (GdfGreatDoor*)thisx;
+    Player* player = GET_PLAYER(play);
+    Vec3f p = player->actor.world.pos;
+    s8 on = -1;
+
+    self->timer++;
+    if (self->rise >= GREAT_DOOR_RISE) {
+        // Open: walking on through the passage behind it
+        if (CanLeave(play) && (p.z < sGreatDoorPos.z - 40.0f) && (fabsf(p.x) < 150.0f)) {
+            Warp(play, HUB_ENTRANCE);
+        }
+        return;
+    }
+    if (self->opening) {
+        // Grinding up into the wall above
+        self->rise = MIN(GREAT_DOOR_RISE, self->rise + 3.0f);
+        thisx->world.pos.y = thisx->home.pos.y + self->rise;
+        Actor_PlaySfx_Flagged(thisx, NA_SE_EV_STONE_STATUE_OPEN - SFX_FLAG);
+        if ((self->timer % 4) == 0) {
+            Actor_RequestQuakeAndRumble(thisx, play, 1, 4);
+        }
+        if (self->rise >= GREAT_DOOR_RISE) {
+            Audio_PlayActorSound2(thisx, NA_SE_EV_STONEDOOR_STOP);
+            Actor_RequestQuakeAndRumble(thisx, play, 4, 10);
+        }
+        return;
+    }
+    // The plates: stepping onto one (not standing on it) counts
+    for (s32 i = 0; i < 3; i++) {
+        if ((SQ(p.x - sPlatePos[i].x) + SQ(p.z - sPlatePos[i].z) < SQ(55.0f)) && (p.y < sPlatePos[i].y + 25.0f)) {
+            on = i;
+        }
+    }
+    if ((on >= 0) && (on != self->onPlate)) {
+        if (on == sPlateOrder[self->step]) {
+            self->step++;
+            if (self->step >= 3) {
+                Audio_PlaySfxGeneral(NA_SE_SY_CORRECT_CHIME, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                Flags_SetSwitch(play, GREAT_DOOR_FLAG);
+                self->opening = true;
+            } else {
+                Audio_PlaySfxGeneral(NA_SE_SY_TRE_BOX_APPEAR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+        } else if (self->step > 0) {
+            // Out of order: the plates go dark, from the beginning again
+            Audio_PlaySfxGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            self->step = (on == sPlateOrder[0]) ? 1 : 0;
+        }
+    }
+    self->onPlate = on;
+}
+
+static void SetGlow(PlayState* play, u8 lit) {
+    OPEN_DISPS(play->state.gfxCtx);
+    if (lit) {
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 245, 190, 255);
+    } else {
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 130, 100, 50, 255);
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+static void GreatDoor_Draw(Actor* thisx, PlayState* play) {
+    GdfGreatDoor* self = (GdfGreatDoor*)thisx;
+    bool open = self->opening || (self->rise > 0.0f);
+    // The door shows the order: its triangles light one after another (left, right, top), then all go dark a while
+    s32 beat = (self->timer / 25) % 5;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sGreatDoorDL);
+    for (s32 t = 0; t < 3; t++) {
+        bool lit = open;
+
+        for (s32 k = 0; k < 3; k++) {
+            if (sPlateOrder[k] == t) {
+                lit = lit || (beat == k) || (k < self->step);
+            }
+        }
+        SetGlow(play, lit);
+        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sGreatDoorTriDL[t]);
+    }
+    // The plates on the floor before it, each lit once stepped on in its turn
+    for (s32 i = 0; i < 3; i++) {
+        bool lit = open;
+
+        for (s32 k = 0; k < self->step; k++) {
+            lit = lit || (sPlateOrder[k] == i);
+        }
+        Matrix_Translate(sPlatePos[i].x, sPlatePos[i].y, sPlatePos[i].z, MTXMODE_NEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sTriPlateRimDL);
+        SetGlow(play, lit);
+        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sTriPlateDL);
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static void RegisterActors() {
+    if (sGreatDoorActorId < 0) {
+        ActorDBInit init;
+        init.name = "Gdf_GreatDoor";
+        init.desc = "The Sacred Realm Temple's great door (Play as Ganondorf)";
+        init.category = ACTORCAT_BG;
+        init.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
+        init.objectId = OBJECT_GAMEPLAY_KEEP;
+        init.instanceSize = sizeof(GdfGreatDoor);
+        init.init = GreatDoor_Init;
+        init.destroy = GreatDoor_Destroy;
+        init.update = GreatDoor_Update;
+        init.draw = GreatDoor_Draw;
+        sGreatDoorActorId = ActorDB::Instance->AddEntry(init).entry.id;
+    }
     if (sDoorActorId < 0) {
         ActorDBInit init;
         init.name = "Gdf_SealedDoor";
@@ -298,6 +473,22 @@ static void OnSceneInit(int16_t sceneNum) {
         sArrival = (from == FIRST_HALL_SCENE) ? 2 : 0;
     } else if (sceneNum == FIRST_HALL_SCENE) {
         sSpawnPending = true;
+        sArrival = (from == HUB_SCENE) ? 3 : 0;
+    } else if (sceneNum == HUB_SCENE) {
+        sSpawnPending = true;
+    }
+}
+
+// The rooms' sunbeams, as big as their windows
+static void ScaleBeams(PlayState* play) {
+    f32 scale = BeamScale(play->sceneNum);
+
+    for (s32 cat = 0; cat < ACTORCAT_MAX; cat++) {
+        for (Actor* a = play->actorCtx.actorLists[cat].head; a != NULL; a = a->next) {
+            if ((a->id == ACTOR_DEMO_KANKYO) && (a->params == 0x0E)) {
+                Actor_SetScale(a, scale);
+            }
+        }
     }
 }
 
@@ -331,8 +522,21 @@ static void OnPlayerUpdate() {
         } else if (play->sceneNum == FIRST_HALL_SCENE) {
             Actor_Spawn(&play->actorCtx, play, sMirrorActorId, sHallMirrorPos.x, sHallMirrorPos.y, sHallMirrorPos.z,
                         0, -0x8000, 0, 0);
+            Actor_Spawn(&play->actorCtx, play, sGreatDoorActorId, sGreatDoorPos.x, sGreatDoorPos.y, sGreatDoorPos.z,
+                        0, 0, 0, 0);
+            if (sArrival == 3) {
+                PlaceAt(player, 0.0f, 0.0f, -1000.0f, 0); // back through the great door, facing the hall
+            }
+        }
+        if ((play->sceneNum == MIRROR_ROOM_SCENE) || (play->sceneNum == FIRST_HALL_SCENE) ||
+            (play->sceneNum == HUB_SCENE)) {
+            ScaleBeams(play);
         }
         return;
+    }
+    // Back out of the Sanctum: walking down the passage south
+    if ((play->sceneNum == HUB_SCENE) && CanLeave(play) && (player->actor.world.pos.z > 680.0f)) {
+        Warp(play, FIRST_HALL_ENTRANCE);
     }
     // Back out of the Mirror Room: walking up to the broken door at the passage's end
     if ((play->sceneNum == MIRROR_ROOM_SCENE) && CanLeave(play) && (player->actor.world.pos.z > 595.0f)) {
