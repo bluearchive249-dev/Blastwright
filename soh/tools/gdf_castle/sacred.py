@@ -136,6 +136,7 @@ def build_mirror_room(beams):
     B.wall('brick_white', 'x', 90, 300, 620, 0, 260, -1)
     B.wall('brick_white', 'z', 620, -90, 90, 0, 260, -1)  # (the way out: walking up to it)
     B.ceiling('ceiling', -90, 90, 300, 620, 260)
+    C.room_finish(B, -90, 90, 300, 620, 0, 260, walls='WE', pilasters=False, dado=(214, 208, 198))
     # The hall of the Sages
     B.floor('marble_check', -340, 340, -360, 300, y=0)
     B.floor('carpet_red', -60, 60, -250, 300, y=1, surface='floor')
@@ -143,7 +144,10 @@ def build_mirror_room(beams):
     B.wall('brick_white', 'x', 340, -360, 300, 0, H, -1)
     B.wall('brick_white', 'z', -360, -340, 340, 0, H, 1)
     B.wall('brick_white', 'z', 300, -340, 340, 0, H, -1, openings=[(-90, 90, 0, 260)])
-    B.ceiling('ceiling', -340, 340, -360, 300, H)
+    C.cove_ceiling(B, -340, 340, -360, 300, H, c=60)
+    C.room_finish(B, -340, 340, -360, 300, 0, H, pilasters=False, dado=(214, 208, 198),
+                  doors={'S': [(-90, 90, 0, 260)], 'W': [(-160, -60, 210, 400)], 'E': [(-160, -60, 210, 400)]})
+    C.arch_door(B, 'z', 300, -90, 90, 0, 260)
     for x in (-240, 240):
         for zc in (-200, -20, 160):
             B.pillar(x, zc, 26, 0, H)
@@ -180,7 +184,11 @@ def build_first_hall(beams):
     B.wall('brick_white2', 'x', 150, -1260, -1100, 0, 340, -1)
     B.wall('brick_white2', 'z', -1260, -150, 150, 0, 340, 1)
     B.ceiling('ceiling', -150, 150, -1260, -1100, 340)
-    B.ceiling('ceiling', -320, 320, -1100, 300, H)
+    C.cove_ceiling(B, -320, 320, -1100, 300, H, c=70)
+    C.room_finish(B, -320, 320, -1100, 300, 0, H, pilasters=False, dado=(214, 208, 198),
+                  doors={'N': [(-150, 150, 0, 340)], 'W': [(z - 60, z + 60, 320, 560) for z in (-50, -350, -650)],
+                         'E': [(z - 60, z + 60, 320, 560) for z in (-50, -350, -650)]},
+                  skip=[('S', -140, 140)])
     for zc in (100, -200, -500, -800):
         for x in (-220, 220):
             B.pillar(x, zc, 30, 0, H)
@@ -273,6 +281,8 @@ def build_hub(beams):
     B.wall('brick_white2', 'x', 110, HUB_A, HUB_A + 160, 0, 300, -1)
     B.wall('brick_white2', 'z', HUB_A + 160, -110, 110, 0, 300, -1)
     B.ceiling('ceiling', -110, 110, HUB_A, HUB_A + 160, 300)
+    C.room_finish(B, -110, 110, HUB_A, HUB_A + 160, 0, 300, walls='WE', pilasters=False, dado=(214, 208, 198))
+    C.arch_door(B, 'z', HUB_A, -110, 110, 0, 300)
     # The sealed doors: north to Rauru (gilded, with the Triforce), east and west to the wings
     B.box(('marble2', 'marble2'), -160, 160, 0, 380, -HUB_A, -HUB_A + 22)
     B.box('gold', -170, 170, 380, 400, -HUB_A, -HUB_A + 26, color=GOLD)
