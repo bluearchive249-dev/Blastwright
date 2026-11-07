@@ -3562,8 +3562,34 @@ static void BossGanon_Update_Impl(Actor* thisx, PlayState* play2) {
     }
 }
 
+// SoH: "Play as Ganondorf", young Ganondorf (while Link is a child): his own model and animations, smaller, with a
+// boy's larger head. His adult powers (levitation, Ganon, the Trident of Demise) wait until Link grows up.
+#define GDF_YOUNG_SCALE 0.72f      // his height as a boy
+#define GDF_YOUNG_HEAD_SCALE 1.22f // his head, a boy's proportions
+s32 BossGanon_Player_IsYoung(void) {
+    return LINK_IS_CHILD && CVarGetInteger(CVAR_PLAY_AS_GDF("YoungGanondorf"), 1);
+}
+
 s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     BossGanon* this = (BossGanon*)thisx;
+
+    // Young Ganondorf's head: drawn through a little display list that scales it about the neck (the limb's own
+    // matrix is loaded first; the children load theirs, so only the head grows)
+    if ((limbIndex == 18) && GDF_IS_PLAYER(this) && BossGanon_Player_IsYoung() && (*dList != NULL) &&
+        !sGdfPgCapture) {
+        Gfx* wrap = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
+        Mtx* m;
+
+        Matrix_Push();
+        Matrix_Scale(GDF_YOUNG_HEAD_SCALE, GDF_YOUNG_HEAD_SCALE, GDF_YOUNG_HEAD_SCALE, MTXMODE_NEW);
+        m = MATRIX_NEWMTX(play->state.gfxCtx);
+        Matrix_Pop();
+        gSPMatrix(&wrap[0], m, G_MTX_PUSH | G_MTX_MUL | G_MTX_MODELVIEW);
+        gSPDisplayList(&wrap[1], *dList);
+        gSPPopMatrix(&wrap[2], G_MTX_MODELVIEW);
+        gSPEndDisplayList(&wrap[3]);
+        *dList = wrap;
+    }
 
     switch (limbIndex) {
         case 10:
@@ -6787,7 +6813,8 @@ static f32 BossGanon_Player_PoseLowest(BossGanon* this) {
 static void BossGanon_Player_UpdateGroundOffset(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     f32 ankleAboveRoot = BossGanon_Player_PoseLowest(this);
-    f32 target = GDF_ANKLE_HEIGHT - ankleAboveRoot + (this->playerFloorY - player->actor.world.pos.y);
+    f32 target = GDF_ANKLE_HEIGHT * (this->actor.scale.y / 0.01f) - ankleAboveRoot +
+                 (this->playerFloorY - player->actor.world.pos.y);
     s32 fast = (this->actionFunc == BossGanon_Player_Land) || (sGdfFastGroundTimer > 0);
 
     // Better: the lowest point of the model itself (toes, heels, knees, knuckles), kept just above the floor. The
@@ -11111,7 +11138,8 @@ static f32 sGdfKneelPitch = 0.0f;
 static s32 BossGanon_Player_ShouldKneel(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
-    return LINK_IS_CHILD && this->playerGrounded && !this->playerHidden && !sGdfRoaming && !gGdfIntroCs.active &&
+    return LINK_IS_CHILD && !BossGanon_Player_IsYoung() && this->playerGrounded && !this->playerHidden && !sGdfRoaming &&
+           !gGdfIntroCs.active &&
            !BossGanon_Player_ShouldBrood(play) && (sGdfCsPoseCur == GDF_CSPOSE_NONE) && (player->doorActor == NULL) &&
            !(player->stateFlags1 & (PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_ON_HORSE |
                                     PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_DEAD)) &&
@@ -11294,6 +11322,16 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     if (sCape == NULL) {
         Actor_Kill(thisx);
         return;
+    }
+
+    // Young Ganondorf (Link a child): smaller, and his cape with him
+    {
+        f32 s = BossGanon_Player_IsYoung() ? 0.01f * GDF_YOUNG_SCALE : 0.01f;
+
+        if (this->actor.scale.y != s) {
+            Actor_SetScale(thisx, s);
+        }
+        sCape->jointLength = BossGanon_Player_IsYoung() ? 9.5f * GDF_YOUNG_SCALE : 0.0f;
     }
 
     BossGanon_Player_SlayNpcs(this, play);

@@ -238,10 +238,12 @@ bool ReadFile() {
 } // namespace
 
 extern "C" s32 GdfInvasion_Role(void);
+extern "C" s32 BossGanon_Player_IsYoung(void);
 
 extern "C" s32 GanondorfTrident_GetSelected(void) {
-    // His stance always uses the Trident of Demise (in Invasion games and outside them alike)
-    s32 weapon = 4;
+    // His stance uses the Trident of Demise (in Invasion games and outside them alike); as a boy (Link a child) the
+    // simplest one, the Thief's Trident
+    s32 weapon = BossGanon_Player_IsYoung() ? 3 : 4;
 
     if ((weapon < 1) || (weapon > GDF_TRIDENT_COUNT)) {
         return 0;

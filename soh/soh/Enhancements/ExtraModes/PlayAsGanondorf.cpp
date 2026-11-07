@@ -116,8 +116,11 @@ static BossGanon2* FindPlayerGanon(PlayState* play) {
     return NULL;
 }
 
+extern "C" s32 BossGanon_Player_IsYoung(void);
+
+// Young Ganondorf (Link a child) hasn't come into his full power yet: no Ganon, no levitation
 static bool IsGanonFormEnabled() {
-    return CVarGetInteger(CVAR_PLAY_AS_GDF("GanonForm"), 1) != 0;
+    return (CVarGetInteger(CVAR_PLAY_AS_GDF("GanonForm"), 1) != 0) && !BossGanon_Player_IsYoung();
 }
 
 // Ganon is too big for houses, shops, grottos and other interiors. Dungeons and temples (and their bosses) are fine,
@@ -296,6 +299,10 @@ static void UpdateLevitation(PlayState* play, Player* player, BossGanon* dorf) {
           PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_CARRYING_ACTOR)) ||
         (player->stateFlags2 & PLAYER_STATE2_CRAWLING) || BossGanon_Player_IsHidden(&dorf->actor);
 
+    if (BossGanon_Player_IsYoung()) {
+        StopLevitating();
+        return;
+    }
     if (!sLevitating) {
         if (up && !notAllowed && BossGanon_Player_CanAct(&dorf->actor)) {
             sLevitating = true;

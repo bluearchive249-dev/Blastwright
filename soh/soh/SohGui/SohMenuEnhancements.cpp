@@ -2126,6 +2126,12 @@ void SohMenu::AddMenuEnhancements() {
             " - Attacks aim at the enemy or eye/crystal switch, sun switch or unlit torch he's facing.\n\n"
             "His attacks count as every damage type and go through every defense, so they also break rocks and "
             "walls, hit switches and hurt armored enemies."));
+    AddWidget(path, "Young Ganondorf", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.YoungGanondorf"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "While Link is a child, Ganondorf is a boy: smaller, with a boy's larger head, the same moves and powers. "
+            "He hasn't come into his full power yet: no levitation, no Ganon form, and his trident is the Thief's "
+            "Trident. Once Link is an adult, everything is his, without limits."));
     AddWidget(path, "Keep C-Button Items", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KeepItems"))
         .PreFunc([](WidgetInfo& info) {
