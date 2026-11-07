@@ -3562,34 +3562,85 @@ static void BossGanon_Update_Impl(Actor* thisx, PlayState* play2) {
     }
 }
 
-// SoH: "Play as Ganondorf", young Ganondorf (while Link is a child): his own model and animations, smaller, with a
-// boy's larger head. His adult powers (levitation, Ganon, the Trident of Demise) wait until Link grows up.
-#define GDF_YOUNG_SCALE 0.72f      // his height as a boy
-#define GDF_YOUNG_HEAD_SCALE 1.22f // his head, a boy's proportions
+// SoH: "Play as Ganondorf", young Ganondorf (while Link is a child): the Ganondorf of the child era, the one who rides
+// out of the castle after Zelda (object_gndd, the drawbridge scene), drawn on his own skeleton's joints with
+// Ganondorf's animations. No pauldrons, no cape, the Gerudo knife at his hip. His adult powers (levitation, Ganon,
+// the Trident of Demise) wait until Link grows up.
 s32 BossGanon_Player_IsYoung(void) {
     return LINK_IS_CHILD && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.YoungGanondorf"), 1);
+}
+
+typedef struct {
+    Gfx* dl;      // the young model's part for this limb of Ganondorf's skeleton (NULL: nothing)
+    Vec3s pos;    // its joint, from the young skeleton
+} GdfYoungLimb;
+
+// By Ganondorf's limb (1-based). His shoulders (the pauldrons) carry the young arms' joints and draw nothing; the
+// hair ends draw nothing (the young head has its own); his mouth and jaw are the young jaw and chin.
+static GdfYoungLimb sGdfYoungLimbs[26];
+static void BossGanon_Player_InitYoungLimbs(void) {
+    static u8 sDone = false;
+    struct {
+        s32 limb;
+        Gfx* dl;
+        s16 x, y, z;
+    } t[] = {
+        { 2, (Gfx*)gYoungGanondorfTorsoDL, 0, 0, 0 },          { 3, NULL, 1350, -100, 1325 },
+        { 4, (Gfx*)gYoungGanondorfLeftUpperArmDL, 0, 0, 0 },   { 5, (Gfx*)gYoungGanondorfLeftForearmDL, 1476, 0, 0 },
+        { 6, (Gfx*)gYoungGanondorfLeftHandDL, 1688, 0, 0 },    { 7, NULL, 1350, -100, -1325 },
+        { 8, (Gfx*)gYoungGanondorfRightUpperArmDL, 0, 0, 0 },  { 9, (Gfx*)gYoungGanondorfRightForearmDL, 1476, 0, 0 },
+        { 10, (Gfx*)gYoungGanondorfRightHandDL, 1688, 0, 0 },  { 11, (Gfx*)gYoungGanondorfJewelDL, 2400, 0, 0 },
+        { 12, (Gfx*)gYoungGanondorfLeftUpperLipDL, 700, 225, 200 }, { 13, (Gfx*)gYoungGanondorfJawDL, 520, 40, 0 },
+        { 14, (Gfx*)gYoungGanondorfChinDL, 312, 0, 0 },        { 15, NULL, 0, 0, 0 },
+        { 16, NULL, 0, 0, 0 },                           { 17, (Gfx*)gYoungGanondorfRightUpperLipDL, 700, 225, -200 },
+        { 18, (Gfx*)gYoungGanondorfHeadDL, 0, 0, 0 },          { 19, (Gfx*)gYoungGanondorfPelvisDL, 0, 0, 0 },
+        { 20, (Gfx*)gYoungGanondorfLeftThighDL, 1200, 125, 625 }, { 21, (Gfx*)gYoungGanondorfLeftShinDL, 2084, 0, 0 },
+        { 22, (Gfx*)gYoungGanondorfLeftFootDL, 2049, 0, 0 },   { 23, (Gfx*)gYoungGanondorfRightThighDL, 1200, 125, -625 },
+        { 24, (Gfx*)gYoungGanondorfRightShinDL, 2084, 0, 0 },  { 25, (Gfx*)gYoungGanondorfRightFootDL, 2049, 0, 0 },
+    };
+    if (sDone) {
+        return;
+    }
+    sDone = true;
+    for (s32 i = 0; i < ARRAY_COUNT(t); i++) {
+        sGdfYoungLimbs[t[i].limb].dl = t[i].dl;
+        sGdfYoungLimbs[t[i].limb].pos.x = t[i].x;
+        sGdfYoungLimbs[t[i].limb].pos.y = t[i].y;
+        sGdfYoungLimbs[t[i].limb].pos.z = t[i].z;
+    }
+}
+
+// The young skeleton's joint for one of Ganondorf's limbs (0-based, as the skeleton's limb table): for the ground
+// offset's leg chains
+static s32 BossGanon_Player_YoungJoint(s32 limb0, Vec3s* out) {
+    if (!BossGanon_Player_IsYoung() || (limb0 < 0) || (limb0 + 1 > 25)) {
+        return false;
+    }
+    BossGanon_Player_InitYoungLimbs();
+    *out = sGdfYoungLimbs[limb0 + 1].pos;
+    return true;
+}
+
+// Two parts drawn as one limb (the head with its teeth, the left thigh with the knife at his hip)
+static Gfx* BossGanon_Player_YoungPair(PlayState* play, Gfx* first, Gfx* second, f32 x, f32 y, f32 z) {
+    Gfx* wrap = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 5);
+    Mtx* m;
+
+    Matrix_Push();
+    Matrix_Translate(x, y, z, MTXMODE_NEW);
+    m = MATRIX_NEWMTX(play->state.gfxCtx);
+    Matrix_Pop();
+    gSPDisplayList(&wrap[0], first);
+    gSPMatrix(&wrap[1], m, G_MTX_PUSH | G_MTX_MUL | G_MTX_MODELVIEW);
+    gSPDisplayList(&wrap[2], second);
+    gSPPopMatrix(&wrap[3], G_MTX_MODELVIEW);
+    gSPEndDisplayList(&wrap[4]);
+    return wrap;
 }
 
 s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     BossGanon* this = (BossGanon*)thisx;
 
-    // Young Ganondorf's head: drawn through a little display list that scales it about the neck (the limb's own
-    // matrix is loaded first; the children load theirs, so only the head grows)
-    if ((limbIndex == 18) && GDF_IS_PLAYER(this) && BossGanon_Player_IsYoung() && (*dList != NULL) &&
-        !sGdfPgCapture) {
-        Gfx* wrap = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
-        Mtx* m;
-
-        Matrix_Push();
-        Matrix_Scale(GDF_YOUNG_HEAD_SCALE, GDF_YOUNG_HEAD_SCALE, GDF_YOUNG_HEAD_SCALE, MTXMODE_NEW);
-        m = MATRIX_NEWMTX(play->state.gfxCtx);
-        Matrix_Pop();
-        gSPMatrix(&wrap[0], m, G_MTX_PUSH | G_MTX_MUL | G_MTX_MODELVIEW);
-        gSPDisplayList(&wrap[1], *dList);
-        gSPPopMatrix(&wrap[2], G_MTX_MODELVIEW);
-        gSPEndDisplayList(&wrap[3]);
-        *dList = wrap;
-    }
 
     switch (limbIndex) {
         case 10:
@@ -3632,6 +3683,24 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
 
         default:
             break;
+    }
+
+    // Young Ganondorf: the young model's parts on the young skeleton's joints (the animation's rotations are kept)
+    if (GDF_IS_PLAYER(this) && BossGanon_Player_IsYoung() && !sGdfPgCapture && (limbIndex >= 2) && (limbIndex <= 25)) {
+        GdfYoungLimb* y;
+
+        BossGanon_Player_InitYoungLimbs();
+        y = &sGdfYoungLimbs[limbIndex];
+        pos->x = y->pos.x;
+        pos->y = y->pos.y;
+        pos->z = y->pos.z;
+        if (limbIndex == 18) {
+            *dList = BossGanon_Player_YoungPair(play, (Gfx*)gYoungGanondorfHeadDL, (Gfx*)gYoungGanondorfTeethDL, 0, 0, 0);
+        } else if (limbIndex == 20) {
+            *dList = BossGanon_Player_YoungPair(play, (Gfx*)gYoungGanondorfLeftThighDL, (Gfx*)gYoungGanondorfKnifeDL, 718, -174, 475);
+        } else {
+            *dList = y->dl;
+        }
     }
 
     // SoH: Phantom Ganon skin, Ganondorf's own model isn't drawn
@@ -4326,6 +4395,10 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     }
 
     gSPSegment(POLY_XLU_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gGanondorfNormalEyeTex));
+    if (GDF_IS_PLAYER(this) && BossGanon_Player_IsYoung()) { // young Ganondorf's eyes (his head draws them opaque)
+        gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gYoungGanondorfEyeOpenTex));
+        gSPSegment(POLY_OPA_DISP++, 0x09, SEGMENTED_TO_VIRTUAL(gYoungGanondorfEyeOpenTex));
+    }
 
     // SoH: "Play as Ganondorf", Phantom Ganon skin: Ganondorf's skeleton still runs (without drawing) so everything
     // that follows his hands, head and shoulders keeps working, and Phantom Ganon is drawn in the same pose
@@ -6780,7 +6853,14 @@ static f32 BossGanon_Player_PoseLowest(BossGanon* this) {
         for (k = 1; k < 5; k++) {
             s32 limb = sChains[leg][k];
             StandardLimb* l = SEGMENTED_TO_VIRTUAL(this->skelAnime.skeleton[limb]);
+            Vec3s yj;
             f32 jp[3] = { l->jointPos.x, l->jointPos.y, l->jointPos.z };
+
+            if (BossGanon_Player_YoungJoint(limb, &yj)) { // (young Ganondorf's shorter legs)
+                jp[0] = yj.x;
+                jp[1] = yj.y;
+                jp[2] = yj.z;
+            }
             s32 r;
 
             for (r = 0; r < 3; r++) {
@@ -11324,14 +11404,11 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         return;
     }
 
-    // Young Ganondorf (Link a child): smaller, and his cape with him
+    // (young Ganondorf is his own model: same scale; no cape, see EnGanonMant's draw)
     {
-        f32 s = BossGanon_Player_IsYoung() ? 0.01f * GDF_YOUNG_SCALE : 0.01f;
-
-        if (this->actor.scale.y != s) {
-            Actor_SetScale(thisx, s);
+        if (this->actor.scale.y != 0.01f) {
+            Actor_SetScale(thisx, 0.01f);
         }
-        sCape->jointLength = BossGanon_Player_IsYoung() ? 9.5f * GDF_YOUNG_SCALE : 0.0f;
     }
 
     BossGanon_Player_SlayNpcs(this, play);

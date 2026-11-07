@@ -2129,9 +2129,10 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Young Ganondorf", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.YoungGanondorf"))
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "While Link is a child, Ganondorf is a boy: smaller, with a boy's larger head, the same moves and powers. "
-            "He hasn't come into his full power yet: no levitation, no Ganon form, and his trident is the Thief's "
-            "Trident. Once Link is an adult, everything is his, without limits."));
+            "While Link is a child, Ganondorf is his younger self, as he rides out of the castle after Zelda: no "
+            "pauldrons, no cape, a knife at his hip, with the same moves. He hasn't come into his full power yet: no "
+            "levitation, no Ganon form, and his trident is the Thief's Trident. Once Link is an adult, everything is "
+            "his, without limits."));
     AddWidget(path, "Keep C-Button Items", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KeepItems"))
         .PreFunc([](WidgetInfo& info) {
