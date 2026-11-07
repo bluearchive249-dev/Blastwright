@@ -2126,6 +2126,11 @@ void SohMenu::AddMenuEnhancements() {
             " - Attacks aim at the enemy or eye/crystal switch, sun switch or unlit torch he's facing.\n\n"
             "His attacks count as every damage type and go through every defense, so they also break rocks and "
             "walls, hit switches and hurt armored enemies."));
+    AddWidget(path, "Ragdolls", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Ragdolls"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "The ones he throws (D-Pad Down) go limp: a ragdoll built from their own skeleton tumbles through the "
+            "air, slams into the ground, slides and flops to a stop against the floor and walls, then they get up."));
     AddWidget(path, "Keep C-Button Items", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KeepItems"))
         .PreFunc([](WidgetInfo& info) {

@@ -18,6 +18,7 @@
 #include "soh/Enhancements/ExtraModes/GanondorfIntro.h"
 #include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/Enhancements/ExtraModes/GanondorfDance.h"
+#include "soh/Enhancements/ExtraModes/GanondorfRagdoll.h"
 #include "textures/icon_item_field_static/icon_item_field_static.h" // SoH: the map on the intro's war table
 #include "overlays/actors/ovl_En_Horse_Ganon/z_en_horse_ganon.h" // SoH: the Gerudo intro's horse
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
@@ -6066,6 +6067,8 @@ static Vec3f sGdfGrabVel;
 static s16 sGdfGrabTimer = 0;
 static u8 sGdfGrabOrigCategory = ACTORCAT_NPC;
 static u32 sGdfGrabNetClient = 0; // Invasion mode: the one held is another player's Link (his game moves him)
+static s16 sGdfGrabFlyTimer = 0;  // frames since thrown (the ragdoll's flight)
+static u8 sGdfGrabLanded = false; // the ragdoll has hit the ground (the slam's been done)
 
 // Holding someone up by the throat (A mustn't talk to them)
 s32 BossGanon_Player_IsHolding(void) {
@@ -13442,9 +13445,38 @@ static void BossGanon_Player_GrabToIdle(BossGanon* this, PlayState* play) {
     }
 }
 
+// Thrown (or dropped): a ragdoll of their own skeleton (GanondorfRagdoll.c), if it can be built from how they're
+// drawn; otherwise the old stiff throw onto their back
+static void BossGanon_Player_GrabRagdoll(Actor* actor) {
+    sGdfGrabFlyTimer = 0;
+    sGdfGrabLanded = false;
+    if ((actor != NULL) && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Ragdolls"), 1)) {
+        GdfRagdoll_Begin(actor, &sGdfGrabVel);
+    }
+}
+
+// The slam, where they hit the ground
+static void BossGanon_Player_GrabSlam(PlayState* play, Actor* actor, Actor* from) {
+    Actor_RequestQuakeAndRumble(from, play, 4, 12);
+    Audio_PlayActorSound2(actor, NA_SE_IT_HAMMER_HIT);
+    Audio_PlayActorSound2(actor, NA_SE_PL_BODY_HIT);
+    Actor_SpawnFloorDustRing(play, actor, &actor->world.pos, 30.0f, 12, 6.0f, 500, 20, true);
+    EffectSsHitMark_SpawnFixedScale(play, 0, &actor->world.pos);
+}
+
 // Back on their feet, themselves again
 static void BossGanon_Player_GrabRelease(PlayState* play) {
     Actor* actor = sGdfGrabActor;
+
+    if (GdfRagdoll_State(actor) == 2) {
+        if (BossGanon_Player_GrabAlive(play, actor)) {
+            GdfRagdoll_GetUp(); // (its own animation takes over over a few frames)
+        } else {
+            GdfRagdoll_Cancel();
+        }
+    } else if (GdfRagdoll_State(actor) == 1) {
+        GdfRagdoll_Cancel();
+    }
 
     if (sGdfGrabNetClient != 0) {
         GdfInvasion_NetGrabEnd(sGdfGrabNetClient, false, 0);
@@ -13601,6 +13633,7 @@ void BossGanon_Player_GrabThrow(BossGanon* this, PlayState* play) {
         sGdfGrabVel.z = Math_CosS(this->actor.shape.rot.y) * 9.0f;
         sGdfGrabVel.y = -6.0f;
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_SWING_HARD);
+        BossGanon_Player_GrabRagdoll(sGdfGrabActor);
     }
     if (sGdfGrabTimer >= GDF_GRAB_THROW_FRAMES) {
         BossGanon_Player_GrabToIdle(this, play);
@@ -13679,6 +13712,7 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
                 sGdfGrabState = GDF_GRAB_FLYING;
                 sGdfGrabVel.x = sGdfGrabVel.z = 0.0f;
                 sGdfGrabVel.y = 0.0f;
+                BossGanon_Player_GrabRagdoll(actor);
                 break;
             }
             actor->world.pos.x = hand.x;
@@ -13691,6 +13725,37 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
             break;
 
         case GDF_GRAB_FLYING:
+            if (GdfRagdoll_State(actor) != 0) {
+                // A ragdoll: tumbling through the air, the slam where it first hits the ground, then sliding and
+                // flopping until it lies still
+                sGdfGrabFlyTimer++;
+                if (GdfRagdoll_Step(play)) {
+                    GdfRagdoll_Anchor(play, &actor->world.pos);
+                    BossGanon_Player_GrabSlam(play, actor, &this->actor);
+                    sGdfGrabLanded = true;
+                }
+                if (GdfRagdoll_State(actor) == 2) {
+                    GdfRagdoll_Anchor(play, &actor->world.pos);
+                    actor->shape.rot.x = actor->world.rot.x = 0;
+                    actor->shape.rot.z = actor->world.rot.z = 0;
+                    actor->velocity.x = actor->velocity.y = actor->velocity.z = 0.0f;
+                    actor->speedXZ = 0.0f;
+                    actor->prevPos = actor->world.pos;
+                    actor->focus.pos = actor->world.pos;
+                    if (((sGdfGrabFlyTimer > 20) && (GdfRagdoll_MaxSpeed() < 0.8f)) || (sGdfGrabFlyTimer > 90)) {
+                        if (!sGdfGrabLanded) {
+                            BossGanon_Player_GrabSlam(play, actor, &this->actor);
+                        }
+                        sGdfGrabState = GDF_GRAB_DOWN;
+                        sGdfGrabTimer = GDF_GRAB_DOWN_FRAMES;
+                    }
+                    break;
+                }
+                if (GdfRagdoll_State(actor) == 1) {
+                    break; // (built when it's next drawn)
+                }
+                // (it couldn't be built: the old throw)
+            }
             actor->world.pos.x += sGdfGrabVel.x;
             actor->world.pos.y += sGdfGrabVel.y;
             actor->world.pos.z += sGdfGrabVel.z;
@@ -13724,6 +13789,12 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
 
         case GDF_GRAB_DOWN:
             // Lying there, then up again (a monster takes the blow as it comes to)
+            if (GdfRagdoll_State(actor) == 2) { // limp, settling where it lies
+                GdfRagdoll_Step(play);
+                GdfRagdoll_Anchor(play, &actor->world.pos);
+                actor->prevPos = actor->world.pos;
+                actor->focus.pos = actor->world.pos;
+            }
             if (--sGdfGrabTimer <= 0) {
                 Vec3f pos = actor->world.pos;
 
