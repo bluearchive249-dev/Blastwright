@@ -6798,9 +6798,6 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
 
                     func_800F4010(&player->actor.projectedPos, sfx, speed * 0.6f);
                     GdfInvasion_NoteSfx(sfx);
-                    if (this->playerSprintWeight > 0.5f) {
-                        Audio_PlayActorSound2(&this->actor, NA_SE_PL_WALK_HEAVYBOOTS);
-                    }
                     player->stateFlags2 |= PLAYER_STATE2_FOOTSTEP;
                 }
             }
@@ -11922,8 +11919,32 @@ static f32 sGdfKneelPitch = 0.0f;
 static s16 sGdfKneelStill = 0; // frames Link has stood still (counted in his update)
 #define GDF_KNEEL_STILL_FRAMES 10
 
+// Boss rooms: their cutscenes (the boss's entrance, its defeat, the blue warp) are framed for whoever is fighting, not
+// for a child at a conversation, so he stays on his feet
+static s32 BossGanon_Player_InBossRoom(PlayState* play) {
+    switch (play->sceneNum) {
+        case SCENE_DEKU_TREE_BOSS:
+        case SCENE_DODONGOS_CAVERN_BOSS:
+        case SCENE_JABU_JABU_BOSS:
+        case SCENE_FOREST_TEMPLE_BOSS:
+        case SCENE_FIRE_TEMPLE_BOSS:
+        case SCENE_WATER_TEMPLE_BOSS:
+        case SCENE_SPIRIT_TEMPLE_BOSS:
+        case SCENE_SHADOW_TEMPLE_BOSS:
+        case SCENE_GANONDORF_BOSS:
+        case SCENE_GANON_BOSS:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static s32 BossGanon_Player_ShouldKneel(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
+
+    if (BossGanon_Player_InBossRoom(play)) {
+        return false;
+    }
 
     // Only for a conversation or a scripted cutscene, with Link standing still (half a second) and no change of area
     // under way. (The game holds Link "in a cutscene" to walk him in and out through entrances and exits too, as on

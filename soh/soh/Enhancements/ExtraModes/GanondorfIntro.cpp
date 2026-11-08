@@ -572,7 +572,7 @@ static bool Update2(PlayState* play, s32 t) {
     eye.y += Math_SinS(t * 0x0C00) * 1.5f; // a walker's bob
     Cam(play, eye, at, 65.0f);
     if (((t % 14) == 0) && (t < 262) && sFresh) {
-        Sfx(NA_SE_PL_WALK_HEAVYBOOTS);
+        Sfx(NA_SE_PL_WALK_CONCRETE + 0x80); // his steps on the stone floor (an adult's: +0x80; no iron boots' clank)
     }
     if (At(t, 275)) {
         Sfx(NA_SE_OC_DOOR_OPEN);
