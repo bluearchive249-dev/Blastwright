@@ -2780,6 +2780,12 @@ void func_80086D5C(s32* buf, u16 size) {
 
 // SoH: "Play as Ganondorf", where A would attack, jump or put away, holding it makes him sprint: the A button reads
 // "Run" (IA4, 48x16, drawn in the style of the game's action labels)
+// SoH: "Play as Ganondorf", his B button's icons (GanondorfHudIcons.c) and his mode (z_boss_ganon.c)
+extern u8 gGdfBIconLightTex[];
+extern u8 gGdfBIconTridentTex[];
+extern u8 gGdfBIconAuraTex[];
+s32 BossGanon_Player_BMode(void);
+
 static u8 sGdfRunDoActionTex[] ALIGNED8 = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -5588,7 +5594,17 @@ void Interface_Draw(PlayState* play) {
         gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, interfaceCtx->bAlpha);
         gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATERGBA_PRIM, G_CC_MODULATERGBA_PRIM);
 
-        if (!(interfaceCtx->unk_1FA)) {
+        if (!(interfaceCtx->unk_1FA) && PlayAsGanondorf_UseGanondorfHud() &&
+            !(player->stateFlags1 & PLAYER_STATE1_ON_HORSE) && (play->shootingGalleryStatus <= 1)) {
+            // SoH: "Play as Ganondorf", his B button shows what B does in his mode: his ball of thunderous light, the
+            // trident's spearhead, or the dark aura
+            static u8* const sGdfBIcons[] = { gGdfBIconLightTex, gGdfBIconTridentTex, gGdfBIconAuraTex };
+            s32 mode = CLAMP(BossGanon_Player_BMode(), 0, 2);
+
+            if (fullUi) {
+                Interface_DrawItemIconTexture(play, sGdfBIcons[mode], 0);
+            }
+        } else if (!(interfaceCtx->unk_1FA)) {
             // B Button Icon & Ammo Count
             if (gSaveContext.equips.buttonItems[0] != ITEM_NONE) {
                 if (fullUi) {
