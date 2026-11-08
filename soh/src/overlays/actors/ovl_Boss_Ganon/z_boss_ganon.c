@@ -270,12 +270,14 @@ static GanonMantCapsule sGdfCapsules[GDF_CLOAK_CAPSULES];
 static Vec3f sGdfCollar[GANON_MANT_NUM_STRANDS]; // along his shoulders and across his upper back
 static u8 sGdfCollarValid = false;
 
+// (Set aside on 9 Nov 2026: too much swish and the cloth's texture clipping through him. The classic cape is back;
+// the code stays, switched off.)
 static s32 BossGanon_Player_CloakOn(void) {
-    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Cloak"), 1) != 0;
+    return false;
 }
 
 static s32 BossGanon_Player_HoodOn(void) {
-    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Hood"), 1) != 0;
+    return false;
 }
 
 // For the hood (GanondorfHood.cpp): his face limb's matrix and the collar it drapes down to (only on his own cape: the

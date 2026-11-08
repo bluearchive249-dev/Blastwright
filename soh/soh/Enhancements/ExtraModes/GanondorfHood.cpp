@@ -73,7 +73,7 @@ extern "C" void* GanondorfHood_Build(EnGanonMant* cape, PlayState* play) {
     MtxF head;
     Vec3f collar[GDF_HOOD_COLS];
 
-    if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Hood"), 1) || !BossGanon_Player_GetHoodFrame(cape, &head, collar)) {
+    if (true || !BossGanon_Player_GetHoodFrame(cape, &head, collar)) { // (set aside on 9 Nov 2026)
         return NULL;
     }
 

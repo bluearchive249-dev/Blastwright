@@ -2250,7 +2250,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Cloak", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Cloak"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.isHidden = true; // (set aside)
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "His cape as a cloak: it hangs from his shoulders and falls over his left shoulder and down his front, "
@@ -2258,7 +2258,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Hood", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Hood"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.isHidden = true; // (set aside)
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "A hood of his cape's cloth. Its shadow falls over his brow and eyes; his nose and mouth stay in the "
