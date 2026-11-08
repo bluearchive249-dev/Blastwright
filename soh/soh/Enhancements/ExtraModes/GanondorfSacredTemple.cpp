@@ -66,6 +66,7 @@ static const char sRauruCast[] = "__OTR__objects/object_rl/object_rl_Anim_00040C
 static const char sRauruEyes[] = "__OTR__objects/object_rl/object_rl_Tex_003620";
 static const char sTriforceDL[] = "__OTR__objects/object_triforce_spot/gTriforceDL";
 static const char sArrowDL[] = "__OTR__objects/gameplay_keep/gArrowFarDL";
+static const char sIronAxeDL[] = "__OTR__objects/object_ik/gIronKnuckleAxeDL";
 static const char sBrazierDL[] = "__OTR__objects/gdf_sacred/gGdfBrazierDL";
 static const char sAltarDL[] = "__OTR__objects/gdf_sacred/gGdfAltarDL";
 static const char sSwordDL[] = "__OTR__objects/gdf_sacred/gGdfGuardSwordDL";
@@ -177,7 +178,8 @@ static s32 CountLiving(PlayState* play, s32 id) {
 
 // ---- Guards ----
 
-enum { GUARD_SPEAR, GUARD_SWORD, GUARD_BOW, GUARD_SHIELD, GUARD_CAPTAIN };
+// GUARD_IRON: an Iron Knuckle, a soldier built far bigger and broader, swinging the Iron Knuckle's own axe
+enum { GUARD_SPEAR, GUARD_SWORD, GUARD_BOW, GUARD_SHIELD, GUARD_CAPTAIN, GUARD_IRON };
 enum { GS_IDLE, GS_ENGAGE, GS_ATTACK, GS_HURT, GS_DIE, GS_CHARGE };
 
 typedef struct {
@@ -216,11 +218,11 @@ static void Guard_Anim(GdfGuard* g, const char* anim, f32 speed, u8 mode, f32 mo
 
 static void Guard_Init(Actor* thisx, PlayState* play) {
     GdfGuard* g = (GdfGuard*)thisx;
-    static const u8 sHp[] = { 4, 4, 3, 6, 18 };
+    static const u8 sHp[] = { 4, 4, 3, 6, 18, 10 };
 
     g->type = thisx->params & 0xF;
     g->dormant = (thisx->params & 0x10) != 0;
-    Actor_SetScale(thisx, (g->type == GUARD_CAPTAIN) ? 0.014f : 0.01f);
+    Actor_SetScale(thisx, (g->type == GUARD_IRON) ? 0.017f : (g->type == GUARD_CAPTAIN) ? 0.014f : 0.01f);
     SkelAnime_Init(play, &g->skel, (SkeletonHeader*)sHeishiSkel, (AnimationHeader*)sHeishiIdle, g->jt, g->mt, 17);
     Collider_InitCylinder(play, &g->body);
     Collider_SetCylinder(play, &g->body, thisx, &sGuardBodyInit);
@@ -232,8 +234,15 @@ static void Guard_Init(Actor* thisx, PlayState* play) {
         g->weapon.dim.radius = 34;
         g->weapon.info.toucher.damage = 0x10;
     }
+    if (g->type == GUARD_IRON) {
+        g->body.dim.radius = 48;
+        g->body.dim.height = 150;
+        g->weapon.dim.radius = 46;
+        g->weapon.dim.height = 90;
+        g->weapon.info.toucher.damage = 0x18;
+    }
     thisx->colChkInfo.health = sHp[g->type];
-    thisx->colChkInfo.mass = (g->type == GUARD_CAPTAIN) ? MASS_HEAVY : 120;
+    thisx->colChkInfo.mass = ((g->type == GUARD_CAPTAIN) || (g->type == GUARD_IRON)) ? MASS_HEAVY : 120;
     thisx->gravity = -1.5f;
     thisx->targetMode = 3;
     g->state = GS_IDLE;
@@ -252,6 +261,8 @@ static f32 Guard_Reach(GdfGuard* g) {
             return 115.0f;
         case GUARD_CAPTAIN:
             return 140.0f;
+        case GUARD_IRON:
+            return 170.0f;
         default:
             return 85.0f;
     }
@@ -313,21 +324,23 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
                 thisx->colChkInfo.health--;
                 g->iframes = 14;
                 Actor_SetColorFilter(thisx, 0x4000, 255, 0, 10);
-                Audio_PlayActorSound2(thisx, (g->type == GUARD_CAPTAIN) ? NA_SE_EN_IRONNACK_DAMAGE : NA_SE_EN_STAL_DAMAGE);
+                Audio_PlayActorSound2(thisx, (g->type == GUARD_IRON)      ? NA_SE_EN_IRONNACK_ARMOR_HIT
+                                             : (g->type == GUARD_CAPTAIN) ? NA_SE_EN_IRONNACK_DAMAGE
+                                                                          : NA_SE_EN_STAL_DAMAGE);
                 if (thisx->colChkInfo.health <= 0) {
                     g->state = GS_DIE;
                     g->timer = 0;
                     thisx->speedXZ = -4.0f;
                     thisx->flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
                     Guard_Anim(g, sHeishiDie, 1.0f, ANIMMODE_ONCE, -4.0f);
-                    Audio_PlayActorSound2(thisx, NA_SE_EN_STAL_DEAD);
-                } else if (g->type != GUARD_CAPTAIN) {
+                    Audio_PlayActorSound2(thisx, (g->type == GUARD_IRON) ? NA_SE_EN_IRONNACK_DEAD : NA_SE_EN_STAL_DEAD);
+                } else if ((g->type != GUARD_CAPTAIN) && (g->type != GUARD_IRON)) {
                     g->state = GS_HURT;
                     g->timer = 12;
                     thisx->speedXZ = -9.0f;
                     Guard_Anim(g, sHeishiIdle, 1.0f, ANIMMODE_LOOP, -3.0f);
                 } else {
-                    thisx->speedXZ = -3.0f;
+                    thisx->speedXZ = (g->type == GUARD_IRON) ? 0.0f : -3.0f; // (an Iron Knuckle doesn't give ground)
                 }
             }
         }
@@ -339,6 +352,9 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
             if (g->dormant) {
                 if (player->actor.world.pos.z < -700.0f) { // he's crossed the chasm
                     g->dormant = false;
+                    if (g->type != GUARD_CAPTAIN) {
+                        break; // (the captain speaks for them)
+                    }
                     func_800F5ACC(NA_BGM_MINI_BOSS);
                     Say(play, "%rGuard Captain:%w Halt, thief of the desert! No one has crossed this hall since the "
                               "Sages sealed it, and no one will!");
@@ -368,27 +384,41 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
                 break;
             }
             if (dist > reach * 0.85f) {
-                Math_StepToF(&thisx->speedXZ, (g->type == GUARD_CAPTAIN) ? 4.5f : 3.5f, 0.6f);
+                Math_StepToF(&thisx->speedXZ, (g->type == GUARD_IRON) ? 1.8f : (g->type == GUARD_CAPTAIN) ? 4.5f : 3.5f,
+                             0.6f);
+                if ((g->type == GUARD_IRON) && (Animation_OnFrame(&g->skel, 1.0f) || Animation_OnFrame(&g->skel, 9.0f))) {
+                    Audio_PlayActorSound2(thisx, NA_SE_EN_IRONNACK_WALK);
+                }
             } else {
                 Math_StepToF(&thisx->speedXZ, 0.0f, 1.0f);
                 if (g->cooldown == 0) {
                     g->state = GS_ATTACK;
                     g->timer = 0;
-                    Guard_Anim(g, sHeishiSlam, (g->type == GUARD_SWORD) ? 2.0f : 1.6f, ANIMMODE_ONCE, -3.0f);
-                    Audio_PlayActorSound2(thisx, NA_SE_IT_SWORD_SWING);
+                    Guard_Anim(g, sHeishiSlam, (g->type == GUARD_SWORD) ? 2.0f : (g->type == GUARD_IRON) ? 0.9f : 1.6f,
+                               ANIMMODE_ONCE, -3.0f);
+                    Audio_PlayActorSound2(thisx, (g->type == GUARD_IRON) ? NA_SE_EN_IRONNACK_SWING_AXE
+                                                                         : NA_SE_IT_SWORD_SWING);
                 }
             }
             break;
 
         case GS_ATTACK: {
-            s16 windup = (g->type == GUARD_SWORD) ? 6 : 10;
+            s16 windup = (g->type == GUARD_SWORD) ? 6 : (g->type == GUARD_IRON) ? 22 : 10;
             g->timer++;
             Math_SmoothStepToS(&thisx->world.rot.y, yawTo, 8, 0x200, 0x40);
             Math_StepToF(&thisx->speedXZ, (g->timer > windup && g->timer < windup + 6) ? 4.0f : 0.0f, 1.0f);
             if ((g->timer >= windup) && (g->timer < windup + 7)) {
                 g->weaponActive = true;
             }
-            if (g->timer > windup + 22) {
+            if ((g->type == GUARD_IRON) && (g->timer == windup + 3)) { // the axe bites into the floor
+                Vec3f p = thisx->world.pos;
+                p.x += Math_SinS(thisx->shape.rot.y) * 150.0f;
+                p.z += Math_CosS(thisx->shape.rot.y) * 150.0f;
+                Audio_PlayActorSound2(thisx, NA_SE_EN_IRONNACK_HIT_GND);
+                Actor_RequestQuakeAndRumble(thisx, play, 4, 10);
+                Actor_SpawnFloorDustRing(play, thisx, &p, 40.0f, 10, 8.0f, 500, 20, true);
+            }
+            if (g->timer > windup + ((g->type == GUARD_IRON) ? 34 : 22)) {
                 g->state = GS_ENGAGE;
                 g->cooldown = 25 + (s16)Rand_ZeroFloat(35.0f);
                 Guard_Anim(g, sHeishiWalk, 1.4f, ANIMMODE_LOOP, -6.0f);
@@ -441,7 +471,7 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
     Actor_MoveXZGravity(thisx);
     Actor_UpdateBgCheckInfo(play, thisx, 26.0f, 26.0f, 60.0f, 0x1D);
     thisx->focus.pos = thisx->world.pos;
-    thisx->focus.pos.y += (g->type == GUARD_CAPTAIN) ? 120.0f : 85.0f;
+    thisx->focus.pos.y += (g->type == GUARD_IRON) ? 150.0f : (g->type == GUARD_CAPTAIN) ? 120.0f : 85.0f;
 
     if (g->state != GS_DIE) {
         Collider_UpdateCylinder(thisx, &g->body);
@@ -457,10 +487,43 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
     }
 }
 
+// An Iron Knuckle's bulk: the torso, the chest, the arms and the thighs drawn broader (thicker across, not longer;
+// the limbs' children load their own matrices, so only these grow)
+static Gfx* Guard_Broaden(PlayState* play, Gfx* dl, f32 thick) {
+    Gfx* wrap = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
+    Mtx* m;
+
+    Matrix_Push();
+    Matrix_Scale(1.0f, thick, thick, MTXMODE_NEW);
+    m = MATRIX_NEWMTX(play->state.gfxCtx);
+    Matrix_Pop();
+    gSPMatrix(&wrap[0], m, G_MTX_PUSH | G_MTX_MUL | G_MTX_MODELVIEW);
+    gSPDisplayList(&wrap[1], dl);
+    gSPPopMatrix(&wrap[2], G_MTX_MODELVIEW);
+    gSPEndDisplayList(&wrap[3]);
+    return wrap;
+}
+
 static s32 Guard_OverrideLimb(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     GdfGuard* g = (GdfGuard*)thisx;
     if ((limbIndex == 15) && (g->type != GUARD_SPEAR) && (g->type != GUARD_CAPTAIN)) {
         *dList = (Gfx*)sHeishiHand; // (the spear goes; a hand of his own)
+    }
+    if ((g->type == GUARD_IRON) && (*dList != NULL)) {
+        switch (limbIndex) {
+            case 2:  // torso
+            case 9:  // chest armour
+                *dList = Guard_Broaden(play, *dList, 1.45f);
+                break;
+            case 10: // upper arms and forearms
+            case 11:
+            case 13:
+            case 14:
+            case 3: // thighs
+            case 6:
+                *dList = Guard_Broaden(play, *dList, 1.35f);
+                break;
+        }
     }
     return false;
 }
@@ -471,7 +534,13 @@ static void Guard_PostLimb(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* r
     f32 sc = 100.0f; // (props are in world units; the limbs' in model units)
 
     OPEN_DISPS(play->state.gfxCtx);
-    if ((limbIndex == 15) && (g->type == GUARD_SWORD)) {
+    if ((limbIndex == 15) && (g->type == GUARD_IRON)) {
+        // the Iron Knuckle's axe, as its own hand holds it (its colours from segments 8 and 10, set in the draw)
+        Matrix_Push();
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sIronAxeDL);
+        Matrix_Pop();
+    } else if ((limbIndex == 15) && (g->type == GUARD_SWORD)) {
         dl = sSwordDL;
     } else if ((limbIndex == 12) && (g->type == GUARD_BOW)) {
         dl = sBowDL;
@@ -500,6 +569,20 @@ static void Guard_Draw(Actor* thisx, PlayState* play) {
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     if (g->type == GUARD_CAPTAIN) {
         gDPSetEnvColor(POLY_OPA_DISP++, 255, 200, 90, 255);
+    }
+    if (g->type == GUARD_IRON) { // the axe's colours, as a silver Iron Knuckle's
+        Gfx* seg8 = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
+        Gfx* segA = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
+        gDPPipeSync(&seg8[0]);
+        gDPSetPrimColor(&seg8[1], 0, 0, 245, 255, 205, 255);
+        gDPSetEnvColor(&seg8[2], 30, 35, 0, 255);
+        gSPEndDisplayList(&seg8[3]);
+        gDPPipeSync(&segA[0]);
+        gDPSetPrimColor(&segA[1], 0, 0, 255, 255, 255, 255);
+        gDPSetEnvColor(&segA[2], 30, 40, 20, 255);
+        gSPEndDisplayList(&segA[3]);
+        gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)seg8);
+        gSPSegment(POLY_OPA_DISP++, 0x0A, (uintptr_t)segA);
     }
     CLOSE_DISPS(play->state.gfxCtx);
     SkelAnime_DrawOpa(play, g->skel.skeleton, g->skel.jointTable, Guard_OverrideLimb, Guard_PostLimb, thisx);
@@ -1339,7 +1422,7 @@ static void SetUpRoom(PlayState* play, Player* player) {
                 Spawn(play, sGuardId, 120.0f, 0.0f, -150.0f, 0, GUARD_SPEAR);
                 Spawn(play, sGuardId, -150.0f, 0.0f, -550.0f, 0, GUARD_SPEAR);
                 Spawn(play, sGuardId, 150.0f, 0.0f, -550.0f, 0, GUARD_SHIELD);
-                Spawn(play, sGuardId, 0.0f, 0.0f, -950.0f, 0, GUARD_SHIELD);
+                Spawn(play, sGuardId, 0.0f, 0.0f, -950.0f, 0, GUARD_IRON);
                 Spawn(play, sGuardId, -180.0f, 0.0f, -1000.0f, 0, GUARD_SPEAR);
             }
             break;
@@ -1354,6 +1437,7 @@ static void SetUpRoom(PlayState* play, Player* player) {
                 Spawn(play, sGuardId, 295.0f, 220.0f, -500.0f, -0x4000, GUARD_BOW);
                 Spawn(play, sGuardId, -150.0f, 0.0f, -900.0f, 0, GUARD_SWORD);
                 Spawn(play, sGuardId, 0.0f, 0.0f, -1150.0f, 0, GUARD_CAPTAIN | 0x10);
+                Spawn(play, sGuardId, 170.0f, 0.0f, -1250.0f, 0, GUARD_IRON | 0x10);
             }
             break;
 
