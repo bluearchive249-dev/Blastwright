@@ -11919,16 +11919,22 @@ static void BossGanon_Pg_RotY(f32 deg, GdfMat3 out);
 static u8 sGdfCsPoseCur; // (his cutscene pose, set further down)
 static f32 sGdfKneelYaw = 0.0f;
 static f32 sGdfKneelPitch = 0.0f;
+static s16 sGdfKneelStill = 0; // frames Link has stood still (counted in his update)
+#define GDF_KNEEL_STILL_FRAMES 10
 
 static s32 BossGanon_Player_ShouldKneel(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
+    // Only for a conversation or a scripted cutscene, with Link standing still (half a second) and no change of area
+    // under way. (The game holds Link "in a cutscene" to walk him in and out through entrances and exits too, as on
+    // first stepping out of his house: kneeling for those, he dropped to one knee at every doorway.)
     return LINK_IS_CHILD && this->playerGrounded && !this->playerHidden && !sGdfRoaming && !gGdfIntroCs.active &&
            !BossGanon_Player_ShouldBrood(play) && (sGdfCsPoseCur == GDF_CSPOSE_NONE) && (player->doorActor == NULL) &&
            !(player->stateFlags1 & (PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_ON_HORSE |
                                     PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_DEAD)) &&
-           ((player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
-            (play->csCtx.state != CS_STATE_IDLE));
+           ((player->stateFlags1 & PLAYER_STATE1_TALKING) || (play->csCtx.state != CS_STATE_IDLE)) &&
+           (play->transitionTrigger == TRANS_TRIGGER_OFF) && (play->transitionMode == TRANS_MODE_OFF) &&
+           (sGdfKneelStill >= GDF_KNEEL_STILL_FRAMES);
 }
 
 // His head turned by (yaw, pitch) degrees in his body's frame (as the cutscene poses turn it)
@@ -12306,6 +12312,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         BossGanon_Player_SetupDance(this, play);
     }
     // Young Link's conversations and cutscenes: down on one knee, so the child's camera sees all of him
+    sGdfKneelStill = (Math_Vec3f_DistXZ(&player->actor.world.pos, &player->actor.prevPos) < 0.5f)
+                         ? MIN(sGdfKneelStill + 1, 1000)
+                         : 0;
     if ((this->actionFunc == BossGanon_Player_Float) && BossGanon_Player_ShouldKneel(this, play)) {
         BossGanon_Player_SetupCsKneel(this, play);
     }
@@ -12429,9 +12438,16 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     } else if (BossGanon_Player_IsBusy(thisx)) {
         Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 3, 0x1000);
     } else if (this->actionFunc != BossGanon_Player_Downed) {
-        Math_ApproachS(&this->actor.shape.rot.y, player->actor.shape.rot.y, 2, 0x2000);
+        s16 linkYaw = player->actor.shape.rot.y;
+
+        // In cutscenes Link's animation can turn him itself (its root's yaw: the opening's drawbridge, say), so he's
+        // drawn facing his body's yaw plus that turn: Ganondorf faces the way Link is drawn
+        if ((player->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE) || (play->csCtx.state != CS_STATE_IDLE)) {
+            linkYaw += player->skelAnime.jointTable[1].y;
+        }
+        Math_ApproachS(&this->actor.shape.rot.y, linkYaw, 2, 0x2000);
         // Between attacks his aim is wherever Link faces, so an attack that doesn't aim itself goes straight ahead
-        this->actor.yawTowardsPlayer = player->actor.shape.rot.y;
+        this->actor.yawTowardsPlayer = linkYaw;
     }
     this->actor.world.rot.y = this->actor.shape.rot.y;
     this->playerAimYaw = this->actor.yawTowardsPlayer;
