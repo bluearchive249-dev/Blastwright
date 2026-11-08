@@ -7084,6 +7084,17 @@ static void BossGanon_Player_ApplyMixamoWalk(BossGanon* this, PlayState* play, f
     f32 w;
 
     phase -= floorf(phase);
+    // Running (the stick pushed far): Mixamo's run clip, the trident stance's own run, taking over from the walk as he
+    // speeds up (its right heel comes down at its frame 17). With the trident, its own run does this.
+    if (!back && (pace < 1.0f) && !BossGanon_Player_HasTrident()) {
+        // (in full under the walk, which blends over it: no stick run shows through)
+        f32 rw = this->playerWalkWeight * (1.0f - this->playerSprintWeight);
+
+        if (rw > 0.0f) {
+            BossGanon_Player_ApplyClip(this, sGdfClipRun, ARRAY_COUNT(sGdfClipRun),
+                                       17.0f + phase * ARRAY_COUNT(sGdfClipRun), true, rw, 1.0f);
+        }
+    }
     w = this->playerWalkWeight * (1.0f - this->playerSprintWeight) * (back ? 1.0f : pace);
     if (w <= 0.0f) {
         return;
@@ -7172,6 +7183,10 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
         f32 run = CLAMP((this->playerWalkStride - 1.0f) / (GDF_WALK_MAX_STRIDE - 1.0f), 0.0f, 1.0f);
 
         run *= this->playerWalkWeight * (1.0f - this->playerSprintWeight);
+        // (the run clip leans on its own: only the trident's walk-run and backing off need this)
+        if (!BossGanon_Player_HasTrident() && !BossGanon_Player_MixamoWalkBack(play, speed)) {
+            run *= BossGanon_Player_TridentWalkAmount(speed); // (fading as the run clip takes over)
+        }
         if (run > 0.0f) {
             BossGanon_Player_TwistLean(this, 0.0f, 0x0800 * run);
         }
