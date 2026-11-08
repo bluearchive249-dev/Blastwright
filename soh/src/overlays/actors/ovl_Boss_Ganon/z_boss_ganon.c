@@ -11909,7 +11909,7 @@ void BossGanon_Player_Hurt(BossGanon* this, PlayState* play) {
     }
 }
 
-// ---- Kneeling for young Link's conversations and cutscenes ----
+// ---- Kneeling for young Link's cutscenes ----
 // The camera is framed for a child there, and standing he was cut off at the chest. He goes down on one knee (his
 // defeat's kneel) and turns his head to whoever is talking; he rises when it's over.
 static void BossGanon_Pg_RotY(f32 deg, GdfMat3 out);
@@ -11946,14 +11946,14 @@ static s32 BossGanon_Player_ShouldKneel(BossGanon* this, PlayState* play) {
         return false;
     }
 
-    // Only for a conversation or a scripted cutscene, with Link standing still (half a second) and no change of area
-    // under way. (The game holds Link "in a cutscene" to walk him in and out through entrances and exits too, as on
-    // first stepping out of his house: kneeling for those, he dropped to one knee at every doorway.)
+    // Only for a scripted cutscene, with Link standing still (half a second) and no change of area under way. Not for
+    // conversations (he looked odd on one knee before the Deku Tree), and not for the game holding Link "in a cutscene"
+    // to walk him in and out through entrances and exits (he dropped to one knee at every doorway).
     return LINK_IS_CHILD && this->playerGrounded && !this->playerHidden && !sGdfRoaming && !gGdfIntroCs.active &&
            !BossGanon_Player_ShouldBrood(play) && (sGdfCsPoseCur == GDF_CSPOSE_NONE) && (player->doorActor == NULL) &&
            !(player->stateFlags1 & (PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_ON_HORSE |
                                     PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_DEAD)) &&
-           ((player->stateFlags1 & PLAYER_STATE1_TALKING) || (play->csCtx.state != CS_STATE_IDLE)) &&
+           (play->csCtx.state != CS_STATE_IDLE) &&
            (play->transitionTrigger == TRANS_TRIGGER_OFF) && (play->transitionMode == TRANS_MODE_OFF) &&
            (sGdfKneelStill >= GDF_KNEEL_STILL_FRAMES);
 }
