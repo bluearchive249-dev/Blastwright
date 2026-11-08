@@ -2131,6 +2131,30 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "The ones he throws (D-Pad Down) go limp: a ragdoll built from their own skeleton tumbles through the "
             "air, slams into the ground, slides and flops to a stop against the floor and walls, then they get up."));
+    AddWidget(path, "Cutscene Camera at His Height", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CutsceneCamera"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Young Link's cutscenes and conversations are framed for a child. Shots of him are raised to "
+            "Ganondorf's height and drawn back so all of him is in them; shots of anything else are left alone."));
+    AddWidget(path, "Cutscene Camera Lift: %.2f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CutsceneCameraLift"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0 ||
+                            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.CutsceneCamera"), 1) == 0;
+        })
+        .Options(FloatSliderOptions().Min(0.0f).Max(1.5f).DefaultValue(1.0f).Format("%.2f").Tooltip(
+            "How far those shots are raised and drawn back: 1 is up to his height, 0 the child's framing."));
+    AddWidget(path, "Kneel in Young Link's Cutscenes", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CutsceneKneel"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "The old way to fit him into a child's framing: he goes down on one knee while young Link's cutscenes "
+            "play."));
     AddWidget(path, "Keep C-Button Items", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KeepItems"))
         .PreFunc([](WidgetInfo& info) {

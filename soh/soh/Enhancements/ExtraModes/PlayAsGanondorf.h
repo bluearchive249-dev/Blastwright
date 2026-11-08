@@ -34,6 +34,9 @@ f32 PlayAsGanondorf_GetCameraHeight(Player* player);
 
 // First-person look (C-Up): fills in Ganondorf's eye position and returns true, so the camera looks from there
 s32 PlayAsGanondorf_GetFirstPersonEye(Player* player, Vec3f* eye);
+// Young Link's cutscenes and conversations: raises shots of him to Ganondorf's height (z_camera.c, the view only);
+// true if it changed them
+s32 PlayAsGanondorf_AdjustCutsceneView(Camera* camera, Vec3f* eye, Vec3f* at);
 
 // Link's ocarina is Ganondorf's organ: he plays it, and the songs use an organ sound
 s32 PlayAsGanondorf_UseOrganOcarina(void);

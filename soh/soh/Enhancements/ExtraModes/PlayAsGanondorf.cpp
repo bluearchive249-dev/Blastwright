@@ -825,6 +825,52 @@ extern "C" u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId) {
 }
 
 // Every camera mode scales its distance and height from the player's height, so report Ganondorf's
+// Young Link's cutscenes and conversations, with Ganondorf shown instead of him: their cameras are framed for a child
+// (eye and focus about 44 units up) and Ganondorf stands 120 tall, cut off at the chest. A shot of Link (its focus near
+// him) is raised to Ganondorf's height and drawn back so all of him is in it; a shot of something else (the scenery,
+// someone across the room) is left as it is, and one in between moves part way. Only what's shown changes, not the
+// camera's own course, so the cutscene's camera carries on as it was written.
+#define GDF_CS_CAM_CHILD_HEIGHT 44.0f
+#define GDF_CS_CAM_NEAR 120.0f // a focus this close to Link: a shot of him
+#define GDF_CS_CAM_FAR 260.0f  // this far: of something else
+extern "C" s32 PlayAsGanondorf_AdjustCutsceneView(Camera* camera, Vec3f* eye, Vec3f* at) {
+    PlayState* play = camera->play;
+    Player* player = (play != NULL) ? GET_PLAYER(play) : NULL;
+    f32 lift = CVarGetFloat(CVAR_PLAY_AS_GDF("CutsceneCameraLift"), 1.0f);
+
+    if ((player == NULL) || LINK_IS_ADULT || (lift <= 0.0f) || !CVarGetInteger(CVAR_PLAY_AS_GDF("CutsceneCamera"), 1) ||
+        !ShouldHideLink(play, player) || (player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON)) {
+        return false;
+    }
+    if ((play->csCtx.state == CS_STATE_IDLE) &&
+        !(player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) &&
+        (camera->thisIdx == CAM_ID_MAIN)) {
+        return false; // play: his own camera already stands at his height
+    }
+
+    Vec3f mid = player->actor.world.pos;
+    mid.y += GDF_CS_CAM_CHILD_HEIGHT * 0.6f;
+    f32 d = Math_Vec3f_DistXYZ(at, &mid);
+    f32 w = 1.0f - CLAMP((d - GDF_CS_CAM_NEAR) / (GDF_CS_CAM_FAR - GDF_CS_CAM_NEAR), 0.0f, 1.0f);
+
+    w = w * w * (3.0f - 2.0f * w);
+    if (w <= 0.0f) {
+        return false;
+    }
+    f32 rise = (GDF_STANDING_CAMERA_HEIGHT - GDF_CS_CAM_CHILD_HEIGHT) * w * lift;
+    Vec3f off = { eye->x - at->x, eye->y - at->y, eye->z - at->z };
+    f32 dist = sqrtf(SQ(off.x) + SQ(off.y) + SQ(off.z));
+    // Drawn back by up to 40% (less for shots already far off, none beyond 600 units)
+    f32 back = 1.0f + 0.4f * w * lift * CLAMP((600.0f - dist) / 200.0f, 0.0f, 1.0f);
+
+    // The focus up to his chest, the eye up to about his eyes' height
+    at->y += rise * 0.5f;
+    eye->x = at->x + off.x * back;
+    eye->y = at->y + off.y * back + rise * 0.25f;
+    eye->z = at->z + off.z * back;
+    return true;
+}
+
 extern "C" f32 PlayAsGanondorf_GetCameraHeight(Player* player) {
     f32 height = Player_GetHeight(player);
 

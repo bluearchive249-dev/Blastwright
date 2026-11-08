@@ -7716,6 +7716,12 @@ Vec3s Camera_Update(Camera* camera) {
         viewFov = camera->fov;
     }
 
+    // SoH: "Play as Ganondorf", young Link's cutscenes and conversations: shots of him raised to Ganondorf's height
+    if (PlayAsGanondorf_AdjustCutsceneView(camera, &viewEye, &viewAt)) {
+        OLib_Vec3fDiffToVecSphGeo(&eyeAtAngle, &viewEye, &viewAt);
+        Camera_CalcUpFromPitchYawRoll(&viewUp, eyeAtAngle.pitch, eyeAtAngle.yaw, camera->roll);
+    }
+
     if (camera->paramFlags & 4) {
         camera->paramFlags &= ~4;
         viewUp = camera->up;

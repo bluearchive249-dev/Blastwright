@@ -11942,8 +11942,8 @@ static s32 BossGanon_Player_InBossRoom(PlayState* play) {
 static s32 BossGanon_Player_ShouldKneel(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
-    if (BossGanon_Player_InBossRoom(play)) {
-        return false;
+    if (BossGanon_Player_InBossRoom(play) || !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.CutsceneKneel"), 0)) {
+        return false; // (off by default: the cutscene camera rises to his height instead, PlayAsGanondorf.cpp)
     }
 
     // Only for a scripted cutscene, with Link standing still (half a second) and no change of area under way. Not for
