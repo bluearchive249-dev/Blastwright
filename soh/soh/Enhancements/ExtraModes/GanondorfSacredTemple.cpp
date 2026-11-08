@@ -113,6 +113,13 @@ extern "C" s32 GdfSacred_PlainChamber(s16 entrance) {
     return sPlainChamber && (gEntranceTable[entrance].scene == SAGES_SCENE);
 }
 
+// The Chamber of Sages for the Triforce: which Sage's medallion scene plays there is kept in the save
+// (chamberCutsceneNum, set by each blue warp; a new file's is 0, the Forest Medallion's). Each Sage's actor in the
+// chamber starts its scene when it's theirs, and SoH's "skip blue warp" takes the chamber's entrance with it set as the
+// Forest Temple's blue warp, to Kokiri Forest. None of them is the Triforce's: no Sage's number at all (the next blue
+// warp sets its own again).
+#define GDF_CHAMBER_CS_NONE (CHAMBER_CS_LIGHT + 1)
+
 static void Warp(PlayState* play, s16 entrance) {
     play->nextEntranceIndex = entrance;
     play->transitionTrigger = TRANS_TRIGGER_START;
@@ -1353,6 +1360,7 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
                 TSet(play, FLAG_RAURU_DOWN);
                 r->state = RS_GONE;
                 sPlainChamber = true;
+                gSaveContext.chamberCutsceneNum = GDF_CHAMBER_CS_NONE;
                 Warp(play, SAGES_ENTRANCE);
             }
             break;
@@ -1753,6 +1761,7 @@ static void OnPlayerUpdate() {
             } else if (TFlag(play, FLAG_RAURU_DOWN) && !TFlag(play, FLAG_TRIFORCE) &&
                        (sqrtf(SQ(p.x) + SQ(p.z)) < 80.0f)) {
                 sPlainChamber = true;
+                gSaveContext.chamberCutsceneNum = GDF_CHAMBER_CS_NONE;
                 Warp(play, SAGES_ENTRANCE); // (back for the Triforce, if he left before claiming it)
             }
             break;
