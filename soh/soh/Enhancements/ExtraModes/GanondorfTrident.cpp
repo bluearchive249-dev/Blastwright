@@ -267,3 +267,33 @@ extern "C" Gfx* GanondorfTrident_GetDL(s32 index, f32* baseZ, f32* tipZ) {
     *tipZ = sTridents[index].tipZ;
     return sTridents[index].dl.data();
 }
+
+// gdf_bicon_trident.bin: char[4] "GDFI", u16 width (32), u16 height (32), then width * height RGBA8 (rows top down)
+extern "C" u8* GanondorfTrident_GetBIcon(void) {
+    alignas(8) static u8 sIcon[32 * 32 * 4];
+    static bool sTriedIcon = false;
+    static bool sHaveIcon = false;
+
+    if (!sTriedIcon) {
+        sTriedIcon = true;
+        const std::string candidates[] = {
+            Ship::Context::GetPathRelativeToAppDirectory("gdf_bicon_trident.bin"),
+            Ship::Context::GetPathRelativeToAppDirectory("mods/gdf_bicon_trident.bin"),
+            "gdf_bicon_trident.bin",
+        };
+        for (const std::string& path : candidates) {
+            FILE* file = fopen(path.c_str(), "rb");
+            if (file == nullptr) {
+                continue;
+            }
+            u8 head[8];
+            if ((fread(head, 1, 8, file) == 8) && (memcmp(head, "GDFI", 4) == 0) && (head[4] == 32) && (head[5] == 0) &&
+                (head[6] == 32) && (head[7] == 0) && (fread(sIcon, 1, sizeof(sIcon), file) == sizeof(sIcon))) {
+                sHaveIcon = true;
+            }
+            fclose(file);
+            break;
+        }
+    }
+    return sHaveIcon ? sIcon : nullptr;
+}

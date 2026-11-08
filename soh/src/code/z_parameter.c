@@ -2785,6 +2785,7 @@ extern u8 gGdfBIconLightTex[];
 extern u8 gGdfBIconTridentTex[];
 extern u8 gGdfBIconAuraTex[];
 s32 BossGanon_Player_BMode(void);
+u8* GanondorfTrident_GetBIcon(void); // GanondorfTrident.cpp
 
 static u8 sGdfRunDoActionTex[] ALIGNED8 = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -5600,9 +5601,14 @@ void Interface_Draw(PlayState* play) {
             // trident's spearhead, or the dark aura
             static u8* const sGdfBIcons[] = { gGdfBIconLightTex, gGdfBIconTridentTex, gGdfBIconAuraTex };
             s32 mode = CLAMP(BossGanon_Player_BMode(), 0, 2);
+            u8* icon = sGdfBIcons[mode];
 
+            // The trident's own, made from the player's model (gdf_bicon_trident.bin), when there is one
+            if ((mode == 1) && (GanondorfTrident_GetBIcon() != NULL)) {
+                icon = GanondorfTrident_GetBIcon();
+            }
             if (fullUi) {
-                Interface_DrawItemIconTexture(play, sGdfBIcons[mode], 0);
+                Interface_DrawItemIconTexture(play, icon, 0);
             }
         } else if (!(interfaceCtx->unk_1FA)) {
             // B Button Icon & Ammo Count

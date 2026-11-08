@@ -15,6 +15,10 @@ s32 GanondorfTrident_GetSelected(void);
 // null without the model file. Its head (for the hitbox) spans *baseZ to *tipZ along z.
 Gfx* GanondorfTrident_GetDL(s32 index, f32* baseZ, f32* tipZ);
 
+// The B button's icon for his trident stance (32x32 RGBA32), read from "gdf_bicon_trident.bin" next to the game (made
+// from the player's own trident model, like gdf_tridents.bin: not part of this repository), or null without it
+u8* GanondorfTrident_GetBIcon(void);
+
 #ifdef __cplusplus
 }
 #endif
