@@ -10820,6 +10820,11 @@ void BossGanon_Player_Float(BossGanon* this, PlayState* play) {
     BossGanon_Player_ReadButtons(this, play);
 }
 
+// B's magic: a quick charge, and once the ball has left his hand B (or R, or anything else) cuts the follow-through
+// short. Held, it still becomes Big Magic after 20 frames (the charge waits for it).
+#define GDF_LIGHT_BALL_CHARGE 16
+#define GDF_THROW_CANCEL_FRAME 14.0f // the ball leaves at 11
+
 void BossGanon_Player_SetupChargeLightBall(BossGanon* this, PlayState* play) {
     // Invasion mode: his attacks cost magic
     if (!GdfInvasion_PayAttack(5)) {
@@ -10829,7 +10834,7 @@ void BossGanon_Player_SetupChargeLightBall(BossGanon* this, PlayState* play) {
     this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfChargeLightBallAnim);
     Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfChargeLightBallAnim, -3.0f);
     this->actionFunc = BossGanon_Player_ChargeLightBall;
-    this->timers[0] = 25;
+    this->timers[0] = GDF_LIGHT_BALL_CHARGE; // (25 until 8 Nov)
     this->unk_1C2 = 0;
     BossGanon_Player_UpdateAim(this, play);
 }
@@ -10845,7 +10850,7 @@ void BossGanon_Player_ChargeLightBall(BossGanon* this, PlayState* play) {
 
     BossGanon_Player_UpdateAim(this, play);
 
-    if (this->timers[0] == 17) {
+    if (this->timers[0] == GDF_LIGHT_BALL_CHARGE - 4) {
         this->unk_26C = 10;
         this->unk_270 = Rand_ZeroFloat(M_PI);
         Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
@@ -10856,11 +10861,12 @@ void BossGanon_Player_ChargeLightBall(BossGanon* this, PlayState* play) {
         Math_ApproachF(&this->handLightBallScale, 10.0f, 0.5f, 1.25f);
 
         if (this->timers[0] == 0) {
-            // Still holding the button: charge Big Magic instead
-            if ((this->playerBtnHeld != 0) && (this->playerHeldTimer >= 20) &&
-                CVarGetInteger(CVAR_PLAY_AS_GDF("BigMagic"), 1)) {
-                this->handLightBallScale = 0.0f;
-                BossGanon_Player_SetupChargeBigMagic(this, play);
+            // Still holding the button: charge Big Magic instead (waiting, held, until it has been 20 frames)
+            if ((this->playerBtnHeld != 0) && CVarGetInteger(CVAR_PLAY_AS_GDF("BigMagic"), 1)) {
+                if (this->playerHeldTimer >= 20) {
+                    this->handLightBallScale = 0.0f;
+                    BossGanon_Player_SetupChargeBigMagic(this, play);
+                }
             } else {
                 BossGanon_Player_SetupThrow(this, play);
             }
@@ -10908,6 +10914,11 @@ void BossGanon_Player_Throw(BossGanon* this, PlayState* play) {
 
     if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
         BossGanon_Player_SetupFloat(this, play);
+        return;
+    }
+    // The ball is away: the next press (another ball, the cape, ...) cuts the follow-through short
+    if (this->skelAnime.curFrame >= GDF_THROW_CANCEL_FRAME) {
+        BossGanon_Player_ReadButtons(this, play);
     }
 }
 
@@ -11359,6 +11370,11 @@ void BossGanon_Player_UpdateCapeShield(Actor* thisx, PlayState* play) {
     Matrix_Pop();
 }
 
+// R's cape guard: up at least 6 frames (10 until 8 Nov), and 4 frames into lowering it R raises it again (or B
+// throws, ...) instead of waiting out the whole 20 frame release
+#define GDF_BLOCK_MIN_FRAMES 6
+#define GDF_BLOCK_RELEASE_CANCEL_FRAME 4.0f
+
 void BossGanon_Player_SetupBlock(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
@@ -11367,7 +11383,7 @@ void BossGanon_Player_SetupBlock(BossGanon* this, PlayState* play) {
     Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfBlockAnim, 0.0f);
     this->actionFunc = BossGanon_Player_Block;
     this->unk_1C2 = 0;
-    sCape->attachLeftArmTimer = this->timers[0] = 10;
+    sCape->attachLeftArmTimer = this->timers[0] = GDF_BLOCK_MIN_FRAMES;
     Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
     this->handLightBallScale = 0.0f;
     this->playerShieldPitch = 0;
@@ -11429,6 +11445,8 @@ void BossGanon_Player_Block(BossGanon* this, PlayState* play) {
 
         if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
             BossGanon_Player_SetupFloat(this, play);
+        } else if (this->skelAnime.curFrame >= GDF_BLOCK_RELEASE_CANCEL_FRAME) {
+            BossGanon_Player_ReadButtons(this, play);
         }
     }
 }
