@@ -17,6 +17,10 @@
 #include <time.h>
 #include <assert.h>
 
+// SoH: "Play as Ganondorf" (GanondorfSacredTemple.cpp): the Chamber of Sages' plain layer when he's sent there for the
+// Triforce
+s32 GdfSacred_PlainChamber(s16 entrance);
+
 TransitionUnk sTrnsnUnk;
 s32 gTrnsnUnkState;
 VisMono gPlayVisMono;
@@ -459,6 +463,12 @@ void Play_Init(GameState* thisx) {
 
     // SoH: "Play as Ganondorf" title screen. The boss room has no cutscene layers, so use its only one.
     if ((gSaveContext.gameMode == GAMEMODE_TITLE_SCREEN) && (gSaveContext.entranceIndex == ENTR_GANONDORF_BOSS_0)) {
+        gSaveContext.sceneLayer = 0;
+    }
+
+    // SoH: "Play as Ganondorf", the Chamber of Sages for the Triforce: its plain layer (the adult one is the Forest
+    // Medallion's cutscene)
+    if (GdfSacred_PlainChamber(gSaveContext.entranceIndex)) {
         gSaveContext.sceneLayer = 0;
     }
 

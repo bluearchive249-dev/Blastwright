@@ -104,6 +104,15 @@ static void TSet(PlayState* play, s32 f) {
     gSaveContext.sceneFlags[HUB_SCENE].swch |= (1u << f);
 }
 
+// The Chamber of Sages' only layer without a cutscene is its first; arriving as an adult, the game would load the
+// Forest Medallion's (Saria's scene, which ends by sending him to Kokiri Forest). Set when he's sent there for the
+// Triforce; z_play.c asks for it as the scene loads (GdfSacred_PlainChamber)
+static bool sPlainChamber = false;
+
+extern "C" s32 GdfSacred_PlainChamber(s16 entrance) {
+    return sPlainChamber && (gEntranceTable[entrance].scene == SAGES_SCENE);
+}
+
 static void Warp(PlayState* play, s16 entrance) {
     play->nextEntranceIndex = entrance;
     play->transitionTrigger = TRANS_TRIGGER_START;
@@ -873,6 +882,24 @@ enum { RS_WAIT, RS_HOVER, RS_BOLTS, RS_PILLARS, RS_BLINK, RS_CHARGE, RS_DEFEAT, 
 #define RAURU_HP 36
 #define MAX_GLYPHS 6
 
+// His spell cards: bullet patterns in the manner of a danmaku shooter. Up to 360 bullets of light at once, moved and
+// drawn by Rauru himself (the game can only check about 50 attacking colliders at a time, so one actor each would
+// leave most of them harmless). A bullet that reaches Ganondorf has a hit collider put on it for that frame, so it
+// strikes the usual way (knockback, his flinch, and his cape guard turns it).
+#define MAX_BULLETS 360
+#define BULLET_HIT_RADIUS 20.0f // across, from his middle
+#define BULLET_ROOM 690.0f      // gone past this far from the room's middle
+enum { PAT_HALO, PAT_SPIRAL, PAT_JUDGEMENT, PAT_CLOSING, PAT_BLOOM, PAT_COUNT };
+enum { BC_GOLD, BC_WHITE, BC_ROSE, BC_SKY };
+
+typedef struct {
+    f32 x, z;
+    f32 speed, accel, maxSpeed;
+    s16 yaw, turn, life;
+    u8 color, active;
+    f32 size;
+} GdfBullet;
+
 typedef struct {
     Actor actor;
     SkelAnime skel;
@@ -891,7 +918,176 @@ typedef struct {
     s16 glyphTimer; // > 0: flaring (counting down to the fall); < 0: the pillars standing
     f32 visible;
     Vec3f blinkTo;
+    GdfBullet bullet[MAX_BULLETS];
+    s16 pattern;
+    s16 lastPattern;
+    s16 spin;
+    s16 gapYaw;
+    f32 bulletY; // they fly at his body's height, wherever he floats
+    ColliderCylinder proxy;
 } GdfRauru;
+
+static void Rauru_Emit(GdfRauru* r, f32 x, f32 z, s16 yaw, f32 speed, f32 accel, f32 maxSpeed, s16 turn, u8 color,
+                       f32 size) {
+    for (s32 i = 0; i < MAX_BULLETS; i++) {
+        GdfBullet* b = &r->bullet[i];
+        if (!b->active) {
+            b->x = x;
+            b->z = z;
+            b->yaw = yaw;
+            b->speed = speed;
+            b->accel = accel;
+            b->maxSpeed = maxSpeed;
+            b->turn = turn;
+            b->life = 300;
+            b->color = color;
+            b->size = size;
+            b->active = true;
+            return;
+        }
+    }
+}
+
+// A ring of n about (x, z), turned by `offset`
+static void Rauru_Ring(GdfRauru* r, f32 x, f32 z, s32 n, s16 offset, f32 speed, f32 accel, f32 maxSpeed, s16 turn,
+                       u8 color) {
+    for (s32 i = 0; i < n; i++) {
+        Rauru_Emit(r, x, z, offset + (s16)(i * 0x10000 / n), speed, accel, maxSpeed, turn, color, 0.42f);
+    }
+}
+
+static void Rauru_ClearBullets(GdfRauru* r, PlayState* play) {
+    s32 n = 0;
+    for (s32 i = 0; i < MAX_BULLETS; i++) {
+        if (r->bullet[i].active) {
+            if ((n++ % 6) == 0) {
+                Vec3f p = { r->bullet[i].x, r->bulletY, r->bullet[i].z };
+                Sparks(play, &p, 10.0f, 1, 0.5f, -1);
+            }
+            r->bullet[i].active = false;
+        }
+    }
+}
+
+// One frame of the spell card under way (t: frames since it began); returns true when it's done
+static bool Rauru_Spell(GdfRauru* r, PlayState* play, s16 t, s16 yawTo, bool pressed) {
+    Player* player = GET_PLAYER(play);
+    f32 ox = r->actor.world.pos.x;
+    f32 oz = r->actor.world.pos.z;
+
+    switch (r->pattern) {
+        case PAT_HALO: // rings, each turned against the last, speeding up as they spread
+            if ((t % (pressed ? 7 : 9) == 0) && (t <= 100)) {
+                s16 off = ((t / 9) % 2) ? (s16)(t * 0x1C0) : (s16)(-t * 0x1C0);
+                Rauru_Ring(r, ox, oz, pressed ? 30 : 22, off, 2.2f, 0.06f, 5.5f, 0, (t / 9) % 2 ? BC_GOLD : BC_WHITE);
+                Audio_PlayActorSound2(&r->actor, NA_SE_EN_FANTOM_SPARK);
+            }
+            return t > 130;
+
+        case PAT_SPIRAL: // arms of light wheeling out from him (two wheels the other way round when pressed)
+            if ((t % 2 == 0) && (t <= 130)) {
+                s32 arms = pressed ? 6 : 5;
+                r->spin += 0x0780;
+                for (s32 a = 0; a < arms; a++) {
+                    Rauru_Emit(r, ox, oz, r->spin + (s16)(a * 0x10000 / arms), 3.2f, 0.0f, 3.2f, 0, BC_GOLD, 0.38f);
+                    if (pressed && (t % 4 == 0)) {
+                        Rauru_Emit(r, ox, oz, -r->spin + (s16)(a * 0x10000 / arms), 2.4f, 0.0f, 2.4f, 0, BC_ROSE,
+                                   0.38f);
+                    }
+                }
+                if (t % 8 == 0) {
+                    Audio_PlayActorSound2(&r->actor, NA_SE_EN_FANTOM_SPARK);
+                }
+            }
+            return t > 160;
+
+        case PAT_JUDGEMENT: // fans aimed at him, fast, over a scatter of slow motes
+            if ((t % 14 == 0) && (t <= 112)) {
+                s32 n = pressed ? 13 : 9;
+                for (s32 i = 0; i < n; i++) {
+                    Rauru_Emit(r, ox, oz, yawTo + (s16)((i - n / 2) * 0x0900), 3.0f, 0.18f, 8.0f, 0, BC_WHITE, 0.45f);
+                }
+                Audio_PlayActorSound2(&r->actor, NA_SE_EN_FANTOM_THUNDER);
+            }
+            if (t <= 120) {
+                for (s32 i = 0; i < (pressed ? 2 : 1); i++) {
+                    Rauru_Emit(r, ox, oz, (s16)Rand_ZeroFloat(65535.0f), 1.6f + Rand_ZeroFloat(1.4f), 0.0f, 3.0f, 0,
+                               BC_SKY, 0.3f);
+                }
+            }
+            return t > 150;
+
+        case PAT_CLOSING: // rings that close in on him from all round, each with one way out
+            if ((t % 32 == 0) && (t <= 128)) {
+                s32 n = 40;
+                f32 radius = 470.0f;
+                f32 px = player->actor.world.pos.x;
+                f32 pz = player->actor.world.pos.z;
+                r->gapYaw = (s16)Rand_ZeroFloat(65535.0f);
+                for (s32 i = 0; i < n; i++) {
+                    s16 a = (s16)(i * 0x10000 / n);
+                    s16 fromGap = a - r->gapYaw;
+                    if (ABS(fromGap) < 0x1400) {
+                        continue; // the way out
+                    }
+                    Rauru_Emit(r, px + Math_SinS(a) * radius, pz + Math_CosS(a) * radius, a + 0x8000, 2.6f, 0.0f, 2.6f,
+                               pressed ? 0x50 : 0, BC_SKY, 0.42f);
+                }
+                Audio_PlayActorSound2(&r->actor, NA_SE_EV_LIGHT_GATHER);
+            }
+            if (pressed && (t % 20 == 10) && (t <= 140)) {
+                Rauru_Ring(r, ox, oz, 16, (s16)(t * 0x300), 2.0f, 0.0f, 2.0f, 0, BC_GOLD);
+            }
+            return t > 200;
+
+        case PAT_BLOOM: // petals: rings that curve as they go, one way and then the other
+        default:
+            if ((t % 10 == 0) && (t <= 120)) {
+                bool cw = (t / 10) % 2;
+                Rauru_Ring(r, ox, oz, pressed ? 16 : 12, (s16)(t * 0x200), 3.4f, 0.0f, 3.4f,
+                           cw ? (pressed ? 0x0160 : 0x0120) : (pressed ? -0x0160 : -0x0120), BC_ROSE);
+                Audio_PlayActorSound2(&r->actor, NA_SE_EN_FANTOM_SPARK);
+            }
+            return t > 160;
+    }
+}
+
+// The bullets fly on, and one that has reached him strikes
+static void Rauru_UpdateBullets(GdfRauru* r, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    f32 px = player->actor.world.pos.x;
+    f32 pz = player->actor.world.pos.z;
+    bool struck = false;
+
+    Math_ApproachF(&r->bulletY, player->actor.world.pos.y + 45.0f, 0.3f, 12.0f);
+    for (s32 i = 0; i < MAX_BULLETS; i++) {
+        GdfBullet* b = &r->bullet[i];
+        if (!b->active) {
+            continue;
+        }
+        b->speed = MIN(b->speed + b->accel, b->maxSpeed);
+        b->yaw += b->turn;
+        b->x += Math_SinS(b->yaw) * b->speed;
+        b->z += Math_CosS(b->yaw) * b->speed;
+        if ((--b->life <= 0) || (fabsf(b->x - r->actor.home.pos.x) > BULLET_ROOM) ||
+            (fabsf(b->z - r->actor.home.pos.z) > BULLET_ROOM)) {
+            b->active = false;
+            continue;
+        }
+        if (!struck && (SQ(b->x - px) + SQ(b->z - pz) < SQ(BULLET_HIT_RADIUS))) {
+            // Its own collider for this frame: the strike the usual way
+            r->proxy.dim.pos.x = (s16)b->x;
+            r->proxy.dim.pos.y = (s16)(r->bulletY - 15.0f);
+            r->proxy.dim.pos.z = (s16)b->z;
+            CollisionCheck_SetAT(play, &play->colChkCtx, &r->proxy.base);
+            if (player->invincibilityTimer <= 0) {
+                b->active = false; // spent on him (passing through while he flashes)
+            }
+            struck = true;
+        }
+    }
+}
+
 
 static ColliderCylinderInit sRauruBodyInit = {
     { COLTYPE_HIT0, AT_NONE, AC_ON | AC_TYPE_PLAYER, OC1_ON | OC1_TYPE_ALL, OC2_TYPE_1, COLSHAPE_CYLINDER },
@@ -919,6 +1115,17 @@ static void Rauru_Init(Actor* thisx, PlayState* play) {
     }
     Collider_InitCylinder(play, &r->burst);
     Collider_SetCylinder(play, &r->burst, thisx, &sRauruPillarInit);
+    Collider_InitCylinder(play, &r->proxy);
+    Collider_SetCylinder(play, &r->proxy, thisx, &sRauruPillarInit);
+    r->proxy.dim.radius = 14;
+    r->proxy.dim.height = 30;
+    r->proxy.dim.yShift = 0;
+    r->proxy.info.toucher.damage = 0x08;
+    r->bulletY = thisx->home.pos.y + 45.0f;
+    r->lastPattern = -1;
+    for (s32 i = 0; i < MAX_BULLETS; i++) {
+        r->bullet[i].active = false;
+    }
     r->burst.dim.radius = 420;
     r->burst.dim.height = 300;
     r->burst.info.toucher.damage = 0x20;
@@ -937,6 +1144,7 @@ static void Rauru_Destroy(Actor* thisx, PlayState* play) {
         Collider_DestroyCylinder(play, &r->pillar[i]);
     }
     Collider_DestroyCylinder(play, &r->burst);
+    Collider_DestroyCylinder(play, &r->proxy);
 }
 
 static void Rauru_Cast(GdfRauru* r) {
@@ -984,6 +1192,7 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
                 r->chargeHits++;
             }
             if (thisx->colChkInfo.health <= 0) {
+                Rauru_ClearBullets(r, play);
                 r->state = RS_DEFEAT;
                 r->timer = 0;
                 r->glyphCount = 0;
@@ -1017,34 +1226,27 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
                     r->state = (r->cycle % 2) ? RS_BOLTS : RS_PILLARS;
                 }
                 r->timer = 0;
+                if (r->state == RS_BOLTS) {
+                    // A spell card he hasn't just used
+                    do {
+                        r->pattern = (s16)Rand_ZeroFloat(PAT_COUNT - 0.001f);
+                    } while (r->pattern == r->lastPattern);
+                    r->lastPattern = r->pattern;
+                }
                 if (r->state != RS_BLINK) {
                     Rauru_Cast(r);
                 }
             }
             break;
 
-        case RS_BOLTS: {
-            s32 n = Rauru_Pressed(r) ? 5 : 3;
-            r->timer++;
-            if ((r->timer >= 14) && (r->timer < 14 + n * 8) && ((r->timer - 14) % 8 == 0)) {
-                Actor* bolt =
-                    Actor_Spawn(&play->actorCtx, play, sShotId, thisx->world.pos.x, thisx->world.pos.y + 60.0f,
-                                thisx->world.pos.z, 0, 0, 0, 1);
-                if (bolt != NULL) {
-                    s16 a = yawTo + (s16)(((r->timer - 14) / 8 - n / 2) * 0x1400);
-                    bolt->velocity.x = Math_SinS(a) * 7.0f;
-                    bolt->velocity.z = Math_CosS(a) * 7.0f;
-                    bolt->velocity.y = 2.0f;
-                }
-                Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_SPARK);
-            }
-            if (r->timer > 14 + n * 8 + 20) {
+        case RS_BOLTS:
+            // A spell card
+            if (Rauru_Spell(r, play, r->timer++, yawTo, Rauru_Pressed(r))) {
                 r->state = RS_HOVER;
-                r->timer = Rauru_Pressed(r) ? 30 : 50;
+                r->timer = Rauru_Pressed(r) ? 24 : 36;
                 Rauru_Idle(r);
             }
             break;
-        }
 
         case RS_PILLARS:
             if (r->timer++ == 12) {
@@ -1062,9 +1264,14 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
                 r->glyphTimer = 45;
                 Audio_PlayActorSound2(thisx, NA_SE_EV_LIGHT_GATHER);
             }
+            // Pressed: slow rings as the light gathers
+            if (Rauru_Pressed(r) && (r->timer % 12 == 0)) {
+                Rauru_Ring(r, thisx->world.pos.x, thisx->world.pos.z, 18, (s16)(r->timer * 0x400), 2.0f, 0.0f, 2.0f,
+                           0, BC_WHITE);
+            }
             if (r->timer > 30) {
                 r->state = RS_HOVER;
-                r->timer = 70;
+                r->timer = 50;
                 Rauru_Idle(r);
             }
             break;
@@ -1145,6 +1352,7 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
             if ((r->timer > 50) && CanLeave(play)) {
                 TSet(play, FLAG_RAURU_DOWN);
                 r->state = RS_GONE;
+                sPlainChamber = true;
                 Warp(play, SAGES_ENTRANCE);
             }
             break;
@@ -1167,6 +1375,10 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
         if (++r->glyphTimer == 0) {
             r->glyphCount = 0;
         }
+    }
+
+    if ((r->state != RS_DEFEAT) && (r->state != RS_GONE)) {
+        Rauru_UpdateBullets(r, play);
     }
 
     thisx->focus.pos = thisx->world.pos;
@@ -1203,6 +1415,24 @@ static void Rauru_Draw(Actor* thisx, PlayState* play) {
             Matrix_Scale(3.6f, 26.0f, 3.6f, MTXMODE_APPLY);
             Matrix_RotateY(r->frames * 0.3f, MTXMODE_APPLY);
             gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 250, 200, 255);
+            DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+        }
+    }
+    // his bullets of light
+    {
+        static const Color_RGB8 sBulletColors[] = {
+            { 255, 215, 110 }, { 255, 255, 235 }, { 255, 150, 200 }, { 150, 215, 255 } };
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        for (s32 i = 0; i < MAX_BULLETS; i++) {
+            GdfBullet* b = &r->bullet[i];
+            if (!b->active) {
+                continue;
+            }
+            const Color_RGB8* c = &sBulletColors[b->color];
+            u8 k = (u8)(215 + 40 * Math_SinS((r->frames + i * 7) * 0x1400));
+            Matrix_Translate(b->x, r->bulletY, b->z, MTXMODE_NEW);
+            Matrix_Scale(b->size, b->size, b->size, MTXMODE_APPLY);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, c->r * k / 255, c->g * k / 255, c->b * k / 255, 255);
             DrawObj(play, sOrbDL, &POLY_OPA_DISP);
         }
     }
@@ -1390,6 +1620,7 @@ static void Spawn(PlayState* play, s32 id, f32 x, f32 y, f32 z, s16 yaw, s16 par
 
 static void OnSceneInit(int16_t sceneNum) {
     sFrom = sLastScene;
+    sPlainChamber = false; // (the scene has loaded: it was used, or isn't wanted any more)
     sLastScene = sceneNum;
     sPending = TempleAvailable() &&
                ((sceneNum == HUB_SCENE) || (sceneNum == EAST_SCENE) || (sceneNum == WEST_SCENE) ||
@@ -1521,6 +1752,7 @@ static void OnPlayerUpdate() {
                 Warp(play, HUB_ENTRANCE);
             } else if (TFlag(play, FLAG_RAURU_DOWN) && !TFlag(play, FLAG_TRIFORCE) &&
                        (sqrtf(SQ(p.x) + SQ(p.z)) < 80.0f)) {
+                sPlainChamber = true;
                 Warp(play, SAGES_ENTRANCE); // (back for the Triforce, if he left before claiming it)
             }
             break;
