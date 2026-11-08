@@ -153,12 +153,15 @@ static s32 EnGanonMant_BuildPhantomTex(void) {
 // SoH: double-buffered vertices for the cape that owns them (only the player-controlled Ganondorf's cape).
 // Filled from the shared buffers once so texture coordinates and colors match.
 #define GANON_MANT_NUM_VTX 144
-// (A set each: his cape, and his cloak's front)
-static Vtx sOwnVertices[2][2][GANON_MANT_NUM_VTX];
-static u8 sOwnVerticesReady[2] = { false, false };
+// (A set each: his cape, and his cloak's two other pieces)
+static Vtx sOwnVertices[6][2][GANON_MANT_NUM_VTX];
+static u8 sOwnVerticesReady[6] = { false, false, false, false, false, false };
 
 static Vtx* EnGanonMant_GetOwnVertices(EnGanonMant* this) {
-    s32 set = (this->actor.params == PLAYER_GANONDORF_CLOAK_PARAMS) ? 1 : 0;
+    s32 set = ((this->actor.params >= PLAYER_GANONDORF_CLOAK_PARAMS) &&
+               (this->actor.params <= PLAYER_GANONDORF_CAPELET3_PARAMS))
+                  ? (this->actor.params - PLAYER_GANONDORF_CLOAK_PARAMS + 1)
+                  : 0;
 
     if (!sOwnVerticesReady[set]) {
         Vtx* src1 = ResourceMgr_LoadVtxByName(SEGMENTED_TO_VIRTUAL(gMant1Vtx));
@@ -185,7 +188,9 @@ void EnGanonMant_Init(Actor* thisx, PlayState* play) {
         this->needsReset = true;
     }
 
-    if ((this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) || (this->actor.params == PLAYER_GANONDORF_CLOAK_PARAMS)) {
+    if ((this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) ||
+        ((this->actor.params >= PLAYER_GANONDORF_CLOAK_PARAMS) &&
+         (this->actor.params <= PLAYER_GANONDORF_CAPELET3_PARAMS))) {
         this->ownVertices = true;
     }
 
@@ -587,6 +592,36 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// SoH: a cloth sewn on (the player-controlled Ganondorf's cloak): its roots and push from outside, and its first strand
+// the one before's last, so the two are one piece of fabric
+static void EnGanonMant_SimLinked(PlayState* play, EnGanonMant* this, EnGanonMant* prev, s32 sewn) {
+    s16 strandIdx;
+
+    this->frameTimer = prev->frameTimer; // (the same buffer as the one it's drawn with)
+    this->baseYaw = this->overrideBaseYaw;
+    this->anchor = this->overrideRoots[GANON_MANT_NUM_STRANDS / 2];
+    for (strandIdx = 0; strandIdx < GANON_MANT_NUM_STRANDS; strandIdx++) {
+        s16 nextStrandIdx = (strandIdx + 1 < GANON_MANT_NUM_STRANDS) ? (strandIdx + 1) : (strandIdx - 1);
+
+        this->strands[strandIdx].root = this->overrideRoots[strandIdx];
+        if ((strandIdx == 0) && sewn) {
+            MantStrand* edge = &prev->strands[GANON_MANT_NUM_STRANDS - 1];
+
+            memcpy(this->strands[0].joints, edge->joints, sizeof(edge->joints));
+            memcpy(this->strands[0].rotations, edge->rotations, sizeof(edge->rotations));
+            memcpy(this->strands[0].velocities, edge->velocities, sizeof(edge->velocities));
+            this->strands[0].root = edge->root;
+            continue;
+        }
+        Matrix_Push();
+        EnGanonMant_UpdateStrand(play, this, &this->strands[strandIdx].root, this->strands[strandIdx].joints,
+                                 this->strands[nextStrandIdx].joints, this->strands[strandIdx].rotations,
+                                 this->strands[strandIdx].velocities, strandIdx);
+        Matrix_Pop();
+    }
+    EnGanonMant_UpdateVertices(this);
+}
+
 void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
     EnGanonMant* this = (EnGanonMant*)thisx;
     f32 xDiff;
@@ -602,6 +637,10 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
     s16 strandIdx;
     Vec3f midpoint;
     s16 nextStrandIdx;
+
+    if (this->isLinked) {
+        return; // (sewn onto another cloth, which simulates and draws it)
+    }
 
     if (this->isLinkCape && !LinkGanonCape_PrepareDraw(this, play)) {
         // SoH: Link isn't visible this frame (first person, hidden in a cutscene, ...)
@@ -715,8 +754,19 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
             Matrix_Pop();
         }
         EnGanonMant_UpdateVertices(this);
+
+        // SoH: the cloths sewn on, in order (each onto the one before; the first onto this one, while its roots are
+        // its own and not following an arm)
+        for (strandIdx = 0; strandIdx < this->linkedCount; strandIdx++) {
+            EnGanonMant* prev = (strandIdx == 0) ? this : this->linked[strandIdx - 1];
+
+            EnGanonMant_SimLinked(play, this->linked[strandIdx], prev, (strandIdx > 0) || this->rootOverride);
+        }
         this->updateHasRun = false;
     }
 
     EnGanonMant_DrawCloak(play, this);
+    for (strandIdx = 0; strandIdx < this->linkedCount; strandIdx++) {
+        EnGanonMant_DrawCloak(play, this->linked[strandIdx]);
+    }
 }

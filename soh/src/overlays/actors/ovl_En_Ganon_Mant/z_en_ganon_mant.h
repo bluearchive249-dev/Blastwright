@@ -19,6 +19,12 @@ struct EnGanonMant;
 // SoH: the player-controlled Ganondorf's cloak: a second cloth that falls over his left shoulder and down his front
 // (z_boss_ganon.c sets its roots, its push and the shapes of his body it drapes over every frame)
 #define PLAYER_GANONDORF_CLOAK_PARAMS 0x4746
+#define PLAYER_GANONDORF_CLOAK2_PARAMS 0x4747
+// SoH: the cloak's capelet over his shoulders: three more pieces, the first drawing the other two
+#define PLAYER_GANONDORF_CAPELET_PARAMS 0x4748
+#define PLAYER_GANONDORF_CAPELET2_PARAMS 0x4749
+#define PLAYER_GANONDORF_CAPELET3_PARAMS 0x474A
+#define GANON_MANT_MAX_LINKED 2
 
 // SoH: a part of his body the cloth can't pass through: a capsule from a to b, of radius r (world units)
 typedef struct {
@@ -69,6 +75,11 @@ typedef struct EnGanonMant {
     f32 overrideBaseYaw;
     const GanonMantCapsule* capsules;
     s16 capsuleCount;
+    // SoH: cloths sewn on along this one's last strand, one after another (each one's first strand is the one before's
+    // last), simulated and drawn by this one, so they're one piece of fabric
+    struct EnGanonMant* linked[GANON_MANT_MAX_LINKED];
+    s16 linkedCount;
+    u8 isLinked; // sewn onto another (drawn by it)
 } EnGanonMant;
 
 // SoH: the player-controlled Ganondorf's hood, drawn with his cape (z_boss_ganon.c / GanondorfHood.cpp); null if off

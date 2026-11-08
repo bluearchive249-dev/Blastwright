@@ -5,7 +5,7 @@ head=np.vstack([H[0],H[4],H[7]])             # jewel, upper hair, head (not the 
 C=np.array([300.0,-420.0,0.0])              # the hood's middle
 rel=head-C; dist=np.linalg.norm(rel,axis=1); dirs=rel/dist[:,None]
 ROWS,COLS=9,12
-MARGIN=100.0
+MARGIN=170.0
 def radius(d):
     cosang=dirs@d
     m=cosang>math.cos(math.radians(18))
@@ -16,7 +16,7 @@ for c in range(COLS):
     phi=math.radians(-95+190*c/(COLS-1))           # around the face: -z side, over the top, +z side
     u=np.array([0.0,-math.cos(phi),math.sin(phi)])
     side=abs(math.sin(phi))
-    th0=math.radians(42+30*side)                    # the brim: further back at the cheeks (the face stays open)
+    th0=math.radians(36+30*side)                    # the brim: further back at the cheeks (the face stays open)
     th1=math.radians(226-36*side)                   # down the back of the head to the nape
     for r in range(ROWS):
         th=th0+(th1-th0)*r/(ROWS-1)
@@ -27,10 +27,10 @@ for c in range(COLS):
 # smooth the radii a little (no dents) and give the brim an overhang
 from scipy.ndimage import uniform_filter
 Rs=np.maximum(R,uniform_filter(R,size=3,mode='nearest'))
-Rs[0]+=110; Rs[1]+=50
+Rs[0]+=300; Rs[1]+=150; Rs[2]+=50
 for c in range(COLS):
     phi=math.radians(-95+190*c/(COLS-1)); u=np.array([0.0,-math.cos(phi),math.sin(phi)]); side=abs(math.sin(phi))
-    th0=math.radians(42+30*side); th1=math.radians(226-36*side)
+    th0=math.radians(36+30*side); th1=math.radians(226-36*side)
     for r in range(ROWS):
         th=th0+(th1-th0)*r/(ROWS-1)
         d=math.cos(th)*np.array([1.0,0,0])+math.sin(th)*u
