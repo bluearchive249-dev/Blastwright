@@ -134,6 +134,29 @@ static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyIntroCs(BossGanon* this, PlayState* play);
 void BossGanon_Player_DrawIntroProps(BossGanon* this, PlayState* play);
 void BossGanon_Player_DrawMasterSword(BossGanon* this, PlayState* play);
+
+// ---- His blink ----
+// Every 2 to 7 seconds (now and then twice in a row), his eyes squeeze shut over four frames: half, shut, shut, half.
+#define GDF_EYES_MID_Y -10.0f
+static s16 sGdfBlinkWait = 60; // frames to the next blink
+static s8 sGdfBlinkFrame = -1;  // where in it he is (-1: eyes open)
+
+static void BossGanon_Player_UpdateBlink(void) {
+    if (sGdfBlinkFrame >= 0) {
+        if (++sGdfBlinkFrame >= 4) {
+            sGdfBlinkFrame = -1;
+            sGdfBlinkWait = (Rand_ZeroOne() < 0.2f) ? 5 : (40 + (s16)Rand_ZeroFloat(100.0f));
+        }
+    } else if (--sGdfBlinkWait <= 0) {
+        sGdfBlinkFrame = 0;
+    }
+}
+
+static f32 BossGanon_Player_EyesOpen(void) {
+    static const f32 sOpen[4] = { 0.45f, 0.0f, 0.0f, 0.45f };
+
+    return (sGdfBlinkFrame >= 0) ? sOpen[sGdfBlinkFrame] : 1.0f;
+}
 static void BossGanon_Player_ApplyRunArms(BossGanon* this, f32 weight);
 static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight);
 static u8 sGdfPgCapture = false;
@@ -3755,8 +3778,22 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
 
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_208);
         if (!sGdfPgCapture) {
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfEyesDL));
+            // SoH: "Play as Ganondorf", he blinks: his glowing eyes squeezed shut toward their middle line (his head
+            // limb's y runs down his face; the eyes span y -146 to 133 about -10), shut for two frames
+            f32 open = GDF_IS_PLAYER(this) ? BossGanon_Player_EyesOpen() : 1.0f;
+
+            if (open > 0.0f) {
+                Matrix_Push();
+                if (open < 1.0f) {
+                    Matrix_Translate(0.0f, GDF_EYES_MID_Y, 0.0f, MTXMODE_APPLY);
+                    Matrix_Scale(1.0f, open, 1.0f, MTXMODE_APPLY);
+                    Matrix_Translate(0.0f, -GDF_EYES_MID_Y, 0.0f, MTXMODE_APPLY);
+                }
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfEyesDL));
+                Matrix_Pop();
+            }
         }
 
         CLOSE_DISPS(play->state.gfxCtx);
@@ -12361,6 +12398,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     BossGanon_Player_ApplyDoorKick(this, play);
     BossGanon_Player_ApplyChestKick(this, play);
     BossGanon_Player_MasterSwordKick(this, play);
+    BossGanon_Player_UpdateBlink();
     BossGanon_Player_ApplyBreakKick(this, play);
     BossGanon_Player_ApplyDoorDuck(this, play);
     BossGanon_Player_UpdateBodyguards(this, play);
