@@ -9,7 +9,7 @@
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
+#define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED) // (SoH: Ganondorf's kicked sword is drawn with it, far off)
 
 void BgTokiSwd_Init(Actor* thisx, PlayState* play);
 void BgTokiSwd_Destroy(Actor* thisx, PlayState* play);
@@ -28,6 +28,12 @@ extern CutsceneData D_808BBD90[];
 // it into the pedestal himself when it's put back
 void GdfSwd_OnReturnStart(void);
 s32 GdfSwd_OnPlaced(void);
+void GdfSwd_Draw(PlayState* play);
+
+// While the pedestal's own sword isn't shown: Ganondorf's (lodged in the wall, flying back to him, ...), if any
+static void BgTokiSwd_DrawGdf(Actor* thisx, PlayState* play) {
+    GdfSwd_Draw(play);
+}
 
 const ActorInit Bg_Toki_Swd_InitVars = {
     ACTOR_BG_TOKI_SWD,
@@ -90,7 +96,7 @@ void BgTokiSwd_Init(Actor* thisx, PlayState* play) {
                 }
             }
         }
-        this->actor.draw = NULL;
+        this->actor.draw = BgTokiSwd_DrawGdf;
     } else if (IS_RANDO) {
         // don't give child link a kokiri sword if we don't have one
         uint32_t kokiriSwordBitMask = 1 << 0;
@@ -174,10 +180,10 @@ void func_808BB0AC(BgTokiSwd* this, PlayState* play) {
     if (Actor_HasParent(&this->actor, play)) {
         if (!LINK_IS_ADULT) {
             Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PUTAWAY_STN);
-            this->actor.draw = NULL; // sword has been pulled, dont draw sword
+            this->actor.draw = BgTokiSwd_DrawGdf; // sword has been pulled, dont draw sword
         } else {
             // sword has been placed, draw the master sword (SoH: unless Ganondorf is still driving it in)
-            this->actor.draw = GdfSwd_OnPlaced() ? NULL : BgTokiSwd_Draw;
+            this->actor.draw = GdfSwd_OnPlaced() ? BgTokiSwd_DrawGdf : BgTokiSwd_Draw;
         }
         BgTokiSwd_SetupAction(this, func_808BB128);
     } else {
