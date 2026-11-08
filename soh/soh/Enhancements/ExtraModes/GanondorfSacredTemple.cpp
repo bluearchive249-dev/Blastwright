@@ -1229,7 +1229,7 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
                 if (r->state == RS_BOLTS) {
                     // A spell card he hasn't just used
                     do {
-                        r->pattern = (s16)Rand_ZeroFloat(PAT_COUNT - 0.001f);
+                        r->pattern = (s16)Rand_ZeroFloat((f32)PAT_COUNT - 0.001f);
                     } while (r->pattern == r->lastPattern);
                     r->lastPattern = r->pattern;
                 }
