@@ -9,8 +9,9 @@
 //  - North, through a gilded gate that rises once both seals are his: Rauru's sanctuary (SCENE_BESITU). Rauru, the
 //    Sage of Light, fights him with bolts of light, pillars of light that fall where glyphs flare on the floor, blinking
 //    from place to place, and (when hard pressed) a radiant burst he charges unless he's struck out of it.
-// When Rauru falls, Ganondorf is taken to the Chamber of Sages, where the Triforce comes down to him. Claiming it is for
-// good: the Triforce of Power glows on his hand, his wounds close and his magic refills by itself.
+// When Rauru falls, Ganondorf is taken to the Chamber of Sages, where a pillar of light leads up to the Goddesses' Spring
+// (SCENE_DEPTH_TEST): a path of water climbing to the Triforce's sanctum, where Din, Nayru and Farore wait as figures of
+// light he can talk to, and the Triforce comes down to him. Claiming it is for good: the Triforce of Power glows on his hand, his wounds close and his magic refills by itself.
 //
 // The guards are the castle soldiers' model (object_sd) with weapons of our own; Rauru is his own model (object_rl);
 // the rooms and the props are generated (tools/gdf_castle/sacred.py, mods/gdf_sacred.o2r). Progress is kept in the
@@ -43,6 +44,12 @@ extern PlayState* gPlayState;
 #define RAURU_ENTRANCE ENTR_BESITU_0
 #define SAGES_SCENE SCENE_CHAMBER_OF_THE_SAGES
 #define SAGES_ENTRANCE ENTR_CHAMBER_OF_THE_SAGES_0
+// The Goddesses' Spring, above the chamber: a path of water up to the Triforce's sanctum (sacred.py's build_spring)
+#define SPRING_SCENE SCENE_DEPTH_TEST
+#define SPRING_ENTRANCE ENTR_DEPTH_TEST_0
+#define SPRING_BEAM 0.3f   // (SPRING_BEAM in sacred.py)
+#define SPRING_LOW -480.0f // (the hall's foot)
+#define SPRING_END 2200.0f // (its south wall)
 
 // The Sanctum's switch flags
 #define FLAG_SEAL_EAST 0x02
@@ -165,7 +172,41 @@ static void Say(PlayState* play, const char* text) {
     Message_StartTextbox(play, TEMPLE_TEXT_ID, NULL);
 }
 
+// The three Goddesses' words (each says the next of hers each time he talks to her)
+#define GODDESS_TEXT_ID 0x0202 // (to 0x0204: Din, Nayru, Farore)
+static const char* sGoddessLines[3][3] = {
+    { "I am %rDin%w, who shaped the red earth with my burning arms.^Power is my gift, King of the Gerudo. You "
+      "have shown me nothing but power, and so it is power the Triforce will answer you with.",
+      "Do not mistake my gift for a blessing. Power alone burns whoever holds it.^Still... I would rather see it "
+      "held than left to sleep. Take it, and let us see what you make of it.",
+      "Rauru guarded this place for an age. You broke through him in an afternoon.^Ha! I have not been this "
+      "entertained since the world was young." },
+    { "I am %bNayru%w, who gave the world its law and order.^The Triforce does not choose good or evil. It "
+      "weighs the heart of whoever touches it, and divides itself if that heart is out of balance.",
+      "Wisdom would tell you to leave it where it rests.^But you did not walk through a sealed temple to be wise, "
+      "did you?",
+      "I have seen what follows. Two others will carry what you cannot.^Remember that, when a boy with a "
+      "sword stands before you." },
+    { "I am %gFarore%w, who breathed life into every creature that walks the land.^You came all this way alone, "
+      "past spears, light and the Sage himself. That is not nothing.",
+      "Courage is not only charging forward. It is also knowing when to turn back.^...I can see you will not "
+      "turn back.",
+      "The water on this path flows from the spring where we left this world.^Drink of it if you like. It will "
+      "not make you any kinder." },
+};
+static s16 sGoddessLine[3] = { 0, 0, 0 };
+
 static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
+    if ((gPlayState != NULL) && (gPlayState->sceneNum == SPRING_SCENE) && (*textId >= GODDESS_TEXT_ID) &&
+        (*textId < GODDESS_TEXT_ID + 3)) {
+        s32 g = *textId - GODDESS_TEXT_ID;
+        CustomMessage msg = CustomMessage(sGoddessLines[g][sGoddessLine[g]], TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
+        msg.AutoFormat();
+        msg.LoadIntoFont();
+        *loadFromMessageTable = false;
+        sGoddessLine[g] = (sGoddessLine[g] + 1) % 3;
+        return;
+    }
     if ((*textId != TEMPLE_TEXT_ID) || sPendingText.empty()) {
         return;
     }
@@ -181,7 +222,8 @@ static void DrawObj(PlayState* play, const char* dl, Gfx** disp) {
     gSPDisplayList((*disp)++, (Gfx*)dl);
 }
 
-static s32 sGuardId = -1, sShotId = -1, sBrazierId = -1, sAltarId = -1, sGateId = -1, sRauruId = -1, sTriforceId = -1;
+static s32 sGuardId = -1, sShotId = -1, sBrazierId = -1, sAltarId = -1, sGateId = -1, sRauruId = -1, sTriforceId = -1,
+           sPortalId = -1, sGoddessId = -1;
 
 static s32 CountLiving(PlayState* play, s32 id) {
     s32 n = 0;
@@ -1566,6 +1608,123 @@ extern "C" void GdfSacred_DrawHandTriforce(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---- The portal in the Chamber of Sages, up to the Goddesses' Spring ----
+
+typedef struct {
+    Actor actor;
+    s16 frames;
+} GdfPortal;
+
+static void Portal_Init(Actor* thisx, PlayState* play) {
+    Audio_PlayActorSound2(thisx, NA_SE_EV_TRIFORCE_FLASH);
+}
+
+static void Portal_Update(Actor* thisx, PlayState* play) {
+    GdfPortal* p = (GdfPortal*)thisx;
+    Player* player = GET_PLAYER(play);
+
+    p->frames++;
+    Audio_PlayActorSound2(thisx, NA_SE_EV_LIGHT_GATHER - SFX_FLAG);
+    if (p->frames % 4 == 0) {
+        Vec3f at = thisx->world.pos;
+        at.y += 20.0f;
+        Sparks(play, &at, 70.0f, 1, 1.2f, (p->frames / 4) % 3 == 0 ? 2 : 5);
+    }
+    if ((p->frames > 30) && (Actor_WorldDistXZToActor(thisx, &player->actor) < 50.0f) && CanLeave(play)) {
+        Warp(play, SPRING_ENTRANCE);
+    }
+}
+
+static void Portal_Draw(Actor* thisx, PlayState* play) {
+    GdfPortal* p = (GdfPortal*)thisx;
+    u8 k = (u8)(200 + 55 * Math_SinS(p->frames * 0x900));
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    // a pillar of pale light, and a disc of it on the floor
+    Matrix_Translate(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z, MTXMODE_NEW);
+    Matrix_RotateY(p->frames * 0.05f, MTXMODE_APPLY);
+    Matrix_Scale(2.4f, 30.0f, 2.4f, MTXMODE_APPLY);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, k * 3 / 4, k * 9 / 10, k, 255);
+    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+    Matrix_Translate(thisx->world.pos.x, thisx->world.pos.y + 1.0f, thisx->world.pos.z, MTXMODE_NEW);
+    Matrix_Scale(5.0f, 0.08f, 5.0f, MTXMODE_APPLY);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 170, 215, 255, 255);
+    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ---- The Golden Goddesses: figures of light round the Triforce's dais, to talk to ----
+
+typedef struct {
+    Actor actor;
+    s16 frames;
+    f32 baseY;
+} GdfGoddess;
+
+static const Color_RGB8 sGoddessColors[3] = { { 255, 110, 80 }, { 110, 160, 255 }, { 110, 255, 140 } };
+static const s32 sGoddessSparks[3] = { 1, 2, 0 }; // (their colours among the Sages')
+
+static void Goddess_Init(Actor* thisx, PlayState* play) {
+    GdfGoddess* g = (GdfGoddess*)thisx;
+    g->baseY = thisx->world.pos.y;
+    g->frames = thisx->params * 40;
+    thisx->textId = GODDESS_TEXT_ID + thisx->params;
+    thisx->targetMode = 6;
+    Actor_SetFocus(thisx, 90.0f);
+}
+
+static void Goddess_Update(Actor* thisx, PlayState* play) {
+    GdfGoddess* g = (GdfGoddess*)thisx;
+    Player* player = GET_PLAYER(play);
+
+    g->frames++;
+    thisx->world.pos.y = g->baseY + 8.0f * Math_SinS(g->frames * 0x300);
+    Actor_SetFocus(thisx, 90.0f);
+    // she turns to him
+    Math_SmoothStepToS(&thisx->shape.rot.y, Actor_WorldYawTowardActor(thisx, &player->actor), 8, 0x400, 0x40);
+    if (g->frames % 6 == 0) {
+        Vec3f at = thisx->world.pos;
+        at.y += 70.0f;
+        Sparks(play, &at, 50.0f, 1, 0.5f, sGoddessSparks[thisx->params]);
+    }
+    if (!Actor_ProcessTalkRequest(thisx, play)) {
+        Actor_OfferTalk(thisx, play, 140.0f);
+    }
+}
+
+static void Goddess_Draw(Actor* thisx, PlayState* play) {
+    GdfGoddess* g = (GdfGoddess*)thisx;
+    const Color_RGB8* c = &sGoddessColors[thisx->params];
+    f32 k = 0.85f + 0.15f * Math_SinS(g->frames * 0x700);
+    Vec3f p = thisx->world.pos;
+    f32 yaw = BINANG_TO_RAD(thisx->shape.rot.y);
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    // her gown of light, flaring toward its hem; her body; her head; and a halo behind it
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, (u8)(c->r * k), (u8)(c->g * k), (u8)(c->b * k), 255);
+    Matrix_Translate(p.x, p.y + 30.0f, p.z, MTXMODE_NEW);
+    Matrix_RotateY(yaw, MTXMODE_APPLY);
+    Matrix_Scale(3.4f, 4.2f, 3.0f, MTXMODE_APPLY);
+    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+    Matrix_Translate(p.x, p.y + 80.0f, p.z, MTXMODE_NEW);
+    Matrix_RotateY(yaw, MTXMODE_APPLY);
+    Matrix_Scale(1.9f, 4.6f, 1.6f, MTXMODE_APPLY);
+    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, MIN(255, c->r + 90), MIN(255, c->g + 90), MIN(255, c->b + 90), 255);
+    Matrix_Translate(p.x, p.y + 132.0f, p.z, MTXMODE_NEW);
+    Matrix_Scale(1.5f, 1.7f, 1.5f, MTXMODE_APPLY);
+    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 230, 150, 255);
+    Matrix_Translate(p.x - Math_SinS(thisx->shape.rot.y) * 10.0f, p.y + 136.0f,
+                     p.z - Math_CosS(thisx->shape.rot.y) * 10.0f, MTXMODE_NEW);
+    Matrix_RotateY(yaw, MTXMODE_APPLY);
+    Matrix_Scale(3.0f, 3.0f, 0.15f, MTXMODE_APPLY);
+    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 // ---- Registering them ----
 
 static s32 Register(const char* name, const char* desc, s32 category, u32 flags, s32 size, ActorFunc init,
@@ -1605,6 +1764,11 @@ static void RegisterActors() {
                         Rauru_Destroy, Rauru_Update, Rauru_Draw);
     sTriforceId = Register("Gdf_SacredTriforce", "The Triforce (Play as Ganondorf)", ACTORCAT_ITEMACTION, always,
                            sizeof(GdfTriforce), Triforce_Init, NULL, Triforce_Update, Triforce_Draw);
+    sPortalId = Register("Gdf_SpringPortal", "Portal to the Goddesses' Spring (Play as Ganondorf)", ACTORCAT_PROP,
+                         always, sizeof(GdfPortal), Portal_Init, NULL, Portal_Update, Portal_Draw);
+    sGoddessId = Register("Gdf_Goddess", "A Golden Goddess (Play as Ganondorf)", ACTORCAT_NPC,
+                          always | ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, sizeof(GdfGoddess),
+                          Goddess_Init, NULL, Goddess_Update, Goddess_Draw);
 }
 
 // ---- The rooms ----
@@ -1632,7 +1796,7 @@ static void OnSceneInit(int16_t sceneNum) {
     sLastScene = sceneNum;
     sPending = TempleAvailable() &&
                ((sceneNum == HUB_SCENE) || (sceneNum == EAST_SCENE) || (sceneNum == WEST_SCENE) ||
-                (sceneNum == RAURU_SCENE) || (sceneNum == SAGES_SCENE));
+                (sceneNum == RAURU_SCENE) || (sceneNum == SAGES_SCENE) || (sceneNum == SPRING_SCENE));
     if (sPending) {
         RegisterActors();
     }
@@ -1689,12 +1853,27 @@ static void SetUpRoom(PlayState* play, Player* player) {
             break;
 
         case SAGES_SCENE:
-            if ((sFrom == RAURU_SCENE) && TFlag(play, FLAG_RAURU_DOWN) && !TFlag(play, FLAG_TRIFORCE)) {
+            // the way up to the Goddesses' Spring, where the Triforce waits
+            if (((sFrom == RAURU_SCENE) || (sFrom == SPRING_SCENE)) && TFlag(play, FLAG_RAURU_DOWN) &&
+                !TFlag(play, FLAG_TRIFORCE)) {
                 f32 x = player->actor.world.pos.x + Math_SinS(player->actor.shape.rot.y) * 220.0f;
                 f32 z = player->actor.world.pos.z + Math_CosS(player->actor.shape.rot.y) * 220.0f;
-                Spawn(play, sTriforceId, x, player->actor.world.pos.y + 110.0f, z, 0, 0);
+                Spawn(play, sPortalId, x, player->actor.world.pos.y, z, 0, 0);
             }
             break;
+
+        case SPRING_SCENE: {
+            static const f32 sSpots[3][2] = { { 0.0f, -400.0f }, { -346.0f, 200.0f }, { 346.0f, 200.0f } };
+
+            ScaleBeams(play, SPRING_BEAM);
+            if (!TFlag(play, FLAG_TRIFORCE)) {
+                Spawn(play, sTriforceId, 0.0f, 16.0f + 110.0f, 0.0f, 0, 0);
+            }
+            for (s32 i = 0; i < 3; i++) {
+                Spawn(play, sGoddessId, sSpots[i][0], 20.0f, sSpots[i][1], 0, i);
+            }
+            break;
+        }
     }
 }
 
@@ -1752,6 +1931,16 @@ static void OnPlayerUpdate() {
                 Health_ChangeBy(play, -8);
                 Audio_PlayActorSound2(&player->actor, NA_SE_PL_BODY_HIT);
                 PlaceAt(player, 0.0f, 0.0f, -260.0f, -0x8000);
+                player->actor.velocity.y = 0.0f;
+            }
+            break;
+        case SPRING_SCENE:
+            if (p.z > SPRING_END + 100.0f) { // back down to the chamber
+                sPlainChamber = true;
+                gSaveContext.chamberCutsceneNum = GDF_CHAMBER_CS_NONE;
+                Warp(play, SAGES_ENTRANCE);
+            } else if (p.y < SPRING_LOW - 300.0f) {
+                PlaceAt(player, 0.0f, SPRING_LOW, SPRING_END - 80.0f, -0x8000);
                 player->actor.velocity.y = 0.0f;
             }
             break;

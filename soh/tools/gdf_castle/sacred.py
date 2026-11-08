@@ -492,6 +492,135 @@ def build_rauru(beams):
     return B
 
 
+# ---- The Goddesses' Spring (SCENE_DEPTH_TEST): above the Chamber of Sages ----
+# From the portal in the chamber: a long hall where a path of water climbs to the Triforce's sanctum, an octagon where
+# the three Golden Goddesses wait as figures of light round the Triforce's dais.
+SPRING_BEAM = 0.3      # (the same in GanondorfSacredTemple.cpp)
+SPRING_A, SPRING_S, SPRING_H = 600, 250, 900
+SPRING_X = 240                       # the hall's half-width
+SPRING_TOP, SPRING_FOOT = 760, 1960  # the climb, from the sanctum's door down to the hall's foot
+SPRING_LOW = -480                    # the hall's foot (the sanctum's floor is at 0)
+SPRING_END = 2200                    # the hall's south wall (the way back to the chamber)
+GODDESS = [(0, -400, (1.0, 0.35, 0.25)), (-346, 200, (0.35, 0.55, 1.0)), (346, 200, (0.35, 1.0, 0.45))]
+WATER = (175, 215, 255)
+
+
+def spring_y(z):
+    """The water path's height at z."""
+    t = min(1.0, max(0.0, (z - SPRING_TOP) / (SPRING_FOOT - SPRING_TOP)))
+    return SPRING_LOW * t
+
+
+def build_spring(beams):
+    A, S, H = SPRING_A, SPRING_S, SPRING_H
+    X, LOW, END = SPRING_X, SPRING_LOW, SPRING_END
+    lights = [((0, 160, 0), 560, 0.8, (1.0, 0.95, 0.75)), ((0, 780, 0), 700, 0.3, WARM)]
+    # the sanctum's windows: on its four diagonal walls, their sunbeams falling on the dais
+    diag = []
+    for sx, sz in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+        mx, mz = sx * (A + S) / 2, sz * (A + S) / 2
+        diag.append((mx, mz, -sx / np.sqrt(2), -sz / np.sqrt(2)))
+    for mx, mz, ix, iz in diag:
+        yaw = int(np.degrees(np.arctan2(ix, iz)) / 360 * 65536)
+        o = (mx + ix * 68 * SPRING_BEAM, 440, mz + iz * 68 * SPRING_BEAM)
+        beams.append((o, yaw))
+        reach = 825 * SPRING_BEAM * min(1.0, 440 / (939 * SPRING_BEAM))
+        lights.append(((mx + ix * 30, 540, mz + iz * 30), 340, 0.5, WARM))
+        lights.append(((o[0] + ix * reach, 30, o[2] + iz * reach), 260, 0.7, (1.0, 0.95, 0.8)))
+    for x, z, t in GODDESS:
+        lights.append(((x * 0.9, 160, z * 0.9), 320, 0.9, t))
+    # the hall's windows, down both sides above the climb
+    hall_win = (1000, 1400, 1800)
+    for z in hall_win:
+        for wall, x in (('W', -X), ('E', X)):
+            window(None, lights, beams, wall, (x, z), spring_y(z) + 300, SPRING_BEAM, frame=False, floor=spring_y(z))
+    for z in np.linspace(SPRING_TOP, END - 100, 5):
+        lights.append(((0, spring_y(z) + 220, z), 360, 0.35, (0.75, 0.88, 1.0)))   # the water's cool light
+    B = Builder(lights, float(H))
+    for z in hall_win:
+        for wall, x in (('W', -X), ('E', X)):
+            window(B, [], [], wall, (x, z), spring_y(z) + 300, SPRING_BEAM)
+    for mx, mz, ix, iz in diag:
+        C.tot_window(B, (ix, iz), (mx, mz), 96 * SPRING_BEAM, 440 + 100 * SPRING_BEAM, 440 + 661 * SPRING_BEAM)
+
+    # -- the sanctum --
+    E = A + 40
+    B.floor('marble_check', -E, E, -E, E, y=0)
+    B.ceiling('ceiling', -E, E, -E, E, H)
+    door = (-110, 110, 0, 300)
+    octagon(B, A, S, H, south_door=door)
+    C.arch_door(B, 'z', A, -110, 110, 0, 300)
+    # each Goddess's pillar behind her, banded in her colour, and a disc of her colour where she floats
+    for x, z, t in GODDESS:
+        col = tuple(int(255 * c) for c in t)
+        r = np.hypot(x, z)
+        px, pz = x / r * 530, z / r * 530
+        B.pillar(px, pz, 40, 0, H)
+        for y in (120, 520):
+            B.box('gold', px - 44, px + 44, y, y + 18, pz - 44, pz + 44, collide=False, color=col)
+        C.disc(B, 'gold', x, z, 64, 1.5, 16, color=col)
+        C.annulus(B, 'gold', x, z, 64, 74, 1.6, 16, color=GOLD)
+    # the dais (the Triforce comes down above it), ringed by a moat of still water, and the great Triforce inlay
+    C.annulus(B, 'water', 0, 0, 205, 290, 1.0, 32, color=WATER)
+    C.annulus(B, 'gold', 0, 0, 290, 302, 2.0, 32, color=GOLD)
+    C.prism(B, 'marble', 0, 0, 200, 0, 16, 16, top='marble', collide=True)
+    C.annulus(B, 'gold', 0, 0, 180, 196, 16.5, 32, color=GOLD)
+    for cx, cz in ((0, -70), (-61, 35), (61, 35)):
+        B.quad('gold', [(cx - 60, 17, cz + 52), (cx + 60, 17, cz + 52), (cx, 17, cz - 52)], color=GOLD)
+    for k in range(8):
+        a = k * np.pi / 4 + np.pi / 8
+        if abs(np.cos(a) * 520) < 140 and np.sin(a) > 0:
+            continue   # (none in the doorway)
+        C.candelabra(B, lambda *args: None, 520 * np.cos(a), 520 * np.sin(a), 0)
+
+    # -- the hall: a path of water climbing from its foot to the sanctum's door --
+    z0, z1 = A, END
+    hb = (-110, 110, 0, 300)
+    B.wall('brick_white2', 'z', A, -X, X, 0, 640, 1, openings=[hb])     # the sanctum's wall, from the hall
+    B.wall('brick_white2', 'x', -X, z0, z1, LOW, 640, 1)
+    B.wall('brick_white2', 'x', X, z0, z1, LOW, 640, -1)
+    B.wall('brick_white2', 'z', z1, -X, X, LOW, 640, -1, openings=[(-110, 110, LOW, LOW + 300)])
+    C.cove_ceiling(B, -X, X, z0, z1, 640, c=60)
+    wins = [(z - 60, z + 60, spring_y(z) + 310, spring_y(z) + 520) for z in hall_win]
+    C.room_finish(B, -X, X, z0, z1, LOW, 640, pilasters=True, dado=(214, 208, 198),
+                  doors={'S': [(-110, 110, LOW, LOW + 300)], 'N': [(-110, 110, LOW, 300)], 'W': wins, 'E': wins})
+    C.arch_door(B, 'z', z1, -110, 110, LOW, LOW + 300)
+    # the floor: level by the sanctum's door and at the foot, the climb between; water down the middle, marble either
+    # side of it, edged in gold
+    def strip(mat, xa, xb, color=(255, 255, 255), lift=0.0, collide=True):
+        cs = SURF['floor'] if collide else None
+        B.quad(mat, [(xa, lift, SPRING_TOP), (xb, lift, SPRING_TOP), (xb, lift, z0), (xa, lift, z0)], collide=cs,
+               color=color)
+        B.quad(mat, [(xa, LOW + lift, SPRING_FOOT), (xb, LOW + lift, SPRING_FOOT), (xb, lift, SPRING_TOP),
+                     (xa, lift, SPRING_TOP)], collide=cs, color=color)
+        B.quad(mat, [(xa, LOW + lift, z1), (xb, LOW + lift, z1), (xb, LOW + lift, SPRING_FOOT),
+                     (xa, LOW + lift, SPRING_FOOT)], collide=cs, color=color)
+    strip('water', -110, 110, color=WATER)
+    strip('marble_check', -X, -122)
+    strip('marble_check', 122, X)
+    for s_ in (-1, 1):
+        strip('gold', min(s_ * 110, s_ * 122), max(s_ * 110, s_ * 122), color=GOLD, lift=0.5)
+    # its way out: a short passage back to the chamber, fading into the dark
+    pz0, pz1 = z1, z1 + 170
+    B.fade_to_black((0, LOW, pz0), (0, LOW, pz1), (-110, 110, LOW, LOW + 300, pz0, pz1))
+    B.floor('water', -110, 110, pz0, pz1, y=LOW, color=WATER)
+    B.wall('brick_white2', 'x', -110, pz0, pz1, LOW, LOW + 300, 1)
+    B.wall('brick_white2', 'x', 110, pz0, pz1, LOW, LOW + 300, -1)
+    B.wall('brick_white2', 'z', pz1, -110, 110, LOW, LOW + 300, -1)
+    B.ceiling('ceiling', -110, 110, pz0, pz1, LOW + 300)
+    # statues guarding the foot of the climb, braziers of light up its sides, and the Goddesses' banners
+    C.statue(B, -175, SPRING_FOOT + 120, LOW, face='E')
+    C.statue(B, 175, SPRING_FOOT + 120, LOW, face='W')
+    for z in (900, 1200, 1500, 1800):
+        for s_ in (-1, 1):
+            C.candelabra(B, lambda *args: None, s_ * 190, z, spring_y(z), h=120)
+    for i, z in enumerate((1200, 1600)):
+        for j, (wall, wx) in enumerate((('W', -X), ('E', X))):
+            t = GODDESS[(i * 2 + j) % 3][2]
+            C.banner(B, wall, wx, z, spring_y(z) + 520, color=tuple(int(110 + 145 * c) for c in t))
+    return B
+
+
 # ---- Props drawn by actors (front +z, foot at the origin) ----
 
 def build_props():
@@ -651,6 +780,11 @@ def emit():
         beams = []
         scene(files, name, build(beams), [G.actor_entry(0, (0, 0, z), (0, -0x8000, 0), 0x0FFF)], [(0, 0)],
               exits=(), beams=beams)
+    # The Goddesses' Spring: in from the chamber's portal, at the foot of the climb, facing north
+    beams = []
+    scene(files, 'depth_test', build_spring(beams),
+          [G.actor_entry(0, (0, SPRING_LOW, SPRING_END - 80), (0, -0x8000, 0), 0x0FFF)], [(0, 0)], exits=(),
+          beams=beams)
     # The props the actors draw (glowing parts tinted by the actor, as the mirror's glass)
     props, gems = build_props()
     glow = ('gGdfLightOrb', 'gGdfGlyph')
