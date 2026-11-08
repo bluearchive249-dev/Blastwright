@@ -19,6 +19,7 @@
 #include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
 #include "soh/Enhancements/ExtraModes/GanondorfDance.h"
 #include "soh/Enhancements/ExtraModes/GanondorfRagdoll.h"
+void GdfSacred_DrawHandTriforce(PlayState* play); // (GanondorfSacredTemple.cpp)
 #include "textures/icon_item_field_static/icon_item_field_static.h" // SoH: the map on the intro's war table
 #include "overlays/actors/ovl_En_Horse_Ganon/z_en_horse_ganon.h" // SoH: the Gerudo intro's horse
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
@@ -3698,6 +3699,9 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
     if (GDF_IS_PLAYER(this)) {
         s32 set = -1;
 
+        if ((limbIndex == 6) && !sGdfPgCapture) {
+            GdfSacred_DrawHandTriforce(play); // the Triforce of Power, once it's his (GanondorfSacredTemple.cpp)
+        }
         switch (limbIndex) {
             case 6: set = 0; break;
             case 10: set = 1; break;

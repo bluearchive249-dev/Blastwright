@@ -256,9 +256,9 @@ def build_hub(beams):
     B.ceiling('ceiling', -E, E, -E, E, H)
     door = (-110, 110, 0, 300)
     B.wall('brick_white2', 'z', HUB_A, -HUB_S, HUB_S, 0, H, -1, openings=[door])     # south: the way back
-    B.wall('brick_white2', 'z', -HUB_A, -HUB_S, HUB_S, 0, H, 1)                      # north
-    B.wall('brick_white2', 'x', HUB_A, -HUB_S, HUB_S, 0, H, -1)                      # east
-    B.wall('brick_white2', 'x', -HUB_A, -HUB_S, HUB_S, 0, H, 1)                      # west
+    B.wall('brick_white2', 'z', -HUB_A, -HUB_S, HUB_S, 0, H, 1, openings=[(-160, 160, 0, 380)])  # north: Rauru
+    B.wall('brick_white2', 'x', HUB_A, -HUB_S, HUB_S, 0, H, -1, openings=[(-110, 110, 0, 300)])  # east wing
+    B.wall('brick_white2', 'x', -HUB_A, -HUB_S, HUB_S, 0, H, 1, openings=[(-110, 110, 0, 300)])  # west wing
     for sx, sz in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
         a = (sx * HUB_S, sz * HUB_A)
         b = (sx * HUB_A, sz * HUB_S)
@@ -283,16 +283,14 @@ def build_hub(beams):
     B.ceiling('ceiling', -110, 110, HUB_A, HUB_A + 160, 300)
     C.room_finish(B, -110, 110, HUB_A, HUB_A + 160, 0, 300, walls='WE', pilasters=False, dado=(214, 208, 198))
     C.arch_door(B, 'z', HUB_A, -110, 110, 0, 300)
-    # The sealed doors: north to Rauru (gilded, with the Triforce), east and west to the wings
-    B.box(('marble2', 'marble2'), -160, 160, 0, 380, -HUB_A, -HUB_A + 22)
-    B.box('gold', -170, 170, 380, 400, -HUB_A, -HUB_A + 26, color=GOLD)
-    for cx, cy in ((0, 330), (-46, 250), (46, 250)):
-        B.quad('gold', [(cx - 44, cy - 76, -HUB_A + 23), (cx + 44, cy - 76, -HUB_A + 23), (cx, cy, -HUB_A + 23)],
-               color=GOLD)
-    for sx in (-1, 1):
-        x0, x1 = (HUB_A - 20, HUB_A) if sx > 0 else (-HUB_A, -HUB_A + 20)
-        B.box(('marble2', 'marble2'), x0, x1, 0, 300, -120, 120)
-        B.box('gold', x0 - 2, x1 + 2, 300, 316, -130, 130, color=GOLD)
+    # The ways on: north to Rauru (its gilded gate is an actor: it rises once both wings' seals are his), east and
+    # west to the wings. Each a short passage into the dark.
+    B.box('gold', -176, 176, 380, 404, -HUB_A - 2, -HUB_A + 26, collide=False, color=GOLD)
+    passage(B, 'N', -HUB_A, 160, 380, 170)
+    passage(B, 'E', HUB_A, 110, 300, 170)
+    passage(B, 'W', -HUB_A, 110, 300, 170)
+    C.arch_door(B, 'x', HUB_A, -110, 110, 0, 300)
+    C.arch_door(B, 'x', -HUB_A, -110, 110, 0, 300)
     # The ring of pillars and the dais
     for k in range(8):
         a = np.pi / 8 + k * np.pi / 4
@@ -302,6 +300,276 @@ def build_hub(beams):
     for cx, cz in ((0, -40), (-35, 20), (35, 20)):
         B.quad('gold', [(cx - 34, 28.5, cz + 30), (cx + 34, 28.5, cz + 30), (cx, 28.5, cz - 30)], color=GOLD)
     return B
+
+
+def passage(B, d, at, half, h, length, fade=True):
+    """A short passage out of a room, fading into the dark: d is the way it leads (N -z, S +z, E +x, W -x), at the
+    wall it leaves through, half its half-width, h its height."""
+    s = {'N': -1, 'S': 1, 'E': 1, 'W': -1}[d]
+    a, b = at, at + s * length
+    lo, hi = min(a, b), max(a, b)
+    if d in 'NS':
+        if fade:
+            B.fade_to_black((0, 0, a), (0, 0, b), (-half, half, 0, h, lo, hi))
+        B.floor('marble_check', -half, half, lo, hi, y=0)
+        B.wall('brick_white2', 'x', -half, lo, hi, 0, h, 1)
+        B.wall('brick_white2', 'x', half, lo, hi, 0, h, -1)
+        B.wall('brick_white2', 'z', b, -half, half, 0, h, -s)
+        B.ceiling('ceiling', -half, half, lo, hi, h)
+        C.room_finish(B, -half, half, lo, hi, 0, h, walls='WE', pilasters=False, dado=(214, 208, 198))
+    else:
+        if fade:
+            B.fade_to_black((a, 0, 0), (b, 0, 0), (lo, hi, 0, h, -half, half))
+        B.floor('marble_check', lo, hi, -half, half, y=0)
+        B.wall('brick_white2', 'z', -half, lo, hi, 0, h, 1)
+        B.wall('brick_white2', 'z', half, lo, hi, 0, h, -1)
+        B.wall('brick_white2', 'x', b, -half, half, 0, h, -s)
+        B.ceiling('ceiling', lo, hi, -half, half, h)
+        C.room_finish(B, lo, hi, -half, half, 0, h, walls='NS', pilasters=False, dado=(214, 208, 198))
+
+
+def long_hall(beams, x0, x1, z0, z1, H, beam, win_z, win_y0, extra_lights=(), door_s=(-110, 110, 0, 300)):
+    """A Sacred Realm hall: marble and gold, Temple of Time windows down both sides, its way in at the south end."""
+    lights = [((0, H - 80, z), 420, 0.3, WARM) for z in np.linspace(z1 - 150, z0 + 150, 4)]
+    lights += [((0, 70, z), 340, 0.4, WARM) for z in np.linspace(z1 - 150, z0 + 150, 4)]
+    lights += list(extra_lights)
+    spots = [(wall, x, z) for z in win_z for wall, x in (('W', x0), ('E', x1))]
+    for wall, x, z in spots:
+        window(None, lights, beams, wall, (x, z), win_y0, beam, frame=False)
+    B = Builder(lights, float(H))
+    for wall, x, z in spots:
+        window(B, [], [], wall, (x, z), win_y0, beam)
+    B.wall('brick_white2', 'x', x0, z0, z1, 0, H, 1)
+    B.wall('brick_white2', 'x', x1, z0, z1, 0, H, -1)
+    B.wall('brick_white2', 'z', z1, x0, x1, 0, H, -1, openings=[door_s])
+    B.wall('brick_white2', 'z', z0, x0, x1, 0, H, 1)
+    C.cove_ceiling(B, x0, x1, z0, z1, H, c=70)
+    wins = [(z - 60, z + 60, win_y0 + 20, H) for z in win_z]
+    C.room_finish(B, x0, x1, z0, z1, 0, H, pilasters=False, dado=(214, 208, 198),
+                  doors={'S': [door_s], 'W': wins, 'E': wins})
+    C.arch_door(B, 'z', z1, door_s[0], door_s[1], door_s[2], door_s[3])
+    passage(B, 'S', z1, door_s[1], door_s[3], 170)
+    return B
+
+
+# ---- The east wing: the Hall of Spears (SCENE_SUTARU) ----
+# Spear and shield guards; four braziers his blows (or magic) set alight; the Seal of the East on an altar at the
+# north end, given once the guards are down and all four burn.
+WING_BEAM = 0.3   # (the same in GanondorfSacred.cpp)
+EAST = dict(x0=-320, x1=320, z0=-1300, z1=600, H=560)
+
+
+def build_east(beams):
+    e = EAST
+    B = long_hall(beams, e['x0'], e['x1'], e['z0'], e['z1'], e['H'], WING_BEAM, (300, -100, -500, -900), 300,
+                  extra_lights=[((0, 220, -1180), 420, 0.7, (1.0, 0.85, 0.5))] +
+                               [((x, 160, z), 260, 0.35, (1.0, 0.7, 0.4)) for x in (-170, 170) for z in (-350, -750)])
+    B.floor('marble_check', e['x0'], e['x1'], e['z0'], e['z1'], y=0)
+    C.rug(B, -70, 70, -1100, 520, 0, mat='carpet_red')
+    for z in (400, 100, -200, -500, -800, -1100):
+        for x in (-230, 230):
+            B.pillar(x, z, 28, 0, e['H'])
+    # the altar's dais
+    B.box(('marble', 'stone_band'), -130, 130, 0, 14, -1290, -1080)
+    B.box(('marble', 'stone_band'), -90, 90, 14, 28, -1260, -1110)
+    for x in (-200, 200):
+        C.banner(B, 'N', x, e['z0'], 470, w=80, h=280, mat='carpet_red')
+    C.statue(B, -120, -1230, 28, face='S')
+    C.statue(B, 120, -1230, 28, face='S')
+    return B
+
+
+# ---- The west wing: the Hall of Bows (SCENE_HAIRAL_NIWA2) ----
+# A chasm across the middle (he floats over it, or falls and is put back), archers on balconies above it, sword
+# guards on the floor, and the Guard Captain beyond; the Seal of the West on the altar at the north end.
+WEST = dict(x0=-360, x1=360, z0=-1500, z1=600, H=600, gap0=-650, gap1=-350, pit=-420, balc=220)
+
+
+def build_west(beams):
+    w = WEST
+    x0, x1, z0, z1, H = w['x0'], w['x1'], w['z0'], w['z1'], w['H']
+    B = long_hall(beams, x0, x1, z0, z1, H, WING_BEAM, (300, 0, -1000, -1300), 320,
+                  extra_lights=[((0, 220, -1380), 420, 0.7, (1.0, 0.85, 0.5)),
+                                ((0, w['pit'] + 80, -500), 500, 0.5, (0.55, 0.6, 1.0))])
+    g0, g1, pit = w['gap0'], w['gap1'], w['pit']
+    B.floor('marble_check', x0, x1, g1, z1, y=0)
+    B.floor('marble_check', x0, x1, z0, g0, y=0)
+    # the chasm: its sheer sides, the far-down floor (blue-dark), and walls down to it
+    B.floor('tile_court', x0, x1, g0, g1, y=pit, color=(70, 80, 120))
+    B.wall('brick_white2', 'z', g1, x0, x1, pit, 0, -1)
+    B.wall('brick_white2', 'z', g0, x0, x1, pit, 0, 1)
+    B.wall('brick_white2', 'x', x0, g0, g1, pit, 0, 1)
+    B.wall('brick_white2', 'x', x1, g0, g1, pit, 0, -1)
+    for zz in (g1, g0):  # gilded lips
+        B.box('gold', x0, x1, -6, 2, zz - 6, zz + 6, collide=False, color=GOLD)
+    C.rug(B, -70, 70, -60, 520, 0, mat='carpet_blue')
+    C.rug(B, -70, 70, -1420, -760, 0, mat='carpet_blue')
+    # the balconies, either side above the chasm, with balustrades
+    for s in (-1, 1):
+        bx0, bx1 = (x1 - 130, x1) if s > 0 else (x0, x0 + 130)
+        B.box(('marble', 'marble2'), bx0, bx1, w['balc'] - 24, w['balc'], -900, -100)
+        inner = bx0 if s > 0 else bx1
+        for zz in range(-880, -100, 60):
+            C.prism(B, 'marble', inner + (-6 if s > 0 else 6), zz, 6, w['balc'], w['balc'] + 60, 6)
+        B.box('marble2', inner - 8 * (s > 0), inner + 8 * (s < 0), w['balc'] + 60, w['balc'] + 70, -900, -100,
+              collide=False)
+        for zz in (-860, -140):  # corbels under them
+            B.box('stone_band', min(inner, x1 if s > 0 else x0), max(inner, x1 if s > 0 else x0), w['balc'] - 70,
+                  w['balc'] - 24, zz - 20, zz + 20, collide=False, color=(225, 215, 195))
+    for z in (400, 150, -850, -1150):
+        for x in (-260, 260):
+            B.pillar(x, z, 28, 0, H)
+    B.box(('marble', 'stone_band'), -130, 130, 0, 14, -1490, -1280)
+    B.box(('marble', 'stone_band'), -90, 90, 14, 28, -1460, -1310)
+    for x in (-220, 220):
+        C.banner(B, 'N', x, z0, 500, w=80, h=280, mat='carpet_blue')
+    return B
+
+
+# ---- Rauru's sanctuary (SCENE_BESITU): an octagon 700 across the flats, the six Sages' pillars about a dais of
+# light; Rauru fights here ----
+RAURU_A, RAURU_S, RAURU_BEAM = 700, 290, 0.45   # (the beam scale is the same in GanondorfSacred.cpp)
+
+
+def octagon(B, A, S, H, mat='brick_white2', south_door=None):
+    B.wall(mat, 'z', A, -S, S, 0, H, -1, openings=[south_door] if south_door else [])
+    B.wall(mat, 'z', -A, -S, S, 0, H, 1)
+    B.wall(mat, 'x', A, -S, S, 0, H, -1)
+    B.wall(mat, 'x', -A, -S, S, 0, H, 1)
+    for sx, sz in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+        a, b = (sx * S, sz * A), (sx * A, sz * S)
+        p = [(a[0], 0, a[1]), (b[0], 0, b[1]), (b[0], H, b[1]), (a[0], H, a[1])]
+        n = np.cross(np.subtract(p[1], p[0]), np.subtract(p[3], p[0]))
+        if np.dot(n, [-(a[0] + b[0]), 0, -(a[1] + b[1])]) < 0:
+            p = [p[1], p[0], p[3], p[2]]
+        B.quad(mat, p, collide=SURF['wall'])
+
+
+def build_rauru(beams):
+    A, S, H = RAURU_A, RAURU_S, 900
+    lights = [((0, 120, 0), 520, 0.7, (1.0, 0.95, 0.75)), ((0, 800, 0), 700, 0.3, WARM)]
+    diag = []
+    for sx, sz in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+        mx, mz = sx * (A + S) / 2, sz * (A + S) / 2
+        diag.append((mx, mz, -sx / np.sqrt(2), -sz / np.sqrt(2)))
+    for mx, mz, ix, iz in diag:
+        yaw = int(np.degrees(np.arctan2(ix, iz)) / 360 * 65536)
+        o = (mx + ix * 68 * RAURU_BEAM, 420, mz + iz * 68 * RAURU_BEAM)
+        beams.append((o, yaw))
+        reach = 825 * RAURU_BEAM * min(1.0, 420 / (939 * RAURU_BEAM))
+        lights.append(((mx + ix * 30, 560, mz + iz * 30), 360, 0.5, WARM))
+        lights.append(((o[0] + ix * reach, 30, o[2] + iz * reach), 280, 0.7, (1.0, 0.95, 0.8)))
+    sage = []
+    for k in range(6):
+        a = np.pi / 2 + np.pi / 6 + k * np.pi / 3   # (none in the way in, from the south)
+        sage.append((520 * np.cos(a), 520 * np.sin(a), SAGE_TINTS[k]))
+        lights.append(((520 * np.cos(a) * 0.9, 200, 520 * np.sin(a) * 0.9), 300, 0.8, SAGE_TINTS[k]))
+    B = Builder(lights, float(H))
+    for mx, mz, ix, iz in diag:
+        C.tot_window(B, (ix, iz), (mx, mz), 96 * RAURU_BEAM, 420 + 100 * RAURU_BEAM, 420 + 661 * RAURU_BEAM)
+    E = A + 40
+    B.floor('marble_check', -E, E, -E, E, y=0)
+    B.ceiling('ceiling', -E, E, -E, E, H)
+    door = (-110, 110, 0, 300)
+    octagon(B, A, S, H, south_door=door)
+    C.arch_door(B, 'z', A, -110, 110, 0, 300)
+    passage(B, 'S', A, 110, 300, 170)
+    # the six Sages' pillars, each banded in its Sage's colour, and a medallion-like disc at its foot
+    for x, z, t in sage:
+        B.pillar(x, z, 40, 0, H)
+        col = tuple(int(255 * c) for c in t)
+        for y in (120, 520):
+            B.box('gold', x - 44, x + 44, y, y + 18, z - 44, z + 44, collide=False, color=col)
+        C.disc(B, 'gold', x, z, 70, 1.5, 16, color=col)
+    # the dais of light (Rauru hovers above it), a ring of gold and a great Triforce inlay
+    C.prism(B, 'marble', 0, 0, 200, 0, 16, 16, top='marble', collide=True)
+    C.annulus(B, 'gold', 0, 0, 180, 196, 16.5, 32, color=GOLD)
+    for cx, cz in ((0, -70), (-61, 35), (61, 35)):
+        B.quad('gold', [(cx - 60, 17, cz + 52), (cx + 60, 17, cz + 52), (cx, 17, cz - 52)], color=GOLD)
+    for k in range(8):
+        a = k * np.pi / 4
+        C.candelabra(B, lambda *args: None, 610 * np.cos(a + np.pi / 8) * 0.85, 610 * np.sin(a + np.pi / 8) * 0.85, 0)
+    return B
+
+
+# ---- Props drawn by actors (front +z, foot at the origin) ----
+
+def build_props():
+    P = {}
+    br = Builder()   # a brazier: a fluted stand and a gilded bowl
+    C.prism(br, 'marble', 0, 0, 22, 0, 10, 8, top='marble')
+    C.prism(br, 'pillar', 0, 0, 10, 10, 90, 8)
+    C.prism(br, 'gold', 0, 0, 14, 90, 100, 8, color=GOLD)
+    C.prism(br, 'gold', 0, 0, 16, 100, 118, 12, r1=34, color=GOLD)
+    C.disc(br, 'ceiling', 0, 0, 32, 116, 12, color=(40, 32, 30))
+    P['gGdfBrazier'] = br
+    al = Builder()   # the altar the seal waits on
+    C.prism(al, 'marble2', 0, 0, 40, 0, 20, 8, top='marble2', collide=False)
+    C.prism(al, 'marble', 0, 0, 22, 20, 90, 8)
+    C.prism(al, 'gold', 0, 0, 34, 90, 104, 8, top='gold', color=GOLD)
+    P['gGdfAltar'] = al
+    # weapons for the guards (in the hand's frame: grip at the origin, along +x)
+    sw = Builder()
+    sw.box('gold', -14, 0, -3, 3, -3, 3, collide=False, color=(120, 80, 40))           # grip
+    sw.box('gold', 0, 4, -14, 14, -4, 4, collide=False, color=GOLD)                     # guard
+    sw.box('mirror', 4, 84, -4, 4, -1.2, 1.2, collide=False, color=(225, 230, 240))     # blade
+    sw.quad('mirror', [(84, -4, 1.3), (96, 0, 1.3), (84, 4, 1.3)], color=(225, 230, 240))
+    sw.quad('mirror', [(84, 4, -1.3), (96, 0, -1.3), (84, -4, -1.3)], color=(225, 230, 240))
+    P['gGdfGuardSword'] = sw
+    sh = Builder()   # a kite shield (front +z)
+    pts = [(-26, 34), (26, 34), (26, -6), (0, -44), (-26, -6)]
+    for i in (1, 2, 3):
+        a, b, c = pts[0], pts[i], pts[i + 1]
+        sh.quad('carpet_blue', [(a[0], a[1], 4), (b[0], b[1], 4), (c[0], c[1], 4)], color=(200, 210, 255))
+        sh.quad('stone_band', [(c[0], c[1], -2), (b[0], b[1], -2), (a[0], a[1], -2)], color=(150, 140, 130))
+    for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
+        sh.quad('gold', [(ax, ay, 4.5), (bx, by, 4.5), (bx, by, -2.5), (ax, ay, -2.5)], color=GOLD)
+    for cx, cy in ((0, 16), (-9, 0), (9, 0)):
+        sh.quad('gold', [(cx - 9, cy - 8, 5), (cx + 9, cy - 8, 5), (cx, cy + 8, 5)], color=GOLD)
+    P['gGdfGuardShield'] = sh
+    bw = Builder()   # a bow (in the left hand: the grip at the origin, limbs up and down along y)
+    prev = None
+    for i in range(13):
+        t = -1 + i / 6
+        p = (14 * (1 - t * t), 60 * t)
+        if prev:
+            bw.box('stone_band', min(prev[0], p[0]) - 2, max(prev[0], p[0]) + 2, min(prev[1], p[1]), max(prev[1], p[1]),
+                   -2, 2, collide=False, color=(130, 90, 50))
+        prev = p
+    bw.box('mirror', -0.6, 0.6, -60, 60, -0.6, 0.6, collide=False, color=(240, 240, 230))
+    P['gGdfGuardBow'] = bw
+    # light: an orb (Rauru's bolts) and a glyph on the floor (where a pillar of light will fall), tinted by the actor
+    orb = Builder()
+    v = [(0, 1, 0), (1, 0, 0), (0, 0, 1), (-1, 0, 0), (0, 0, -1), (0, -1, 0)]
+    for top in (0, 5):
+        for i in range(4):
+            a, b = v[1 + i], v[1 + (i + 1) % 4]
+            tri = [tuple(16 * c for c in v[top]), tuple(16 * c for c in a), tuple(16 * c for c in b)]
+            n = np.cross(np.subtract(tri[1], tri[0]), np.subtract(tri[2], tri[0]))
+            if np.dot(n, np.mean(tri, 0)) < 0:
+                tri = [tri[0], tri[2], tri[1]]
+            orb.quad('mirror', tri, color=(255, 255, 255), light=False)
+    P['gGdfLightOrb'] = orb
+    gl = Builder()
+    C.annulus(gl, 'mirror', 0, 0, 52, 64, 1.5, 24)
+    for cx, cz in ((0, -20), (-17, 10), (17, 10)):
+        gl.quad('mirror', [(cx - 17, 1.6, cz + 15), (cx + 17, 1.6, cz + 15), (cx, 1.6, cz - 15)], color=(255, 255, 255),
+                light=False)
+    P['gGdfGlyph'] = gl
+    # the gate to Rauru (320 x 380, front +z) and its two seal gems (tinted by the actor)
+    gt = Builder()
+    gt.box(('marble2', 'marble2'), -160, 160, 0, 380, -10, 10)
+    gt.box('gold', -160, 160, 0, 16, -12, 12, collide=False, color=GOLD)
+    for cx, cy in ((0, 330), (-46, 250), (46, 250)):
+        gt.quad('gold', [(cx - 44, cy - 76, 11), (cx + 44, cy - 76, 11), (cx, cy, 11)], color=GOLD)
+    P['gGdfRauruGate'] = gt
+    gems = []
+    for x in (-100, 100):
+        g = Builder()
+        g.quad('mirror', [(x - 22, 120, 11.5), (x, 98, 11.5), (x + 22, 120, 11.5), (x, 142, 11.5)],
+               color=(255, 255, 255), light=False)
+        gems.append(g)
+    return P, gems
 
 
 # The Temple of Time's own lighting and fog (its scene's first four settings): dim, the fog dark and close
@@ -377,6 +645,24 @@ def emit():
     scene(files, 'syotes2', build_hub(beams),
           [G.actor_entry(0, (0, 0, HUB_A + 60), (0, -0x8000, 0), 0x0FFF)],
           [(0, 0)], exits=(), beams=beams)
+    # The wings and Rauru's sanctuary: in from the south passage, facing north
+    for name, build, z in (('sutaru', build_east, EAST['z1'] - 80), ('hairal_niwa2', build_west, WEST['z1'] - 80),
+                           ('besitu', build_rauru, RAURU_A - 80)):
+        beams = []
+        scene(files, name, build(beams), [G.actor_entry(0, (0, 0, z), (0, -0x8000, 0), 0x0FFF)], [(0, 0)],
+              exits=(), beams=beams)
+    # The props the actors draw (glowing parts tinted by the actor, as the mirror's glass)
+    props, gems = build_props()
+    glow = ('gGdfLightOrb', 'gGdfGlyph')
+    for name, B in props.items():
+        if name not in glow:
+            emit_obj(B, name, files)
+    C.material_cmds = lambda t: [c for c in plain(t) if c[3] not in (0xFA, 0xFC)] + [combine]
+    for name in glow:
+        emit_obj(props[name], name, files)
+    for i, g in enumerate(gems):
+        emit_obj(g, f'gGdfRauruGateGem{i}', files)
+    C.material_cmds = plain
     return files
 
 
