@@ -249,6 +249,203 @@ static BossGanon* sVanillaGanondorf;
 static EnGanonMant* sVanillaCape;
 static BossGanon* sPlayerGanondorf;
 static EnGanonMant* sPlayerCape;
+// SoH: his cloak's front (a second cloth over his left shoulder and down his front), the "Cloak" option
+static EnGanonMant* sGdfCloak = NULL;
+static ActorFunc sGdfCloakDraw = NULL;
+
+// ---- His cloak and hood ----
+// The Cloak option: his cape as a cloak. The cape hangs from a collar along his shoulders and across his upper back,
+// and a second cloth falls from it over his left shoulder and down his front to the middle of his chest, leaving his
+// right side open (his right arm free). Both cloths are kept out of his body: capsules on his torso, pelvis, shoulders,
+// arms, hands and legs, made from where they're drawn, so his left arm under the cloak carries it about instead of
+// passing through it. The Hood option: a hood on his head (GanondorfHood.cpp), its brim casting a dark shadow over his
+// brow and eyes (his eyes only just glowing through it); his nose and mouth below it in the light.
+static MtxF sGdfLimbWorld[25]; // (from his last draw)
+static u8 sGdfLimbWorldValid = false;
+#define GDF_CLOAK_CAPSULES 12
+static GanonMantCapsule sGdfCapsules[GDF_CLOAK_CAPSULES];
+static Vec3f sGdfCollar[GANON_MANT_NUM_STRANDS]; // along his shoulders and across his upper back
+static u8 sGdfCollarValid = false;
+
+static s32 BossGanon_Player_CloakOn(void) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Cloak"), 1) != 0;
+}
+
+static s32 BossGanon_Player_HoodOn(void) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Hood"), 1) != 0;
+}
+
+// For the hood (GanondorfHood.cpp): his face limb's matrix and the collar it drapes down to (only on his own cape: the
+// other players' Ganondorfs in Invasion have capes of the same kind)
+s32 BossGanon_Player_GetHoodFrame(EnGanonMant* cape, MtxF* head, Vec3f* collar) {
+    if ((sPlayerGanondorf == NULL) || (cape != sPlayerCape) || sPlayerGanondorf->playerHidden || !sGdfLimbWorldValid ||
+        !sGdfCollarValid) {
+        return false;
+    }
+    *head = sGdfLimbWorld[10];
+    memcpy(collar, sGdfCollar, sizeof(sGdfCollar));
+    return true;
+}
+
+static Vec3f BossGanon_Player_LimbPoint(s32 limb, f32 x) {
+    Vec3f local = { x, 0.0f, 0.0f };
+    Vec3f out;
+
+    SkinMatrix_Vec3fMtxFMultXYZ(&sGdfLimbWorld[limb], &local, &out);
+    return out;
+}
+
+static Vec3f BossGanon_Player_Bezier(Vec3f* p0, Vec3f* c, Vec3f* p2, f32 t) {
+    f32 a = (1.0f - t) * (1.0f - t);
+    f32 b = 2.0f * t * (1.0f - t);
+    f32 d = t * t;
+    Vec3f out = { a * p0->x + b * c->x + d * p2->x, a * p0->y + b * c->y + d * p2->y, a * p0->z + b * c->z + d * p2->z };
+
+    return out;
+}
+
+// Each frame (from his draw, before his cape's): the capsules, the collar, and the cloak's front
+static void BossGanon_Player_UpdateCloak(BossGanon* this) {
+    // limb, from and to along its bone, radius (model units; his mesh's, plus the cloth's thickness)
+    static const s16 sSpec[GDF_CLOAK_CAPSULES][4] = {
+        { 1, 0, 3000, 1150 },  // torso
+        { 18, 0, 1700, 1050 }, // pelvis
+        { 2, 300, 2300, 1000 }, { 3, 0, 2040, 700 }, { 4, 0, 1803, 650 }, { 5, 0, 1100, 600 }, // left arm
+        { 6, 300, 2300, 1000 }, { 7, 0, 2040, 700 },                                          // right shoulder
+        { 19, 0, 2452, 950 }, { 20, 0, 2680, 760 }, { 22, 0, 2452, 950 }, { 23, 0, 2680, 760 }, // legs
+    };
+    f32 yaw = BINANG_TO_RAD(this->actor.shape.rot.y);
+    Vec3f fwd = { sinf(yaw), 0.0f, cosf(yaw) };
+    Vec3f rs;
+    Vec3f ls;
+    Vec3f mid;
+    Vec3f c;
+    Vec3f p0;
+    Vec3f p2;
+    f32 backYaw;
+    s32 cloak = BossGanon_Player_CloakOn();
+    s32 i;
+
+    if ((this != sPlayerGanondorf) || !sGdfLimbWorldValid || (sCape == NULL)) {
+        return;
+    }
+    for (i = 0; i < GDF_CLOAK_CAPSULES; i++) {
+        MtxF* m = &sGdfLimbWorld[sSpec[i][0]];
+        f32 scale = sqrtf(SQ(m->xx) + SQ(m->yx) + SQ(m->zx));
+
+        sGdfCapsules[i].a = BossGanon_Player_LimbPoint(sSpec[i][0], sSpec[i][1]);
+        sGdfCapsules[i].b = BossGanon_Player_LimbPoint(sSpec[i][0], sSpec[i][2]);
+        sGdfCapsules[i].r = (sSpec[i][3] + 150.0f) * scale;
+    }
+
+    // The collar: from his right shoulder, behind his neck, to his left
+    rs = BossGanon_Player_LimbPoint(7, 0.0f);
+    ls = BossGanon_Player_LimbPoint(3, 0.0f);
+    rs.y += 6.0f;
+    ls.y += 6.0f;
+    mid.x = (rs.x + ls.x) * 0.5f;
+    mid.y = (rs.y + ls.y) * 0.5f;
+    mid.z = (rs.z + ls.z) * 0.5f;
+    p0 = rs;
+    p2 = ls;
+    p0.x -= fwd.x * 2.0f;
+    p0.z -= fwd.z * 2.0f;
+    p2.x -= fwd.x * 2.0f;
+    p2.z -= fwd.z * 2.0f;
+    c.x = mid.x - fwd.x * 12.0f;
+    c.y = mid.y + 3.0f;
+    c.z = mid.z - fwd.z * 12.0f;
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        sGdfCollar[i] = BossGanon_Player_Bezier(&p0, &c, &p2, i / (GANON_MANT_NUM_STRANDS - 1.0f));
+    }
+    sGdfCollarValid = true;
+    // (pushed away behind him, as the cape's own endpoints would)
+    backYaw = Math_Atan2F(p2.z - p0.z, p2.x - p0.x) - M_PI / 2.0f;
+
+    // His cape: its roots on the collar, unless it's following an arm (his cape guard, ...); his body in its way
+    sCape->rootOverride = cloak && (sCape->attachLeftArmTimer == 0.0f) && (sCape->attachRightArmTimer == 0.0f) &&
+                          (sCape->attachShouldersTimer == 0.0f);
+    if (sCape->rootOverride) {
+        memcpy(sCape->overrideRoots, sGdfCollar, sizeof(sGdfCollar));
+        sCape->overrideBaseYaw = backYaw;
+    }
+    sCape->capsules = cloak ? sGdfCapsules : NULL;
+    sCape->capsuleCount = GDF_CLOAK_CAPSULES;
+
+    // The cloak's front: from the top of his left shoulder, round over the front of it, to the middle of his chest
+    if (sGdfCloak != NULL) {
+        Vec3f chest = { mid.x + fwd.x * 15.0f, mid.y - 15.0f, mid.z + fwd.z * 15.0f };
+        Vec3f over = { ls.x + fwd.x * 12.0f, ls.y + 3.0f, ls.z + fwd.z * 12.0f };
+
+        p2 = ls;
+        for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+            sGdfCloak->overrideRoots[i] = BossGanon_Player_Bezier(&p2, &over, &chest, i / (GANON_MANT_NUM_STRANDS - 1.0f));
+        }
+        sGdfCloak->rootOverride = true;
+        sGdfCloak->overrideBaseYaw = backYaw + M_PI; // pushed away in front of him
+        sGdfCloak->capsules = sGdfCapsules;
+        sGdfCloak->capsuleCount = GDF_CLOAK_CAPSULES;
+        sGdfCloak->actor.world.pos = sCape->actor.world.pos;
+        sGdfCloak->rightForearmPos = sGdfCloak->rightShoulderPos = ls;
+        sGdfCloak->leftForearmPos = sGdfCloak->leftShoulderPos = chest;
+        sGdfCloak->attachLeftArmTimer = sGdfCloak->attachRightArmTimer = sGdfCloak->attachShouldersTimer = 0.0f;
+        sGdfCloak->backPush = sCape->backPush;
+        sGdfCloak->backSwayMagnitude = sCape->backSwayMagnitude;
+        sGdfCloak->sideSwayMagnitude = sCape->sideSwayMagnitude * 0.5f;
+        sGdfCloak->gravity = sCape->gravity;
+        sGdfCloak->minY = sCape->minY;
+        sGdfCloak->minDist = 0.0f;
+        sGdfCloak->actor.draw = (cloak && !this->playerHidden) ? sGdfCloakDraw : NULL;
+    }
+}
+
+// The shadow under his hood: a dark veil over his brow and eyes, fading out above his nose (in his face's limb: x
+// forward, y down, z across; it curves back round his face like the face does)
+static void BossGanon_Player_DrawHoodShadow(PlayState* play) {
+    enum { COLS = 7, ROWS = 5 };
+    static const f32 sTop = -980.0f;
+    static const f32 sBottom = 160.0f;
+    Vtx* v = (Vtx*)Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * COLS * ROWS);
+    s32 r;
+    s32 c;
+
+    OPEN_DISPS(play->state.gfxCtx);
+    for (r = 0; r < ROWS; r++) {
+        f32 t = r / (ROWS - 1.0f);
+        f32 y = sTop + (sBottom - sTop) * t;
+        u8 a = (u8)(235.0f * (1.0f - t * t * t)); // darkest at his brow, gone by his nose
+
+        for (c = 0; c < COLS; c++) {
+            f32 z = -720.0f + 1440.0f * c / (COLS - 1.0f);
+            f32 x = 1420.0f - SQ(z) * 0.0011f;
+            Vtx* p = &v[r * COLS + c];
+
+            p->v.ob[0] = (s16)x;
+            p->v.ob[1] = (s16)y;
+            p->v.ob[2] = (s16)z;
+            p->v.flag = 0;
+            p->v.tc[0] = p->v.tc[1] = 0;
+            p->v.cn[0] = 6;
+            p->v.cn[1] = 3;
+            p->v.cn[2] = 12;
+            p->v.cn[3] = (u8)(a * (1.0f - SQ((z) / 900.0f) * 0.6f));
+        }
+    }
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPPipeSync(POLY_XLU_DISP++);
+    gDPSetCombineLERP(POLY_XLU_DISP++, 0, 0, 0, SHADE, 0, 0, 0, SHADE, 0, 0, 0, SHADE, 0, 0, 0, SHADE);
+    gSPClearGeometryMode(POLY_XLU_DISP++, G_LIGHTING | G_CULL_BOTH | G_TEXTURE_GEN);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPVertex(POLY_XLU_DISP++, (uintptr_t)v, COLS * ROWS, 0);
+    for (r = 0; r < ROWS - 1; r++) {
+        for (c = 0; c < COLS - 1; c++) {
+            s32 i = r * COLS + c;
+            gSP2Triangles(POLY_XLU_DISP++, i, i + 1, i + COLS, 0, i + 1, i + COLS + 1, i + COLS, 0);
+        }
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 
 typedef struct {
     BossGanon* dorf;
@@ -713,6 +910,9 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
                     }
                     if (&sPlayerCape->actor == a) {
                         sPlayerCape = NULL;
+                    }
+                    if (&sGdfCloak->actor == a) {
+                        sGdfCloak = NULL;
                     }
                 }
             }
@@ -3758,6 +3958,12 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
         Matrix_Get(&sGdfLimbMtx[limbIndex - 1]);
     }
 
+    // SoH: "Play as Ganondorf", every limb where it's drawn (his cloak drapes over them; his hood sits on his head)
+    if ((this == sPlayerGanondorf) && (limbIndex >= 1) && (limbIndex <= 25)) {
+        Matrix_Get(&sGdfLimbWorld[limbIndex - 1]);
+        sGdfLimbWorldValid = true;
+    }
+
     // SoH: "Play as Ganondorf", his hands hold the sword and the sheath
     if (GDF_IS_PLAYER(this)) {
         if (limbIndex == 6) {
@@ -3793,6 +3999,10 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
                           G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
                 gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfEyesDL));
                 Matrix_Pop();
+            }
+            // SoH: "Play as Ganondorf", under his hood the shadow over his brow and eyes
+            if ((this == sPlayerGanondorf) && BossGanon_Player_HoodOn()) {
+                BossGanon_Player_DrawHoodShadow(play);
             }
         }
 
@@ -4389,6 +4599,9 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
 
     sCape->rightShoulderPos = this->unk_22C;
     sCape->leftShoulderPos = this->unk_238;
+    if (GDF_IS_PLAYER(this)) {
+        BossGanon_Player_UpdateCloak(this); // (his cloak and the collar his hood drapes to)
+    }
 
     BossGanon_DrawShock(this, play);
     BossGanon_DrawHandLightBall(this, play);
@@ -8445,7 +8658,7 @@ static const f32 sGdfPgFoot[3][3] = { { 0, 0, 1 }, { 0, -1, 0 }, { 1, 0, 0 } };
 static const Vec3s sGdfPgSpearRot = { 16286, -16384, 16286 };
 
 s32 BossGanon_Player_IsPhantom(void) {
-    return CVarGetInteger(CVAR_PLAY_AS_GDF("PhantomGanon"), 0) != 0;
+    return false; // (the Phantom Ganon skin is set aside for now: 8 Nov 2026)
 }
 
 // A trident in his hands (the weapon menu): the spear's moveset (the combo ends in a stab) and no sheath
@@ -11132,6 +11345,14 @@ void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
     }
     sCape->actor.room = -1;
     sPlayerCapeDraw = sCape->actor.draw;
+    // His cloak's front (drawn while the Cloak option is on)
+    sGdfCloak = (EnGanonMant*)Actor_SpawnAsChild(&play->actorCtx, thisx, play, ACTOR_EN_GANON_MANT, 0.0f, 0.0f, 0.0f,
+                                                 0, 0, 0, PLAYER_GANONDORF_CLOAK_PARAMS);
+    if (sGdfCloak != NULL) {
+        sGdfCloak->actor.room = -1;
+        sGdfCloakDraw = sGdfCloak->actor.draw;
+        sGdfCloak->actor.draw = NULL;
+    }
 
     // Ganondorf goes in front of his cape in the update and draw order, like in the vanilla init.
     // MISC also isn't affected by things that freeze or look for bosses: his cape goes there too (first, so it stays
@@ -12291,6 +12512,9 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     this->playerHidden = BossGanon_Player_ShouldHide(this, play) || GdfInvasion_IsVanished();
     if (sCape->actor.update != NULL) {
         sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
+    }
+    if ((sGdfCloak != NULL) && (sGdfCloak->actor.update != NULL) && this->playerHidden) {
+        sGdfCloak->actor.draw = NULL; // (shown again from his draw)
     }
 
     // Track how long the attack button is held (to charge Big Magic)

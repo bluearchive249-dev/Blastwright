@@ -2247,10 +2247,26 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Min(30.0f).Max(150.0f).DefaultValue(70.0f).Format("%.0f").Tooltip(
             "How high Ganondorf floats above the ground. He floats at 150 in his boss fight."));
+    AddWidget(path, "Cloak", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Cloak"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "His cape as a cloak: it hangs from his shoulders and falls over his left shoulder and down his front, "
+            "leaving his right arm free. It drapes over his body and his left arm carries it as it moves."));
+    AddWidget(path, "Hood", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.Hood"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "A hood of his cape's cloth. Its shadow falls over his brow and eyes; his nose and mouth stay in the "
+            "light."));
     AddWidget(path, "Phantom Ganon Skin", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"))
         .PreFunc([](WidgetInfo& info) {
-            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.isHidden = true; // (set aside for now)
         })
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Play as Phantom Ganon: his model, his spear and his voice, with Ganondorf's cape in black and gray, "

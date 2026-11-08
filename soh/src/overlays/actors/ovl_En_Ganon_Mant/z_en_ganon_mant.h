@@ -16,6 +16,16 @@ struct EnGanonMant;
 // SoH: params value used for the cape of the player-controlled Ganondorf ("Play as Ganondorf"). It has its own
 // vertex buffers, so it can be on screen together with the real Ganondorf's cape.
 #define PLAYER_GANONDORF_CAPE_PARAMS 0x4744
+// SoH: the player-controlled Ganondorf's cloak: a second cloth that falls over his left shoulder and down his front
+// (z_boss_ganon.c sets its roots, its push and the shapes of his body it drapes over every frame)
+#define PLAYER_GANONDORF_CLOAK_PARAMS 0x4746
+
+// SoH: a part of his body the cloth can't pass through: a capsule from a to b, of radius r (world units)
+typedef struct {
+    Vec3f a;
+    Vec3f b;
+    f32 r;
+} GanonMantCapsule;
 
 typedef struct {
     /* 0x000 */ Vec3f root;                              // root position along the collar
@@ -52,6 +62,16 @@ typedef struct EnGanonMant {
     f32 velocityClamp; // per-axis velocity clamp override, 0 = vanilla (5.0)
     Vec3f anchor;      // origin the vertex buffer is stored relative to (Link mode only)
     u8 ownVertices;    // SoH: uses its own vertex buffers instead of the shared gMant1Vtx/gMant2Vtx
+    // SoH: the player-controlled Ganondorf's cloak (both cloths): roots and push direction set from outside, and his
+    // body as capsules the cloth is kept out of
+    u8 rootOverride;
+    Vec3f overrideRoots[GANON_MANT_NUM_STRANDS];
+    f32 overrideBaseYaw;
+    const GanonMantCapsule* capsules;
+    s16 capsuleCount;
 } EnGanonMant;
+
+// SoH: the player-controlled Ganondorf's hood, drawn with his cape (z_boss_ganon.c / GanondorfHood.cpp); null if off
+void* GanondorfHood_Build(EnGanonMant* cape, PlayState* play);
 
 #endif

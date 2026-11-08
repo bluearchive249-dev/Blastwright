@@ -153,23 +153,26 @@ static s32 EnGanonMant_BuildPhantomTex(void) {
 // SoH: double-buffered vertices for the cape that owns them (only the player-controlled Ganondorf's cape).
 // Filled from the shared buffers once so texture coordinates and colors match.
 #define GANON_MANT_NUM_VTX 144
-static Vtx sOwnVertices[2][GANON_MANT_NUM_VTX];
-static u8 sOwnVerticesReady = false;
+// (A set each: his cape, and his cloak's front)
+static Vtx sOwnVertices[2][2][GANON_MANT_NUM_VTX];
+static u8 sOwnVerticesReady[2] = { false, false };
 
 static Vtx* EnGanonMant_GetOwnVertices(EnGanonMant* this) {
-    if (!sOwnVerticesReady) {
+    s32 set = (this->actor.params == PLAYER_GANONDORF_CLOAK_PARAMS) ? 1 : 0;
+
+    if (!sOwnVerticesReady[set]) {
         Vtx* src1 = ResourceMgr_LoadVtxByName(SEGMENTED_TO_VIRTUAL(gMant1Vtx));
         Vtx* src2 = ResourceMgr_LoadVtxByName(SEGMENTED_TO_VIRTUAL(gMant2Vtx));
 
         if ((src1 == NULL) || (src2 == NULL)) {
             return NULL;
         }
-        memcpy(sOwnVertices[0], src1, sizeof(sOwnVertices[0]));
-        memcpy(sOwnVertices[1], src2, sizeof(sOwnVertices[1]));
-        sOwnVerticesReady = true;
+        memcpy(sOwnVertices[set][0], src1, sizeof(sOwnVertices[set][0]));
+        memcpy(sOwnVertices[set][1], src2, sizeof(sOwnVertices[set][1]));
+        sOwnVerticesReady[set] = true;
     }
 
-    return sOwnVertices[(this->frameTimer % 2 != 0) ? 0 : 1];
+    return sOwnVertices[set][(this->frameTimer % 2 != 0) ? 0 : 1];
 }
 
 void EnGanonMant_Init(Actor* thisx, PlayState* play) {
@@ -182,7 +185,7 @@ void EnGanonMant_Init(Actor* thisx, PlayState* play) {
         this->needsReset = true;
     }
 
-    if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
+    if ((this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) || (this->actor.params == PLAYER_GANONDORF_CLOAK_PARAMS)) {
         this->ownVertices = true;
     }
 
@@ -339,6 +342,49 @@ void EnGanonMant_UpdateStrand(PlayState* play, EnGanonMant* this, Vec3f* root, V
                 Matrix_MultVec3f(&delta, &posStep);
                 pos->x = this->actor.world.pos.x + posStep.x;
                 pos->z = this->actor.world.pos.z + posStep.z;
+            }
+
+            // SoH: his body (the player-controlled Ganondorf's cloak): out of every capsule, so his torso and arms
+            // carry the cloth instead of passing through it
+            if (this->capsules != NULL) {
+                s16 c;
+
+                for (c = 0; c < this->capsuleCount; c++) {
+                    const GanonMantCapsule* cap = &this->capsules[c];
+                    f32 abx = cap->b.x - cap->a.x;
+                    f32 aby = cap->b.y - cap->a.y;
+                    f32 abz = cap->b.z - cap->a.z;
+                    f32 len2 = SQ(abx) + SQ(aby) + SQ(abz);
+                    f32 t = 0.0f;
+                    f32 dx;
+                    f32 dy;
+                    f32 dz;
+                    f32 d;
+
+                    if (len2 > 0.0001f) {
+                        t = ((pos->x - cap->a.x) * abx + (pos->y - cap->a.y) * aby + (pos->z - cap->a.z) * abz) / len2;
+                        t = CLAMP(t, 0.0f, 1.0f);
+                    }
+                    dx = pos->x - (cap->a.x + abx * t);
+                    dy = pos->y - (cap->a.y + aby * t);
+                    dz = pos->z - (cap->a.z + abz * t);
+                    d = sqrtf(SQ(dx) + SQ(dy) + SQ(dz));
+                    if (d < cap->r) {
+                        if (d < 0.001f) {
+                            // (right on the bone: out the way the strand hangs from its root)
+                            dx = pos->x - root->x;
+                            dy = 0.0f;
+                            dz = pos->z - root->z;
+                            d = sqrtf(SQ(dx) + SQ(dz));
+                            if (d < 0.001f) {
+                                continue;
+                            }
+                        }
+                        pos->x = (cap->a.x + abx * t) + dx / d * cap->r;
+                        pos->y = (cap->a.y + aby * t) + dy / d * cap->r;
+                        pos->z = (cap->a.z + abz * t) + dz / d * cap->r;
+                    }
+                }
             }
 
             // Enforces minY constraint
@@ -518,6 +564,16 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     // draw cloak
     gSPDisplayList(POLY_OPA_DISP++, gMantDL);
 
+    if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
+        // SoH: the player-controlled Ganondorf's hood, the same way as Link's
+        void* hoodVtx = GanondorfHood_Build(this, play);
+
+        if (hoodVtx != NULL) {
+            gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
+            gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+        }
+    }
+
     if (this->isLinkCape) {
         // SoH: Link's hood, same material and grid as the cloak, sharing its top edge
         void* hoodVtx = LinkGanonCape_BuildHood(this, play);
@@ -593,6 +649,10 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
         Matrix_RotateY(yaw, MTXMODE_NEW);
         Matrix_RotateX(pitch, MTXMODE_APPLY);
         this->baseYaw = yaw - M_PI / 2.0f;
+        // SoH: the player-controlled Ganondorf's cloak: its push from outside
+        if (this->rootOverride) {
+            this->baseYaw = this->overrideBaseYaw;
+        }
 
         if (this->ownVertices) {
             this->anchor = midpoint;
@@ -637,6 +697,11 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
             this->strands[strandIdx].root.x = midpoint.x + strandDivPos.x;
             this->strands[strandIdx].root.y = midpoint.y + strandDivPos.y;
             this->strands[strandIdx].root.z = midpoint.z + strandDivPos.z;
+            // SoH: the player-controlled Ganondorf's cloak: its roots from outside (along his shoulders, or over his
+            // left shoulder and down his front)
+            if (this->rootOverride) {
+                this->strands[strandIdx].root = this->overrideRoots[strandIdx];
+            }
 
             nextStrandIdx = strandIdx + 1;
             if (nextStrandIdx >= GANON_MANT_NUM_STRANDS) {
