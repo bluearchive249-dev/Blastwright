@@ -484,10 +484,13 @@ void EnBox_Open(EnBox* this, PlayState* play) {
     } else {
         sfxId = 0;
 
-        // SoH: "Play as Ganondorf", he kicks the chest open: the lid bursts open on his kick, in a cloud of dust
-        if ((this->unk_1F4 > 0) && PlayAsGanondorf_ShouldKickDoors() &&
-            Animation_OnFrame(&this->skelanime, EN_BOX_GDF_KICK_FRAME)) {
-            this->skelanime.playSpeed = 4.0f;
+        // SoH: "Play as Ganondorf", he kicks a small chest open: the lid bursts open on his kick, in a cloud of dust
+        // (a big one he lifts open by the lid, as it opens)
+        if ((this->unk_1F4 != 0) && PlayAsGanondorf_ShouldKickDoors() && EnBox_GdfKicks(this) &&
+            Animation_OnFrame(&this->skelanime, EnBox_GdfKickFrame(this))) {
+            if (this->unk_1F4 > 0) {
+                this->skelanime.playSpeed = 4.0f;
+            }
             EnBox_SpawnDust(this, play);
             Actor_RequestQuakeAndRumble(&this->dyna.actor, play, 3, 8);
             Audio_PlaySfxGeneral(NA_SE_IT_HAMMER_HIT, &this->dyna.actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,

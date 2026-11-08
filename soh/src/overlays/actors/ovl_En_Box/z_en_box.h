@@ -49,9 +49,19 @@ typedef struct EnBox {
     /*        */ GetItemEntry getItemEntry; // This is only to determine the Chest Style, randomzier item gives are handled elsewhere
     /*        */ Gfx* boxLidDL;
     /*        */ Gfx* boxBodyDL;
-} EnBox; // size = 0x01FC
+} EnBox;
 
-// SoH: "Play as Ganondorf", the animation frame where his kick lands and the lid bursts open
-#define EN_BOX_GDF_KICK_FRAME 86.0f
+// SoH: "Play as Ganondorf". Small chests he kicks open (big ones and boss key chests he heaves open by the lid), and
+// the animation frame his foot lands on and the lid bursts open: the quick opening's lid pops at 28; the slow one's
+// (a small chest holding something new) at 86, where it would be pushed open
+static inline s32 EnBox_GdfKicks(EnBox* this) {
+    return (this->unk_1F4 < 0) || (this->type == ENBOX_TYPE_SMALL) || (this->type == ENBOX_TYPE_6) ||
+           (this->type == ENBOX_TYPE_ROOM_CLEAR_SMALL) || (this->type == ENBOX_TYPE_SWITCH_FLAG_FALL_SMALL);
+}
+static inline f32 EnBox_GdfKickFrame(EnBox* this) {
+    return (this->unk_1F4 < 0) ? 28.0f : 86.0f;
+} // size = 0x01FC
+
+
 
 #endif
