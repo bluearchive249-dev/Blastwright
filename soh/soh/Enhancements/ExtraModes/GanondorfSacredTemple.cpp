@@ -19,6 +19,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "soh/ShipInit.hpp"
+#include "soh/frame_interpolation.h"
 #include "soh/ActorDB.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/cvar_prefixes.h"
