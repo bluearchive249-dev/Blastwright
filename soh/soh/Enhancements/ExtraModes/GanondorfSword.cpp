@@ -53,17 +53,22 @@ void BeginMaterial(std::vector<Gfx>& dl) {
     p = g;
     gDPSetCombineLERP(p++, PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE, PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE);
     dl.push_back(g[0]);
+    // Two cycles, the first blending in the distance fog (without it, far off in a fogged area the blade stood out at
+    // full brightness). The combiner reads no texels, so the second cycle is safe.
     p = g;
-    gDPSetRenderMode(p++, G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2);
+    gDPSetCycleType(p++, G_CYC_2CYCLE);
+    dl.push_back(g[0]);
+    p = g;
+    gDPSetRenderMode(p++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_OPA_SURF2);
     dl.push_back(g[0]);
     p = g;
     gSPTexture(p++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF);
     dl.push_back(g[0]);
     p = g;
-    gSPClearGeometryMode(p++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_CULL_BOTH | G_FOG);
+    gSPClearGeometryMode(p++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_CULL_BOTH);
     dl.push_back(g[0]);
     p = g;
-    gSPSetGeometryMode(p++, G_ZBUFFER | G_SHADE | G_LIGHTING | G_SHADING_SMOOTH);
+    gSPSetGeometryMode(p++, G_ZBUFFER | G_SHADE | G_LIGHTING | G_SHADING_SMOOTH | G_FOG);
     dl.push_back(g[0]);
 }
 

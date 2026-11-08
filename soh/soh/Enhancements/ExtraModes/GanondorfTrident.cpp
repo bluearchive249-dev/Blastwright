@@ -186,9 +186,11 @@ bool ReadFile() {
         s32 maskT = Log2(h);
 
         Emit(t.dl, [&](Gfx*& p) { gDPPipeSync(p++); });
-        // One cycle, no palette: he's drawn in two-cycle mode, where the second cycle's TEXEL0 is really the second
-        // tile, which still held whatever texture the scene loaded last (the moss and grass the tridents showed)
-        Emit(t.dl, [&](Gfx*& p) { gDPSetCycleType(p++, G_CYC_1CYCLE); });
+        // Two cycles, the first blending in the distance fog. (The second cycle's TEXEL0 is really the second tile,
+        // which still holds whatever texture the scene loaded last: the moss and grass the tridents once showed. So
+        // the combiner's second cycle only passes on the first's result, and never reads a texel.) In one cycle,
+        // as it was drawn until 8 Nov, it had no fog: far off in a fogged area it stood out at full brightness.
+        Emit(t.dl, [&](Gfx*& p) { gDPSetCycleType(p++, G_CYC_2CYCLE); });
         Emit(t.dl, [&](Gfx*& p) { gDPSetTextureLUT(p++, G_TT_NONE); });
         Emit(t.dl, [&](Gfx*& p) { gDPSetTextureLOD(p++, G_TL_TILE); });
         // Textured and shaded (its own baked light); texels with little alpha are cut out (the feathers)
@@ -196,13 +198,13 @@ bool ReadFile() {
             gDPSetCombineLERP(p++, TEXEL0, 0, SHADE, 0, 0, 0, 0, TEXEL0, COMBINED, 0, PRIMITIVE, 0, 0, 0, 0, COMBINED);
         });
         Emit(t.dl, [&](Gfx*& p) { gDPSetPrimColor(p++, 0, 0, 255, 255, 255, 255); });
-        Emit(t.dl, [&](Gfx*& p) { gDPSetRenderMode(p++, G_RM_AA_ZB_TEX_EDGE, G_RM_AA_ZB_TEX_EDGE2); });
+        Emit(t.dl, [&](Gfx*& p) { gDPSetRenderMode(p++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_TEX_EDGE2); });
         Emit(t.dl, [&](Gfx*& p) { gSPTexture(p++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON); });
         Emit(t.dl, [&](Gfx*& p) {
-            gSPClearGeometryMode(p++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_CULL_BOTH | G_FOG);
+            gSPClearGeometryMode(p++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_CULL_BOTH);
         });
         Emit(t.dl, [&](Gfx*& p) { gSPClearGeometryMode(p++, G_LIGHTING); });
-        Emit(t.dl, [&](Gfx*& p) { gSPSetGeometryMode(p++, G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH); });
+        Emit(t.dl, [&](Gfx*& p) { gSPSetGeometryMode(p++, G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH | G_FOG); });
         // A tile load: a block load stops at 4096 texels (the N64's texture memory), far less than the texture
         Emit(t.dl, [&](Gfx*& p) {
             gDPLoadTextureTile(p++, tex, G_IM_FMT_RGBA, G_IM_SIZ_16b, w, h, 0, 0, w - 1, h - 1, 0,
