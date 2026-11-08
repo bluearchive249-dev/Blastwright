@@ -24,6 +24,11 @@ extern CutsceneData D_808BB2F0[];
 extern CutsceneData D_808BB7A0[];
 extern CutsceneData D_808BBD90[];
 
+// SoH: "Play as Ganondorf" (z_boss_ganon.c): he kicked the sword into the wall as a child, and calls it back to drive
+// it into the pedestal himself when it's put back
+void GdfSwd_OnReturnStart(void);
+s32 GdfSwd_OnPlaced(void);
+
 const ActorInit Bg_Toki_Swd_InitVars = {
     ACTOR_BG_TOKI_SWD,
     ACTORCAT_PROP,
@@ -136,6 +141,7 @@ void func_808BAF40(BgTokiSwd* this, PlayState* play) {
                 Entrance_SetEntranceDiscovered(ENTR_HYRULE_FIELD_10, false);
             } else {
                 play->csCtx.segment = D_808BB7A0;
+                GdfSwd_OnReturnStart();
 
                 // Discover child spawn
                 Entrance_SetEntranceDiscovered(ENTR_LINKS_HOUSE_CHILD_SPAWN, false);
@@ -170,7 +176,8 @@ void func_808BB0AC(BgTokiSwd* this, PlayState* play) {
             Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PUTAWAY_STN);
             this->actor.draw = NULL; // sword has been pulled, dont draw sword
         } else {
-            this->actor.draw = BgTokiSwd_Draw; // sword has been placed, draw the master sword
+            // sword has been placed, draw the master sword (SoH: unless Ganondorf is still driving it in)
+            this->actor.draw = GdfSwd_OnPlaced() ? NULL : BgTokiSwd_Draw;
         }
         BgTokiSwd_SetupAction(this, func_808BB128);
     } else {
