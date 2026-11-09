@@ -4746,9 +4746,10 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
         static Vec3f sLocalL;
         static u8 sLocalValid = false;
         MtxF inv;
-        f32 w = this->playerWalkWeight;
+        // (the walk keeps it well as it is: by how much he runs or sprints)
+        f32 w = MIN(sGdfCapeRunLift, this->playerWalkWeight);
 
-        if ((w < 0.02f) && this->playerGrounded && (this->actionFunc == BossGanon_Player_Float)) {
+        if ((this->playerWalkWeight < 0.02f) && this->playerGrounded && (this->actionFunc == BossGanon_Player_Float)) {
             if (SkinMatrix_Invert(&sGdfLimbWorld[1], &inv) == 0) {
                 SkinMatrix_Vec3fMtxFMultXYZ(&inv, &sCape->rightForearmPos, &sLocalR);
                 SkinMatrix_Vec3fMtxFMultXYZ(&inv, &sCape->leftForearmPos, &sLocalL);
