@@ -143,6 +143,11 @@ static void TSet(PlayState* play, s32 f) {
 static bool sPlainChamber = false;
 
 extern "C" s32 GdfSacred_PlainChamber(s16 entrance) {
+    // (also the Goddesses' Spring: its debug scene has one entrance, not one for each age and time of day, and an
+    // adult's or night's layer read the next entrance on, the Bazaar's)
+    if (gEntranceTable[entrance].scene == SPRING_SCENE) {
+        return true;
+    }
     return sPlainChamber && (gEntranceTable[entrance].scene == SAGES_SCENE);
 }
 
