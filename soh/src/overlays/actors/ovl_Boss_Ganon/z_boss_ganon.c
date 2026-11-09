@@ -265,6 +265,8 @@ static ActorFunc sGdfCapeletDraw = NULL;
 // passing through it. The Hood option: a hood on his head (GanondorfHood.cpp), its brim casting a dark shadow over his
 // brow and eyes (his eyes only just glowing through it); his nose and mouth below it in the light.
 static MtxF sGdfLimbWorld[25]; // (from his last draw)
+static f32 sGdfCapeRunLift = 0.0f; // how much he's running (0 to 1, see UpdateWalk): his cape's hold rises with it
+#define GDF_CAPE_RUN_LIFT 7.0f
 // His torso where it's drawn (this draw, before his hair), and his hair kept off his collar (see HairOverride)
 static MtxF sGdfHairTorso;
 static u8 sGdfHairTorsoValid = false;
@@ -4734,6 +4736,13 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
 
     sCape->rightForearmPos = this->unk_214;
     sCape->leftForearmPos = this->unk_220;
+    // SoH: "Play as Ganondorf", running (the stick run and the sprint swing his arms, and the cape hung from them sank
+    // down his back): its hold a little higher while he runs
+    if (this == sPlayerGanondorf) {
+        sCape->rightForearmPos.y += GDF_CAPE_RUN_LIFT * sGdfCapeRunLift;
+        sCape->leftForearmPos.y += GDF_CAPE_RUN_LIFT * sGdfCapeRunLift;
+        sGdfCapeRunLift *= 0.9f; // (set again each frame he walks; settles back otherwise)
+    }
 
     sCape->rightShoulderPos = this->unk_22C;
     sCape->leftShoulderPos = this->unk_238;
@@ -7292,6 +7301,11 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
                                    17.0f + phase * ARRAY_COUNT(sGdfClipSprint), true, runWeight, 1.0f);
     }
     BossGanon_Player_FeetAhead(this, this->playerWalkWeight);
+    sGdfCapeRunLift =
+        this->playerWalkWeight * MAX(this->playerSprintWeight,
+                                     (BossGanon_Player_InTridentStance() || BossGanon_Player_MixamoWalkBack(play, speed))
+                                         ? 0.0f
+                                         : 1.0f - BossGanon_Player_TridentWalkAmount(speed));
 }
 
 // Keeps his lowest ankle or knee at the floor (from the last draw), so any animation stands on the ground. Knees
