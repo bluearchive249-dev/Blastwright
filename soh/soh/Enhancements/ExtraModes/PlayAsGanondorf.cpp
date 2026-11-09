@@ -863,10 +863,18 @@ extern "C" u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId) {
 #define GDF_CS_CAM_CHILD_HEIGHT 44.0f
 #define GDF_CS_CAM_NEAR 120.0f // a focus this close to Link: a shot of him
 #define GDF_CS_CAM_FAR 260.0f  // this far: of something else
+extern "C" s32 BossGanon_Player_SwdKickView(PlayState* play, Vec3f* eye, Vec3f* at);
+
 extern "C" s32 PlayAsGanondorf_AdjustCutsceneView(Camera* camera, Vec3f* eye, Vec3f* at) {
     PlayState* play = camera->play;
     Player* player = (play != NULL) ? GET_PLAYER(play) : NULL;
     f32 lift = CVarGetFloat(CVAR_PLAY_AS_GDF("CutsceneCameraLift"), 1.0f);
+
+    // The Master Sword kicked into the wall: a shot of it flying there (z_boss_ganon.c)
+    if ((play != NULL) && IsEnabled() && (camera->thisIdx == play->activeCamera) &&
+        BossGanon_Player_SwdKickView(play, eye, at)) {
+        return true;
+    }
 
     if ((player == NULL) || LINK_IS_ADULT || (lift <= 0.0f) || !CVarGetInteger(CVAR_PLAY_AS_GDF("CutsceneCamera"), 1) ||
         !ShouldHideLink(play, player) || (player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON)) {

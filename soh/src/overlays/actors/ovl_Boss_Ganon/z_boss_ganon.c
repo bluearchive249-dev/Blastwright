@@ -269,6 +269,7 @@ static MtxF sGdfLimbWorld[25]; // (from his last draw)
 static MtxF sGdfHairTorso;
 static u8 sGdfHairTorsoValid = false;
 static void BossGanon_Player_HairOverride(BossGanon* this, Vec3s* rot);
+static void BossGanon_Player_SwdKeepBack(PlayState* play, Vec3f* target);
 // First person (C-Up): his body stays, seen from his eyes, with his head left out (the view is from inside it)
 static u8 sGdfFpBodyQuery = false;
 static s32 BossGanon_Player_FpBodyOn(void) {
@@ -7522,6 +7523,7 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
     target.x = player->actor.world.pos.x;
     target.y = player->actor.world.pos.y + BossGanon_Player_GetHeightAboveLink(this);
     target.z = player->actor.world.pos.z;
+    BossGanon_Player_SwdKeepBack(play, &target);
 
     dx = target.x - this->actor.world.pos.x;
     dy = target.y - this->actor.world.pos.y;
@@ -9842,6 +9844,10 @@ static Vec3f sGdfSwdWall; // lodged
 static Vec3f sGdfSwdHit;     // where its blade went into the wall, and the wall's way out there (the crack and smoke)
 static Vec3f sGdfSwdHitNormal;
 static u8 sGdfSwdCracked = false;
+// The shot of it flying into the wall: frames since the kick began (-1: none)
+static s16 sGdfSwdShow = -1;
+#define GDF_SWD_SHOW_FRAMES (GDF_SWD_KICK_CONTACT + GDF_SWD_FLIGHT + 34)
+#define GDF_SWD_STAND_DIST 48.0f // he kicks from this far from the stone (Link stands close; the kick reaches out)
 static f32 sGdfSwdKickClip = -1.0f;
 static Vec3s sGdfSwdWallRot;
 static f32 sGdfSwdFlightVy; // the kick's flight: its first upward speed
@@ -9956,6 +9962,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
         sGdfSwdState = GDF_SWD_NONE;
         sGdfSwdWasDrawn = sGdfSwdReturn = sGdfSwdPlaced = false;
         sGdfSwdCracked = false;
+        sGdfSwdShow = -1;
         sGdfSwdArms = 0.0f;
         return;
     }
@@ -9971,6 +9978,10 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
         return;
     }
     BossGanon_Player_SwdStonePose(swd, &stone, &stoneRot);
+
+    if (sGdfSwdShow >= 0) {
+        sGdfSwdShow = (sGdfSwdShow < GDF_SWD_SHOW_FRAMES) ? (sGdfSwdShow + 1) : -1;
+    }
 
     // The kick's last frames (he steps back) after the sword is in the wall
     if ((sGdfSwdState != GDF_SWD_KICK) && (sGdfSwdKickClip >= 0.0f)) {
@@ -10008,6 +10019,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
                     sGdfSwdWasDrawn = false;
                     sGdfSwdState = GDF_SWD_KICK;
                     sGdfSwdTimer = 0;
+                    sGdfSwdShow = 0;
                     sGdfSwdPos = stone;
                     sGdfSwdRot = stoneRot;
                     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
@@ -10065,7 +10077,24 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
                     sGdfSwdRot = sGdfSwdWallRot;
                     sGdfSwdState = GDF_SWD_LODGED;
                     sGdfSwdCracked = true;
-                    BossGanon_Player_SwdImpact(this, play, &tip, 4);
+                    BossGanon_Player_SwdImpact(this, play, &tip, 7); // a boom that shakes the temple
+                    Audio_PlayActorSound2(swd, NA_SE_IT_BOMB_EXPLOSION);
+                    {
+                        static Color_RGBA8 sPrim = { 170, 165, 155, 255 };
+                        static Color_RGBA8 sEnv = { 100, 95, 90, 255 };
+                        static Vec3f sZero = { 0.0f, 0.0f, 0.0f };
+                        s32 k;
+
+                        for (k = 0; k < 12; k++) {
+                            Vec3f p = { tip.x + Rand_CenteredFloat(14.0f), tip.y + Rand_CenteredFloat(14.0f),
+                                        tip.z + Rand_CenteredFloat(14.0f) };
+                            Vec3f v = { sGdfSwdHitNormal.x * 2.0f + Rand_CenteredFloat(2.0f),
+                                        Rand_CenteredFloat(2.0f) + 0.5f,
+                                        sGdfSwdHitNormal.z * 2.0f + Rand_CenteredFloat(2.0f) };
+
+                            EffectSsDust_Spawn(play, 0, &p, &v, &sZero, &sPrim, &sEnv, 60, 20, 20, 0);
+                        }
+                    }
                     Audio_PlayActorSound2(swd, NA_SE_IT_ARROW_STICK_OBJ);
                     Audio_PlayActorSound2(swd, NA_SE_IT_WALL_HIT_HARD);
                 }
@@ -10250,6 +10279,82 @@ void BossGanon_Player_DrawMasterSword(BossGanon* this, PlayState* play) {
     gSPDisplayList(POLY_OPA_DISP++, object_toki_objects_DL_001BD0);
     Matrix_Pop();
     CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// The pull: he stands back from the stone, so his kick reaches the hilt (Link steps right up to it)
+static void BossGanon_Player_SwdKeepBack(PlayState* play, Vec3f* target) {
+    f32 dx;
+    f32 dz;
+    f32 d;
+
+    if ((play->sceneNum != SCENE_TEMPLE_OF_TIME) || (sGdfSwd == NULL) || LINK_IS_ADULT ||
+        ((play->csCtx.state == CS_STATE_IDLE) && (sGdfSwdShow < 0))) {
+        return;
+    }
+    dx = target->x - sGdfSwd->world.pos.x;
+    dz = target->z - sGdfSwd->world.pos.z;
+    d = sqrtf(SQ(dx) + SQ(dz));
+    if ((d < GDF_SWD_STAND_DIST) && (d > 1.0f) && (d < 150.0f)) {
+        target->x = sGdfSwd->world.pos.x + dx / d * GDF_SWD_STAND_DIST;
+        target->z = sGdfSwd->world.pos.z + dz / d * GDF_SWD_STAND_DIST;
+    }
+}
+
+// The cutscene's camera while the sword flies (PlayAsGanondorf_AdjustCutsceneView): from the side of its flight, the
+// pedestal, him and the wall all in view, until a moment after it's in the wall. Eased in and out of the cutscene's
+// own shot.
+s32 BossGanon_Player_SwdKickView(PlayState* play, Vec3f* eye, Vec3f* at) {
+    Vec3f s;
+    Vec3f m;
+    Vec3f want;
+    Vec3f hit;
+    CollisionPoly* poly;
+    s32 bgId;
+    f32 lx;
+    f32 lz;
+    f32 len;
+    f32 side;
+    f32 dist;
+    f32 w;
+
+    if ((sGdfSwdShow < 0) || (sGdfSwd == NULL) || (play->sceneNum != SCENE_TEMPLE_OF_TIME)) {
+        return false;
+    }
+    w = MIN(sGdfSwdShow / 6.0f, 1.0f) * CLAMP((GDF_SWD_SHOW_FRAMES - sGdfSwdShow) / 8.0f, 0.0f, 1.0f);
+    w = w * w * (3.0f - 2.0f * w);
+    if (w <= 0.0f) {
+        return false;
+    }
+    s.x = sGdfSwd->world.pos.x;
+    s.y = sGdfSwd->world.pos.y + GDF_SWD_LIFT;
+    s.z = sGdfSwd->world.pos.z;
+    lx = sGdfSwdHit.x - s.x;
+    lz = sGdfSwdHit.z - s.z;
+    len = MAX(sqrtf(SQ(lx) + SQ(lz)), 1.0f);
+    lx /= len;
+    lz /= len;
+    m.x = (s.x + sGdfSwdHit.x) * 0.5f;
+    m.y = (s.y + sGdfSwdHit.y) * 0.5f + 10.0f;
+    m.z = (s.z + sGdfSwdHit.z) * 0.5f;
+    // On the side the cutscene's camera was already on
+    side = (((eye->x - m.x) * -lz) + ((eye->z - m.z) * lx) >= 0.0f) ? 1.0f : -1.0f;
+    dist = MAX(len * 0.8f, 220.0f);
+    want.x = m.x - lz * side * dist - lx * len * 0.25f;
+    want.y = m.y + 70.0f;
+    want.z = m.z + lx * side * dist - lz * len * 0.25f;
+    // (not through the temple's walls)
+    if (BgCheck_EntityLineTest1(&play->colCtx, &m, &want, &hit, &poly, true, true, true, true, &bgId)) {
+        want.x = hit.x + (m.x - hit.x) * 0.12f;
+        want.y = hit.y + (m.y - hit.y) * 0.12f;
+        want.z = hit.z + (m.z - hit.z) * 0.12f;
+    }
+    eye->x += (want.x - eye->x) * w;
+    eye->y += (want.y - eye->y) * w;
+    eye->z += (want.z - eye->z) * w;
+    at->x += (m.x - at->x) * w;
+    at->y += (m.y - at->y) * w;
+    at->z += (m.z - at->z) * w;
+    return true;
 }
 
 // Drawn by the pedestal's own actor (z_bg_toki_swd.c), not from his draw: it stays in the wall while he's hidden (in
