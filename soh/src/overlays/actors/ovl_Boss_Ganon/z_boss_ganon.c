@@ -11985,6 +11985,11 @@ void BossGanon_Player_Init(BossGanon* this, PlayState* play) {
     this->playerOrganSink = GDF_ORGAN_SINK_DEPTH;
     this->triforceType = GDF_TRIFORCE_DORF;
     BossGanon_Player_ManhuntSceneChange(play);
+    // A new area: standing on his feet at once (his ground offset started at 0, his idle's root far above that, and
+    // he rose out of the floor over the first frames: sunk to his shoulders by the doorway as he came in)
+    this->playerGrounded = CVarGetInteger(CVAR_PLAY_AS_GDF("WalkOnGround"), 1) && !PlayAsGanondorf_IsLevitating();
+    this->playerGroundOffset = sGdfStandOffsetValid ? sGdfStandOffset : 45.0f;
+    sGdfFastGroundTimer = 16; // (then from his pose, at once)
     BossGanon_Player_SnapToLink(this, play);
     BossGanon_Player_UpdateAim(this, play);
     this->playerAimYaw = this->actor.yawTowardsPlayer;
