@@ -267,6 +267,7 @@ static ActorFunc sGdfCapeletDraw = NULL;
 static MtxF sGdfLimbWorld[25]; // (from his last draw)
 static f32 sGdfCapeRunLift = 0.0f; // how much he's running (0 to 1, see UpdateWalk): his cape's hold rises with it
 #define GDF_CAPE_RUN_LIFT 7.0f
+void BossGanon_Player_Float(BossGanon* this, PlayState* play);
 // His torso where it's drawn (this draw, before his hair), and his hair kept off his collar (see HairOverride)
 static MtxF sGdfHairTorso;
 static u8 sGdfHairTorsoValid = false;
@@ -4736,12 +4737,36 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
 
     sCape->rightForearmPos = this->unk_214;
     sCape->leftForearmPos = this->unk_220;
-    // SoH: "Play as Ganondorf", running (the stick run and the sprint swing his arms, and the cape hung from them sank
-    // down his back): its hold a little higher while he runs
-    if (this == sPlayerGanondorf) {
-        sCape->rightForearmPos.y += GDF_CAPE_RUN_LIFT * sGdfCapeRunLift;
-        sCape->leftForearmPos.y += GDF_CAPE_RUN_LIFT * sGdfCapeRunLift;
-        sGdfCapeRunLift *= 0.9f; // (set again each frame he walks; settles back otherwise)
+    // SoH: "Play as Ganondorf", walking and running: the cape hangs from two points on his arms, and the walk, run and
+    // sprint swing his arms down and back, so the cape's top sank down his back (to his shoulder blades at a sprint).
+    // Standing still, those points are remembered as they sit on his torso; on the move the cape hangs from those
+    // places on his torso instead (by how much he's walking), as high as when he stands.
+    if ((this == sPlayerGanondorf) && sGdfLimbWorldValid) {
+        static Vec3f sLocalR;
+        static Vec3f sLocalL;
+        static u8 sLocalValid = false;
+        MtxF inv;
+        f32 w = this->playerWalkWeight;
+
+        if ((w < 0.02f) && this->playerGrounded && (this->actionFunc == BossGanon_Player_Float)) {
+            if (SkinMatrix_Invert(&sGdfLimbWorld[1], &inv) == 0) {
+                SkinMatrix_Vec3fMtxFMultXYZ(&inv, &sCape->rightForearmPos, &sLocalR);
+                SkinMatrix_Vec3fMtxFMultXYZ(&inv, &sCape->leftForearmPos, &sLocalL);
+                sLocalValid = true;
+            }
+        } else if (sLocalValid && (w > 0.0f) && this->playerGrounded) {
+            Vec3f r;
+            Vec3f l;
+
+            SkinMatrix_Vec3fMtxFMultXYZ(&sGdfLimbWorld[1], &sLocalR, &r);
+            SkinMatrix_Vec3fMtxFMultXYZ(&sGdfLimbWorld[1], &sLocalL, &l);
+            sCape->rightForearmPos.x += (r.x - sCape->rightForearmPos.x) * w;
+            sCape->rightForearmPos.y += (r.y - sCape->rightForearmPos.y) * w;
+            sCape->rightForearmPos.z += (r.z - sCape->rightForearmPos.z) * w;
+            sCape->leftForearmPos.x += (l.x - sCape->leftForearmPos.x) * w;
+            sCape->leftForearmPos.y += (l.y - sCape->leftForearmPos.y) * w;
+            sCape->leftForearmPos.z += (l.z - sCape->leftForearmPos.z) * w;
+        }
     }
 
     sCape->rightShoulderPos = this->unk_22C;
