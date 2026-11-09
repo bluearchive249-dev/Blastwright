@@ -10206,10 +10206,12 @@ static void BossGanon_Player_DrawWallCrack(PlayState* play) {
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
     gDPPipeSync(POLY_XLU_DISP++);
-    gDPSetCombineLERP(POLY_XLU_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
-                      TEXEL0, 0, PRIMITIVE, 0);
-    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_AA_ZB_XLU_SURF, G_RM_AA_ZB_XLU_SURF2);
-    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, 255);
+    // (two cycles: the texture times the colour in the first, passed on in the second; TEXEL0 in the second cycle
+    // would read the next tile, some other texture altogether)
+    gDPSetCombineLERP(POLY_XLU_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, 0, 0, 0, COMBINED, 0, 0, 0,
+                      COMBINED);
+    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_PASS, G_RM_AA_ZB_XLU_SURF2);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 120, 115, 110, 230); // (dark: soot and shadow in the cracks)
     gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BACK | G_LIGHTING | G_FOG);
     gDPLoadTextureBlock(POLY_XLU_DISP++, sGdfWallCrackTex, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
                         G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD,
