@@ -8513,7 +8513,16 @@ void BossGanon_Player_Land(BossGanon* this, PlayState* play) {
     if ((sPlayerSwordState != GDF_SWORD_OFF) && !BossGanon_Player_IsPhantom()) {
         BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD], 1.0f);
     }
-    sCape->minDist = 0.0f;
+    // His cape thrown back over his back and down to the ground behind him while he's crouched (hanging straight
+    // down, it fell through his bent back and legs): pushed back and kept clear of him, easing back as he rises
+    {
+        f32 c = w;
+
+        sCape->backPush = -2.0f - 5.0f * c;
+        sCape->backSwayMagnitude = 0.2f;
+        sCape->sideSwayMagnitude = -1.0f;
+        sCape->minDist = 26.0f * c;
+    }
 
     this->fwork[GDF_FWORK_1] = f + GDF_LAND_RATE;
     if (f >= last) {
