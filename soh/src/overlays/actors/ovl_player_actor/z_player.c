@@ -5559,6 +5559,7 @@ s32 Player_ActionHandler_1(Player* this, PlayState* play) {
                         if (Player_HandleExitsAndVoids(play, this, groundPoly, BGCHECK_SCENE)) {
                             gSaveContext.entranceSpeed = 2.0f;
                             gSaveContext.entranceSound = NA_SE_OC_DOOR_OPEN;
+                            PlayAsGanondorf_DelayDoorTransition(play); // SoH: Play as Ganondorf, seen going in
                         }
                     } else {
                         Camera_ChangeDoorCam(Play_GetCamera(play, CAM_ID_MAIN), doorActor,

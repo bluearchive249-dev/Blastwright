@@ -24,6 +24,7 @@ s32 PlayAsGanondorf_BreathesUnderwater(PlayState* play, Player* player);
 
 // Called from Player_Draw. Link stays invisible while Ganondorf is shown.
 s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player);
+void PlayAsGanondorf_DelayDoorTransition(PlayState* play);
 s32 PlayAsGanondorf_IsCrawlFlame(PlayState* play, Player* player);
 s32 PlayAsGanondorf_UseGanonHorse(void);
 s32 PlayAsGanondorf_IsSprinting(void);

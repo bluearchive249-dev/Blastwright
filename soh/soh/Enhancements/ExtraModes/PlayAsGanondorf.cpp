@@ -175,6 +175,16 @@ static void KillPlayerGanondorf(PlayState* play, BossGanon* dorf) {
     }
 }
 
+// Frames he's been missing in this scene (a new scene: until he's spawned and drawn, Link would show in his place, a
+// little figure in the doorway for a moment). Link stays hidden that long, but no longer (should he never come).
+static s16 sNoDorfFrames = 0;
+#define GDF_WAIT_FOR_DORF_FRAMES 30
+
+// Going through a door into another scene: the fade waits a little, so he's seen going in
+static s16 sDoorDelay = 0;
+static u8 sDoorTransType = 0;
+#define GDF_DOOR_FADE_DELAY 20
+
 static bool ShouldHideLink(PlayState* play, Player* player) {
     if (!IsEnabled() || (play == NULL) || (player == NULL) || (player != GET_PLAYER(play))) {
         return false;
@@ -182,7 +192,7 @@ static bool ShouldHideLink(PlayState* play, Player* player) {
 
     BossGanon* dorf = FindPlayerGanondorf(play);
     if (dorf == NULL) {
-        return false;
+        return sNoDorfFrames < GDF_WAIT_FOR_DORF_FRAMES;
     }
 
     BossGanon2* ganon = FindPlayerGanon(play);
@@ -543,12 +553,20 @@ static void PlayAsGanondorf_OnPlayerUpdate() {
     if (dorf == NULL) {
         // New scene: start on the ground
         sLevitating = sSoftLanding = false;
+        sDoorDelay = 0;
+        sNoDorfFrames = MIN(sNoDorfFrames + 1, 1000);
         Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_GANON, player->actor.world.pos.x, player->actor.world.pos.y,
                     player->actor.world.pos.z, 0, player->actor.shape.rot.y, 0, GDF_PARAMS_PLAYER);
         dorf = FindPlayerGanondorf(play);
     }
 
     if (dorf != NULL) {
+        sNoDorfFrames = 0;
+        // The door's fade, held back until he's through (see PlayAsGanondorf_DelayDoorTransition)
+        if ((sDoorDelay > 0) && (--sDoorDelay == 0) && (play->transitionTrigger == TRANS_TRIGGER_OFF)) {
+            play->transitionTrigger = TRANS_TRIGGER_START;
+            play->transitionType = sDoorTransType;
+        }
         UpdateGanon(play, player, dorf);
         if (FindPlayerGanon(play) == NULL) {
             UpdateLevitation(play, player, dorf);
@@ -682,6 +700,18 @@ extern "C" void PlayAsGanondorf_FilterInput(PlayState* play, Player* player, Inp
 
 extern "C" s32 PlayAsGanondorf_BreathesUnderwater(PlayState* play, Player* player) {
     return ShouldHideLink(play, player) && CVarGetInteger(CVAR_PLAY_AS_GDF("IronBootsInWater"), 1);
+}
+
+// Link opened a door that leads to another scene (z_player.c): its fade starts a little later, so Ganondorf is seen
+// kicking it open and stepping through first
+extern "C" void PlayAsGanondorf_DelayDoorTransition(PlayState* play) {
+    if (!ShouldHideLink(play, GET_PLAYER(play)) || (FindPlayerGanondorf(play) == NULL) ||
+        (play->transitionTrigger != TRANS_TRIGGER_START)) {
+        return;
+    }
+    sDoorTransType = play->transitionType;
+    play->transitionTrigger = TRANS_TRIGGER_OFF;
+    sDoorDelay = GDF_DOOR_FADE_DELAY;
 }
 
 extern "C" s32 PlayAsGanondorf_IsCapeShielding(void) {
