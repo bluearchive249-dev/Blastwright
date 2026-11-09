@@ -75,6 +75,11 @@ static const char sRauruEyes[] = "__OTR__objects/object_rl/object_rl_Tex_003620"
 static const char sTriforceDL[] = "__OTR__objects/object_triforce_spot/gTriforceDL";
 static const char sArrowDL[] = "__OTR__objects/gameplay_keep/gArrowFarDL";
 static const char sIronAxeDL[] = "__OTR__objects/object_ik/gIronKnuckleAxeDL";
+// The Iron Knuckle guard: the Iron Knuckle itself, its own model and animations (object_ik)
+static const char sIkSkel[] = "__OTR__objects/object_ik/gIronKnuckleSkel";
+static const char sIkWalk[] = "__OTR__objects/object_ik/gIronKnuckleWalkAnim";
+static const char sIkAttack[] = "__OTR__objects/object_ik/gIronKnuckleVerticalAttackAnim";
+static const char sIkDeath[] = "__OTR__objects/object_ik/gIronKnuckleDeathAnim";
 static const char sBrazierDL[] = "__OTR__objects/gdf_sacred/gGdfBrazierDL";
 static const char sAltarDL[] = "__OTR__objects/gdf_sacred/gGdfAltarDL";
 static const char sSwordDL[] = "__OTR__objects/gdf_sacred/gGdfGuardSwordDL";
@@ -244,8 +249,8 @@ enum { GS_IDLE, GS_ENGAGE, GS_ATTACK, GS_HURT, GS_DIE, GS_CHARGE };
 typedef struct {
     Actor actor;
     SkelAnime skel;
-    Vec3s jt[17];
-    Vec3s mt[17];
+    Vec3s jt[30]; // (17 for the soldiers, 30 for the Iron Knuckle)
+    Vec3s mt[30];
     ColliderCylinder body;
     ColliderCylinder weapon;
     s16 type;
@@ -272,6 +277,21 @@ static ColliderCylinderInit sGuardWeaponInit = {
 };
 
 static void Guard_Anim(GdfGuard* g, const char* anim, f32 speed, u8 mode, f32 morph) {
+    if (g->type == GUARD_IRON) { // the Iron Knuckle's own: standing (its walk, held), walking, the overhead chop, falling
+        if (anim == sHeishiIdle) {
+            anim = sIkWalk;
+            speed = 0.0f;
+        } else if (anim == sHeishiWalk) {
+            anim = sIkWalk;
+            speed = 1.0f;
+        } else if (anim == sHeishiSlam) {
+            anim = sIkAttack;
+            speed = 1.5f;
+        } else if (anim == sHeishiDie) {
+            anim = sIkDeath;
+            speed = 1.0f;
+        }
+    }
     Animation_Change(&g->skel, (AnimationHeader*)anim, speed, 0.0f, Animation_GetLastFrame((void*)anim), mode, morph);
 }
 
@@ -281,8 +301,13 @@ static void Guard_Init(Actor* thisx, PlayState* play) {
 
     g->type = thisx->params & 0xF;
     g->dormant = (thisx->params & 0x10) != 0;
-    Actor_SetScale(thisx, (g->type == GUARD_IRON) ? 0.017f : (g->type == GUARD_CAPTAIN) ? 0.014f : 0.01f);
-    SkelAnime_Init(play, &g->skel, (SkeletonHeader*)sHeishiSkel, (AnimationHeader*)sHeishiIdle, g->jt, g->mt, 17);
+    Actor_SetScale(thisx, (g->type == GUARD_IRON) ? 0.012f : (g->type == GUARD_CAPTAIN) ? 0.014f : 0.01f);
+    if (g->type == GUARD_IRON) {
+        SkelAnime_InitFlex(play, &g->skel, (FlexSkeletonHeader*)sIkSkel, (AnimationHeader*)sIkWalk, g->jt, g->mt, 30);
+        g->skel.playSpeed = 0.0f;
+    } else {
+        SkelAnime_Init(play, &g->skel, (SkeletonHeader*)sHeishiSkel, (AnimationHeader*)sHeishiIdle, g->jt, g->mt, 17);
+    }
     Collider_InitCylinder(play, &g->body);
     Collider_SetCylinder(play, &g->body, thisx, &sGuardBodyInit);
     Collider_InitCylinder(play, &g->weapon);
@@ -445,7 +470,7 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
             if (dist > reach * 0.85f) {
                 Math_StepToF(&thisx->speedXZ, (g->type == GUARD_IRON) ? 1.8f : (g->type == GUARD_CAPTAIN) ? 4.5f : 3.5f,
                              0.6f);
-                if ((g->type == GUARD_IRON) && (Animation_OnFrame(&g->skel, 1.0f) || Animation_OnFrame(&g->skel, 9.0f))) {
+                if ((g->type == GUARD_IRON) && (Animation_OnFrame(&g->skel, 1.0f) || Animation_OnFrame(&g->skel, 20.0f))) {
                     Audio_PlayActorSound2(thisx, NA_SE_EN_IRONNACK_WALK);
                 }
             } else {
@@ -462,14 +487,14 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
             break;
 
         case GS_ATTACK: {
-            s16 windup = (g->type == GUARD_SWORD) ? 6 : (g->type == GUARD_IRON) ? 22 : 10;
+            s16 windup = (g->type == GUARD_SWORD) ? 6 : (g->type == GUARD_IRON) ? 14 : 10; // (its chop lands at 21)
             g->timer++;
             Math_SmoothStepToS(&thisx->world.rot.y, yawTo, 8, 0x200, 0x40);
             Math_StepToF(&thisx->speedXZ, (g->timer > windup && g->timer < windup + 6) ? 4.0f : 0.0f, 1.0f);
             if ((g->timer >= windup) && (g->timer < windup + 7)) {
                 g->weaponActive = true;
             }
-            if ((g->type == GUARD_IRON) && (g->timer == windup + 3)) { // the axe bites into the floor
+            if ((g->type == GUARD_IRON) && (g->timer == windup)) { // the axe bites into the floor
                 Vec3f p = thisx->world.pos;
                 p.x += Math_SinS(thisx->shape.rot.y) * 150.0f;
                 p.z += Math_CosS(thisx->shape.rot.y) * 150.0f;
@@ -527,8 +552,29 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
         // knocked back: away from where he faces
         thisx->world.rot.y = thisx->shape.rot.y;
     }
+    // Not off the edge: a guard stops short of a drop (the chasm) rather than walking or charging into it
+    if ((thisx->speedXZ != 0.0f) && (g->state != GS_DIE) && (thisx->bgCheckFlags & BGCHECKFLAG_GROUND)) {
+        f32 dir = (thisx->speedXZ > 0.0f) ? 1.0f : -1.0f;
+        Vec3f ahead = { thisx->world.pos.x + Math_SinS(thisx->world.rot.y) * 45.0f * dir, thisx->world.pos.y + 40.0f,
+                        thisx->world.pos.z + Math_CosS(thisx->world.rot.y) * 45.0f * dir };
+        CollisionPoly* poly;
+        f32 floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &ahead);
+
+        if (floorY < thisx->world.pos.y - 60.0f) {
+            thisx->speedXZ = 0.0f;
+            if (g->state == GS_CHARGE) {
+                g->timer = 99; // (the charge ends at the edge)
+            }
+        }
+    }
     Actor_MoveXZGravity(thisx);
     Actor_UpdateBgCheckInfo(play, thisx, 26.0f, 26.0f, 60.0f, 0x1D);
+    // Over the edge all the same (knocked off): gone into the depths
+    if (thisx->world.pos.y < thisx->home.pos.y - 150.0f) {
+        Audio_PlayActorSound2(thisx, (g->type == GUARD_IRON) ? NA_SE_EN_IRONNACK_DEAD : NA_SE_EN_STAL_DEAD);
+        Actor_Kill(thisx);
+        return;
+    }
     thisx->focus.pos = thisx->world.pos;
     thisx->focus.pos.y += (g->type == GUARD_IRON) ? 150.0f : (g->type == GUARD_CAPTAIN) ? 120.0f : 85.0f;
 
@@ -643,7 +689,26 @@ static void Guard_Draw(Actor* thisx, PlayState* play) {
         gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)seg8);
         gSPSegment(POLY_OPA_DISP++, 0x0A, (uintptr_t)segA);
     }
+    if (g->type == GUARD_IRON) {
+        // The Iron Knuckle drawn as the game draws a silver one: its colours in segments 8 to 10
+        static const u8 sCol[3][6] = { { 245, 255, 205, 30, 35, 0 }, { 185, 135, 25, 20, 20, 0 },
+                                       { 255, 255, 255, 30, 40, 20 } };
+
+        for (s32 i = 0; i < 3; i++) {
+            Gfx* seg = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
+            gDPPipeSync(&seg[0]);
+            gDPSetPrimColor(&seg[1], 0, 0, sCol[i][0], sCol[i][1], sCol[i][2], 255);
+            gDPSetEnvColor(&seg[2], sCol[i][3], sCol[i][4], sCol[i][5], 255);
+            gSPEndDisplayList(&seg[3]);
+            gSPSegment(POLY_OPA_DISP++, 0x08 + i, (uintptr_t)seg);
+        }
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    }
     CLOSE_DISPS(play->state.gfxCtx);
+    if (g->type == GUARD_IRON) {
+        SkelAnime_DrawSkeletonOpa(play, &g->skel, NULL, NULL, thisx);
+        return;
+    }
     SkelAnime_DrawOpa(play, g->skel.skeleton, g->skel.jointTable, Guard_OverrideLimb, Guard_PostLimb, thisx);
 }
 
