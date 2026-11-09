@@ -7147,6 +7147,42 @@ static void BossGanon_Player_ApplyMixamoWalk(BossGanon* this, PlayState* play, f
     }
 }
 
+// His feet on the clips (walk, run): the clips swing his legs by their bones' directions, and his feet ride along on
+// his shins, so a shin's twist turned a foot in (the right one toward his left). Each foot turned about the vertical
+// so its toes (the foot's local +z) point ahead, splayed a little outward, as the old walk did; its pitch kept.
+static void BossGanon_Player_FeetAhead(BossGanon* this, f32 weight) {
+    static const s8 sLegChains[2][5] = { { 0, 18, 19, 20, 21 }, { 0, 18, 22, 23, 24 } };
+    Vec3s* joints = this->skelAnime.jointTable;
+    s32 leg;
+    s32 k;
+
+    if (weight <= 0.0f) {
+        return;
+    }
+    for (leg = 0; leg < 2; leg++) {
+        f32 parent[3][3];
+        f32 m[3][3];
+        f32 turn[3][3];
+        Vec3s turnRot = { 0, 0, 0 };
+        s16 target = (leg == 0) ? GDF_WALK_FOOT_SPLAY : -GDF_WALK_FOOT_SPLAY;
+        s16 toeYaw;
+
+        BossGanon_Player_RotToMtx(&joints[1 + sLegChains[leg][0]], parent);
+        for (k = 1; k < 4; k++) {
+            BossGanon_Player_RotToMtx(&joints[1 + sLegChains[leg][k]], m);
+            BossGanon_Player_Mul3(parent, m, parent, false);
+        }
+        BossGanon_Player_RotToMtx(&joints[1 + sLegChains[leg][4]], m);
+        BossGanon_Player_Mul3(parent, m, m, false); // the foot in actor space
+        toeYaw = Math_Atan2S(m[2][2], m[0][2]);
+        turnRot.y = (s16)((s16)(target - toeYaw) * weight);
+        BossGanon_Player_RotToMtx(&turnRot, turn);
+        BossGanon_Player_Mul3(turn, m, m, false);
+        BossGanon_Player_Mul3(parent, m, m, true); // back into the shin's space
+        BossGanon_Player_MtxToRot(m, &joints[1 + sLegChains[leg][4]]);
+    }
+}
+
 static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     // Walking about on his own in a cutscene: his own speed, not Link's
@@ -7248,6 +7284,7 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
         BossGanon_Player_ApplyClip(this, sGdfClipSprint, ARRAY_COUNT(sGdfClipSprint),
                                    17.0f + phase * ARRAY_COUNT(sGdfClipSprint), true, runWeight, 1.0f);
     }
+    BossGanon_Player_FeetAhead(this, this->playerWalkWeight);
 }
 
 // Keeps his lowest ankle or knee at the floor (from the last draw), so any animation stands on the ground. Knees
