@@ -6793,11 +6793,18 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
 void BossGanon_Player_Dance(BossGanon* this, PlayState* play);
 void BossGanon_Player_CsKneel(BossGanon* this, PlayState* play);
 
+static s32 BossGanon_Player_ShouldBrood(PlayState* play);
+
 static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
     if (!CVarGetInteger(CVAR_PLAY_AS_GDF("RoamInCutscenes"), 1) || !this->playerGrounded || this->playerHidden ||
         gGdfIntroCs.active) {
+        return false;
+    }
+    // Link's house: he broods against the wall by the bed for the whole scene (roaming took him off across the room,
+    // at Link's height in bed: sunk in the floor)
+    if (BossGanon_Player_ShouldBrood(play)) {
         return false;
     }
     if (!(player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) &&
