@@ -1693,35 +1693,47 @@ static void Goddess_Update(Actor* thisx, PlayState* play) {
     }
 }
 
+// Each Goddess as the game shows her in the Great Deku Tree's tale of the creation: a golden figure in a flame of her
+// own light (Din's crimson, Nayru's blue, Farore's green; the three figures alike), drawn from the game's own model
+// (object_god_lgt, from the player's ROM). Standing upright here, turning slowly within her light.
+static const char sGoddessBodyDL[] = "__OTR__objects/object_god_lgt/gGoldenGoddessBodyDL";
+static const char sGoddessAuraDL[] = "__OTR__objects/object_god_lgt/gGoldenGoddessAuraDL";
+static const u8 sGoddessPrim[3][3] = { { 255, 170, 255 }, { 170, 255, 255 }, { 170, 255, 170 } };
+static const u8 sGoddessEnv[3][3] = { { 255, 0, 255 }, { 0, 40, 255 }, { 0, 200, 0 } };
+#define GODDESS_SCALE 0.1f // (the game's own, in the tale)
+
 static void Goddess_Draw(Actor* thisx, PlayState* play) {
     GdfGoddess* g = (GdfGoddess*)thisx;
-    const Color_RGB8* c = &sGoddessColors[thisx->params];
-    f32 k = 0.85f + 0.15f * Math_SinS(g->frames * 0x700);
+    s32 k = thisx->params;
+    u32 frames = play->gameplayFrames;
     Vec3f p = thisx->world.pos;
-    f32 yaw = BINANG_TO_RAD(thisx->shape.rot.y);
 
     OPEN_DISPS(play->state.gfxCtx);
+    // Her light, standing on end (its flame streams up from her feet)
+    gSPSegment(POLY_XLU_DISP++, 8,
+               (uintptr_t)Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, (frames * 4) % 512, 0, 128, 64, 1,
+                                             (frames * 2) % 256, 512 - ((frames * 70) % 512) - 1, 64, 32, 4, 0, 2,
+                                             -70));
+    gSPSegment(POLY_XLU_DISP++, 9,
+               (uintptr_t)Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 0, 0, 16, 96, 1, (frames * 10) % 256,
+                                             256 - ((frames * 30) % 512) - 1, 8, 32, 0, 0, 10, -30));
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPSetPrimColor(POLY_XLU_DISP++, 128, 128, sGoddessPrim[k][0], sGoddessPrim[k][1], sGoddessPrim[k][2], 255);
+    gDPSetEnvColor(POLY_XLU_DISP++, sGoddessEnv[k][0], sGoddessEnv[k][1], sGoddessEnv[k][2], 255);
+    Matrix_Translate(p.x, p.y, p.z, MTXMODE_NEW);
+    Matrix_RotateY(BINANG_TO_RAD(thisx->shape.rot.y), MTXMODE_APPLY);
+    Matrix_RotateX(-M_PI / 2.0f, MTXMODE_APPLY);
+    Matrix_Scale(GODDESS_SCALE, GODDESS_SCALE, GODDESS_SCALE, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, (Gfx*)sGoddessAuraDL);
+    // Her golden figure within it, turning slowly
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    // her gown of light, flaring toward its hem; her body; her head; and a halo behind it
-    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, (u8)(c->r * k), (u8)(c->g * k), (u8)(c->b * k), 255);
-    Matrix_Translate(p.x, p.y + 30.0f, p.z, MTXMODE_NEW);
-    Matrix_RotateY(yaw, MTXMODE_APPLY);
-    Matrix_Scale(3.4f, 4.2f, 3.0f, MTXMODE_APPLY);
-    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
-    Matrix_Translate(p.x, p.y + 80.0f, p.z, MTXMODE_NEW);
-    Matrix_RotateY(yaw, MTXMODE_APPLY);
-    Matrix_Scale(1.9f, 4.6f, 1.6f, MTXMODE_APPLY);
-    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
-    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, MIN(255, c->r + 90), MIN(255, c->g + 90), MIN(255, c->b + 90), 255);
-    Matrix_Translate(p.x, p.y + 132.0f, p.z, MTXMODE_NEW);
-    Matrix_Scale(1.5f, 1.7f, 1.5f, MTXMODE_APPLY);
-    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
-    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 230, 150, 255);
-    Matrix_Translate(p.x - Math_SinS(thisx->shape.rot.y) * 10.0f, p.y + 136.0f,
-                     p.z - Math_CosS(thisx->shape.rot.y) * 10.0f, MTXMODE_NEW);
-    Matrix_RotateY(yaw, MTXMODE_APPLY);
-    Matrix_Scale(3.0f, 3.0f, 0.15f, MTXMODE_APPLY);
-    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+    Matrix_RotateZ(g->frames * 0.01f, MTXMODE_APPLY);
+    Matrix_RotateX(M_PI / 2.0f, MTXMODE_APPLY);
+    Matrix_Translate(0.0f, -140.0f, 0.0f, MTXMODE_APPLY);
+    Matrix_Scale(0.03f, 0.03f, 0.03f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sGoddessBodyDL);
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
