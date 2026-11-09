@@ -420,7 +420,7 @@ void Entrance_SetSavewarpEntrance(void) {
         // Save warping in Link's house keeps the player there if Link's house not shuffled,
         // otherwise fallback to regular spawns
         gSaveContext.entranceIndex = ENTR_LINKS_HOUSE_CHILD_SPAWN;
-    } else if (CVarGetInteger(CVAR_ENHANCEMENT("RememberSaveLocation"), 0) && scene != SCENE_FAIRYS_FOUNTAIN &&
+    } else if (CVarGetInteger(CVAR_ENHANCEMENT("RememberSaveLocation"), 1) && scene != SCENE_FAIRYS_FOUNTAIN &&
                scene != SCENE_GROTTOS && gSaveContext.entranceIndex != ENTR_LOAD_OPENING) {
         // Use the saved entrance value with remember save location, except when in grottos/fairy fountains or if
         // the entrance index is -1 (new save)

@@ -16,7 +16,7 @@ extern PlayState* gPlayState;
 }
 
 #define CVAR_BETTERSAVE CVAR_ENHANCEMENT("BetterSaveMenu")
-#define CVAR_BETTERSAVE_DEFAULT 0
+#define CVAR_BETTERSAVE_DEFAULT 1 // (SoH: on by default)
 #define CVAR_BETTERSAVE_VALUE CVarGetInteger(CVAR_BETTERSAVE, CVAR_BETTERSAVE_DEFAULT)
 static CustomMessage saveMsg = CustomMessage(
     "\x08Would you like to save?&&" + CustomMessage::TWO_WAY_CHOICE() + "%gYes&No%w\x09", TEXTBOX_TYPE_BLUE);
@@ -80,7 +80,7 @@ void HandleSaveMenu(bool* should, PlayState* play) {
                     Play_PerformSave(play);
                     pauseCtx->unk_1EC = 4;
                     if (IsSceneDungeon(gSaveContext.savedSceneNum) ||
-                        CVarGetInteger(CVAR_ENHANCEMENT("RememberSaveLocation"), 0)) {
+                        CVarGetInteger(CVAR_ENHANCEMENT("RememberSaveLocation"), 1)) {
                         Message_StartTextbox(play, TEXT_CONTINUE_DUNGEON_MSG, NULL);
                     } else {
                         Message_StartTextbox(play, TEXT_CONTINUE_OVERWORLD_MSG, NULL);
