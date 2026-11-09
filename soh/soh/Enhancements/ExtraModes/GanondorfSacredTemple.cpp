@@ -1853,6 +1853,17 @@ static void SetUpRoom(PlayState* play, Player* player) {
             break;
 
         case SAGES_SCENE:
+            // Coming from the temple there's no Sage's cutscene here, and nothing to bring Link down from the blue
+            // warp's arrival (he'd float in its crystal for good): down onto the floor, where he lands and stands
+            if ((sFrom == RAURU_SCENE) || (sFrom == SPRING_SCENE)) {
+                CollisionPoly* poly;
+                Vec3f probe = player->actor.world.pos;
+                f32 floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &probe);
+
+                player->actor.world.pos.y = (floorY > BGCHECK_Y_MIN) ? floorY : (player->actor.world.pos.y - 800.0f);
+                player->actor.prevPos = player->actor.home.pos = player->actor.world.pos;
+                player->actor.velocity.y = 0.0f;
+            }
             // the way up to the Goddesses' Spring, where the Triforce waits
             if (((sFrom == RAURU_SCENE) || (sFrom == SPRING_SCENE)) && TFlag(play, FLAG_RAURU_DOWN) &&
                 !TFlag(play, FLAG_TRIFORCE)) {
