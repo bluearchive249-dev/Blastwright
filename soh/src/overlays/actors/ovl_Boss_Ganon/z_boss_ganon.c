@@ -11909,10 +11909,14 @@ void BossGanon_Player_Float(BossGanon* this, PlayState* play) {
     }
 
     if (this->playerGrounded) {
-        sCape->backPush = -2.0f;
+        // Walking and running his cape spreads wide behind him as it does while he levitates: half way at a slow walk,
+        // all the way at a run (as he gets going and settles, with his walk)
+        f32 spread = this->playerWalkWeight * CLAMP(0.5f + sGdfWalkSpeed / 12.0f, 0.0f, 1.0f);
+
+        sCape->backPush = -2.0f - 1.0f * spread;
         sCape->backSwayMagnitude = 0.25f;
-        sCape->sideSwayMagnitude = -1.0f;
-        sCape->minDist = 0.0f;
+        sCape->sideSwayMagnitude = -1.0f - 2.0f * spread;
+        sCape->minDist = 20.0f * spread;
 
         SkelAnime_Update(&this->skelAnime);
         BossGanon_Player_UpdateWalk(this, play);
