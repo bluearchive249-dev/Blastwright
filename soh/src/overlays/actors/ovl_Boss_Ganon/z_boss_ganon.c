@@ -1,4 +1,5 @@
 #include "z_boss_ganon.h"
+#include "z_boss_ganon_crack.h"
 #include "overlays/ovl_Boss_Ganon/ovl_Boss_Ganon.h"
 #include "overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h"
 #include "overlays/actors/ovl_En_Zl3/z_en_zl3.h"
@@ -9771,6 +9772,9 @@ static Vec3s sGdfSwdRot;
 static Vec3f sGdfSwdFrom;
 static Vec3s sGdfSwdFromRot;
 static Vec3f sGdfSwdWall; // lodged
+static Vec3f sGdfSwdHit;     // where its blade went into the wall, and the wall's way out there (the crack and smoke)
+static Vec3f sGdfSwdHitNormal;
+static u8 sGdfSwdCracked = false;
 static Vec3s sGdfSwdWallRot;
 static f32 sGdfSwdFlightVy; // the kick's flight: its first upward speed
 
@@ -9825,6 +9829,10 @@ static s32 BossGanon_Player_SwdFindWall(PlayState* play, Actor* swd) {
             if (dist < 40.0f) {
                 continue; // something right by the pedestal, not the wall
             }
+            sGdfSwdHit = hit;
+            sGdfSwdHitNormal.x = COLPOLY_GET_NORMAL(poly->normal.x);
+            sGdfSwdHitNormal.y = COLPOLY_GET_NORMAL(poly->normal.y);
+            sGdfSwdHitNormal.z = COLPOLY_GET_NORMAL(poly->normal.z);
             sGdfSwdWall.x = hit.x - Math_SinS(yaw) * Math_CosS(dip) * back;
             sGdfSwdWall.y = hit.y + Math_SinS(dip) * back;
             sGdfSwdWall.z = hit.z - Math_CosS(yaw) * Math_CosS(dip) * back;
@@ -9879,6 +9887,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
         sGdfSwd = NULL;
         sGdfSwdState = GDF_SWD_NONE;
         sGdfSwdWasDrawn = sGdfSwdReturn = sGdfSwdPlaced = false;
+        sGdfSwdCracked = false;
         sGdfSwdArms = 0.0f;
         return;
     }
@@ -9887,6 +9896,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
         sGdfSwd = swd;
         sGdfSwdState = GDF_SWD_NONE;
         sGdfSwdWasDrawn = sGdfSwdReturn = sGdfSwdPlaced = false;
+        sGdfSwdCracked = false;
         sGdfSwdArms = 0.0f;
     }
     if (swd == NULL) {
@@ -9894,11 +9904,24 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
     }
     BossGanon_Player_SwdStonePose(swd, &stone, &stoneRot);
 
+    // A thin smoke curling out of the hole in the wall
+    if (sGdfSwdCracked && (swd->draw != BgTokiSwd_Draw) && ((play->gameplayFrames % 7) == 0)) {
+        static Color_RGBA8 sSmokePrim = { 120, 115, 110, 255 };
+        static Color_RGBA8 sSmokeEnv = { 70, 65, 60, 255 };
+        Vec3f n = sGdfSwdHitNormal;
+        Vec3f p = { sGdfSwdHit.x + n.x * 3.0f + Rand_CenteredFloat(3.0f), sGdfSwdHit.y + Rand_CenteredFloat(3.0f),
+                    sGdfSwdHit.z + n.z * 3.0f + Rand_CenteredFloat(3.0f) };
+        Vec3f v = { n.x * 0.35f, 0.25f, n.z * 0.35f };
+        Vec3f a = { 0.0f, 0.03f, 0.0f };
+
+        EffectSsDust_Spawn(play, 0, &p, &v, &a, &sSmokePrim, &sSmokeEnv, 25, 8, 30, 0);
+    }
+
     switch (sGdfSwdState) {
         case GDF_SWD_NONE:
             if (!LINK_IS_ADULT) {
                 // In the stone; gone from it: Link has just pulled it (the kick, from his own pose)
-                if (swd->draw != NULL) {
+                if (swd->draw == BgTokiSwd_Draw) {
                     sGdfSwdWasDrawn = true;
                 } else if (sGdfSwdWasDrawn && !this->playerHidden && BossGanon_Player_SwdFindWall(play, swd)) {
                     sGdfSwdWasDrawn = false;
@@ -9908,9 +9931,11 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
                     sGdfSwdRot = stoneRot;
                     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
                 }
-            } else if (!IS_RANDO && (swd->draw == NULL) && !sGdfSwdReturn && BossGanon_Player_SwdFindWall(play, swd)) {
+            } else if (!IS_RANDO && (swd->draw != BgTokiSwd_Draw) && !sGdfSwdReturn &&
+                       BossGanon_Player_SwdFindWall(play, swd)) {
                 // Adult, the pedestal empty: it's in the wall where he kicked it
                 sGdfSwdState = GDF_SWD_LODGED;
+                sGdfSwdCracked = true;
                 sGdfSwdPos = sGdfSwdWall;
                 sGdfSwdRot = sGdfSwdWallRot;
             }
@@ -9958,6 +9983,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
                     sGdfSwdPos = sGdfSwdWall;
                     sGdfSwdRot = sGdfSwdWallRot;
                     sGdfSwdState = GDF_SWD_LODGED;
+                    sGdfSwdCracked = true;
                     BossGanon_Player_SwdImpact(this, play, &tip, 4);
                     Audio_PlayActorSound2(swd, NA_SE_IT_ARROW_STICK_OBJ);
                     Audio_PlayActorSound2(swd, NA_SE_IT_WALL_HIT_HARD);
@@ -10086,8 +10112,48 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
 }
 
 // The sword out of the stone: kicked, in the wall, called back and held
+// The crack round the hole the blade made: a little decal on the wall's face
+static void BossGanon_Player_DrawWallCrack(PlayState* play) {
+    static Vtx sCrackVtx[4] = {
+        VTX(-100, -100, 0, 0, 1024, 255, 255, 255, 255),
+        VTX(100, -100, 0, 1024, 1024, 255, 255, 255, 255),
+        VTX(100, 100, 0, 1024, 0, 255, 255, 255, 255),
+        VTX(-100, 100, 0, 0, 0, 255, 255, 255, 255),
+    };
+    Vec3f n = sGdfSwdHitNormal;
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPPipeSync(POLY_XLU_DISP++);
+    gDPSetCombineLERP(POLY_XLU_DISP++, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
+                      TEXEL0, 0, PRIMITIVE, 0);
+    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_AA_ZB_XLU_SURF, G_RM_AA_ZB_XLU_SURF2);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, 255);
+    gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BACK | G_LIGHTING | G_FOG);
+    gDPLoadTextureBlock(POLY_XLU_DISP++, sGdfWallCrackTex, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                        G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD,
+                        G_TX_NOLOD);
+    Matrix_Push();
+    Matrix_Translate(sGdfSwdHit.x + n.x * 0.8f, sGdfSwdHit.y + n.y * 0.8f, sGdfSwdHit.z + n.z * 0.8f, MTXMODE_NEW);
+    Matrix_RotateY(atan2f(n.x, n.z), MTXMODE_APPLY);
+    Matrix_RotateX(-asinf(CLAMP(n.y, -1.0f, 1.0f)), MTXMODE_APPLY);
+    Matrix_RotateZ(0.6f, MTXMODE_APPLY);
+    Matrix_Scale(0.13f, 0.13f, 0.13f, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPVertex(POLY_XLU_DISP++, sCrackVtx, 4, 0);
+    gSP2Triangles(POLY_XLU_DISP++, 0, 1, 2, 0, 0, 2, 3, 0);
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void BossGanon_Player_DrawMasterSword(BossGanon* this, PlayState* play) {
-    if ((sGdfSwdState == GDF_SWD_NONE) || (sGdfSwd == NULL) || (play->sceneNum != SCENE_TEMPLE_OF_TIME)) {
+    if ((sGdfSwd == NULL) || (play->sceneNum != SCENE_TEMPLE_OF_TIME)) {
+        return;
+    }
+    if (sGdfSwdCracked) {
+        BossGanon_Player_DrawWallCrack(play);
+    }
+    if (sGdfSwdState == GDF_SWD_NONE) {
         return;
     }
     OPEN_DISPS(play->state.gfxCtx);
