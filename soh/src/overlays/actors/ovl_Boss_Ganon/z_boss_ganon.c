@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 #include "z_boss_ganon.h"
 #include "z_boss_ganon_crack.h"
 #include "overlays/ovl_Boss_Ganon/ovl_Boss_Ganon.h"

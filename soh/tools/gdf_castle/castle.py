@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 """Hyrule Castle interior for "Play as Ganondorf": a castle wing in the style of the courtyard and the Temple of Time,
 generated as a scene for the unused SCENE_TESTROOM slot (scenes/shared/testroom_scene). It's built in the courtyard's
 own coordinates, so the throne room's east wall holds the courtyard window: the real courtyard (its display lists,

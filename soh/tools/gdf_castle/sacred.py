@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 """The way into the Sacred Realm Temple for "Play as Ganondorf" (stage 1), generated like the castle interior.
 
   gdf_sacred.o2r

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 // Play as Ganondorf: what the people of Hyrule say to him. Hylians fear him, the Gerudo respect their king, the Gorons
 // and Zoras hate the man who cursed their homes, the Kokiri and the Sheikah are wary of him or stand up to him. Each
 // line replaces the game's own text with the same id; its sounds, colours and follow-on lines are kept, and every

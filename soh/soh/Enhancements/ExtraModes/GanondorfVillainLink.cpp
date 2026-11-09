@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 // SoH: "Play as Ganondorf", cutscenes with the roles swapped: Link plays the villain's part (z_en_viewer.c draws him in
 // Ganondorf's place). Here: what the villain says. Ganondorf's lines become Link's own: no words, just his shouts and
 // grunts, in his voice.

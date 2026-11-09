@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 // SoH: "Play as Ganondorf", the Sacred Realm Temple beyond the Sanctum of Light (stages 2b to 6).
 //
 // The Sanctum of Light (SCENE_SYOTES2) opens three ways:

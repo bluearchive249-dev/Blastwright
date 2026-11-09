@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 // Play as Ganondorf
 //
 // Replaces Link with Ganondorf from the Ganon's Tower fight, using his boss moveset instead of Link's.

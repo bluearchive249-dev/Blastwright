@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 // SoH: "Play as Ganondorf", Invasion mode.
 //
 // Online co-op over Anchor (Network > Anchor) where one player is the Hero, Link, who plays the game, and the other the
