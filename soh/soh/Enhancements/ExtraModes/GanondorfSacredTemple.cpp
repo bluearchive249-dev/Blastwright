@@ -86,6 +86,26 @@ static const char sSwordDL[] = "__OTR__objects/gdf_sacred/gGdfGuardSwordDL";
 static const char sShieldDL[] = "__OTR__objects/gdf_sacred/gGdfGuardShieldDL";
 static const char sBowDL[] = "__OTR__objects/gdf_sacred/gGdfGuardBowDL";
 static const char sOrbDL[] = "__OTR__objects/gdf_sacred/gGdfLightOrbDL";
+// Rauru's light from the game's own effects: Phantom Ganon's ball of energy (his bullets, bolts and burst) and the
+// columns of light from the Sacred Realm (his pillars)
+static const char sEnergyBallDL[] = "__OTR__objects/object_fhg/gPhantomEnergyBallDL";
+static const char sCrystalLightDL[] = "__OTR__objects/object_efc_crystal_light/gCrystalLightDL";
+#define ENERGY_BALL_PER_ORB 2.7f // (the ball's scale for the size of one of our orbs)
+
+// A ball of light at (x, y, z), facing the camera, tinted (the ball's own white heart, the colour round it)
+static void DrawEnergyBall(PlayState* play, f32 x, f32 y, f32 z, f32 scale, u8 r, u8 g, u8 b, u8 alpha) {
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, alpha);
+    gDPSetEnvColor(POLY_XLU_DISP++, r, g, b, 0);
+    gDPPipeSync(POLY_XLU_DISP++);
+    Matrix_Translate(x, y, z, MTXMODE_NEW);
+    Matrix_ReplaceRotation(&play->billboardMtxF);
+    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, (Gfx*)sEnergyBallDL);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
 static const char sGlyphDL[] = "__OTR__objects/gdf_sacred/gGdfGlyphDL";
 static const char sGateDL[] = "__OTR__objects/gdf_sacred/gGdfRauruGateDL";
 static const char* sGateGemDL[2] = { "__OTR__objects/gdf_sacred/gGdfRauruGateGem0DL",
@@ -792,9 +812,8 @@ static void Shot_Draw(Actor* thisx, PlayState* play) {
         DrawObj(play, sArrowDL, &POLY_OPA_DISP);
     } else {
         u8 pulse = (u8)(200 + 55 * Math_SinS(((GdfShot*)thisx)->timer * 0x1800));
-        Matrix_RotateY(((GdfShot*)thisx)->timer * 0.2f, MTXMODE_APPLY);
-        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, pulse, 140, 255);
-        DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+        DrawEnergyBall(play, thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z,
+                       thisx->scale.x * ENERGY_BALL_PER_ORB, 255, pulse, 90, 255);
     }
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -1011,6 +1030,7 @@ typedef struct {
     f32 speed, accel, maxSpeed;
     s16 yaw, turn, life;
     u8 color, active;
+    u16 epoch; // (a new bullet in this slot: the frame interpolation starts it afresh, not from the last one)
     f32 size;
 } GdfBullet;
 
@@ -1057,6 +1077,7 @@ static void Rauru_Emit(GdfRauru* r, f32 x, f32 z, s16 yaw, f32 speed, f32 accel,
             b->color = color;
             b->size = size;
             b->active = true;
+            b->epoch++;
             return;
         }
     }
@@ -1527,17 +1548,25 @@ static void Rauru_Draw(Actor* thisx, PlayState* play) {
             gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, k, k, k * 3 / 4, 255);
             DrawObj(play, sGlyphDL, &POLY_OPA_DISP);
         } else {
-            Matrix_Scale(3.6f, 26.0f, 3.6f, MTXMODE_APPLY);
-            Matrix_RotateY(r->frames * 0.3f, MTXMODE_APPLY);
-            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 250, 200, 255);
-            DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+            // the Sacred Realm's column of light, standing where the glyph flared
+            u32 f = play->gameplayFrames & 0xFFFF;
+
+            Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+            gDPSetPrimColor(POLY_XLU_DISP++, 128, 128, 255, 255, 170, 255);
+            gSPSegment(POLY_XLU_DISP++, 8,
+                       (uintptr_t)Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, (f * 2) % 512, 512 - (f % 512) - 1, 128, 128,
+                                                     1, 512 - ((f * 2) % 512) - 1, 0, 64, 64, 2, -1, -2, 0));
+            Matrix_RotateY(r->frames * 0.05f, MTXMODE_APPLY);
+            Matrix_Scale(0.2f, 0.2f, 0.2f, MTXMODE_APPLY);
+            Matrix_Translate(0.0f, 150.0f, 0.0f, MTXMODE_APPLY);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_XLU_DISP++, (Gfx*)sCrystalLightDL);
         }
     }
     // his bullets of light
     {
         static const Color_RGB8 sBulletColors[] = {
             { 255, 215, 110 }, { 255, 255, 235 }, { 255, 150, 200 }, { 150, 215, 255 } };
-        Gfx_SetupDL_25Opa(play->state.gfxCtx);
         for (s32 i = 0; i < MAX_BULLETS; i++) {
             GdfBullet* b = &r->bullet[i];
             if (!b->active) {
@@ -1545,21 +1574,19 @@ static void Rauru_Draw(Actor* thisx, PlayState* play) {
             }
             const Color_RGB8* c = &sBulletColors[b->color];
             u8 k = (u8)(215 + 40 * Math_SinS((r->frames + i * 7) * 0x1400));
-            Matrix_Translate(b->x, r->bulletY, b->z, MTXMODE_NEW);
-            Matrix_Scale(b->size, b->size, b->size, MTXMODE_APPLY);
-            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, c->r * k / 255, c->g * k / 255, c->b * k / 255, 255);
-            DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+            // Each bullet its own in the frame interpolation (drawn in a loop, a bullet was blended with whichever
+            // was drawn in its place the frame before: they warped about and vanished)
+            FrameInterpolation_RecordOpenChild(b, b->epoch);
+            DrawEnergyBall(play, b->x, r->bulletY, b->z, b->size * ENERGY_BALL_PER_ORB, c->r, c->g * k / 255,
+                           c->b * k / 255, 255);
+            FrameInterpolation_RecordCloseChild();
         }
     }
     // the radiant burst gathering
     if ((r->state == RS_CHARGE) && (r->timer < 94)) {
         f32 s = (r->timer < 90) ? 1.0f + r->timer * 0.03f : 12.0f;
-        Matrix_Translate(thisx->world.pos.x, thisx->world.pos.y + 60.0f, thisx->world.pos.z, MTXMODE_NEW);
-        Matrix_RotateY(r->frames * 0.15f, MTXMODE_APPLY);
-        Matrix_Scale(s, s, s, MTXMODE_APPLY);
-        Gfx_SetupDL_25Opa(play->state.gfxCtx);
-        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 220, 255);
-        DrawObj(play, sOrbDL, &POLY_OPA_DISP);
+        DrawEnergyBall(play, thisx->world.pos.x, thisx->world.pos.y + 60.0f, thisx->world.pos.z,
+                       s * ENERGY_BALL_PER_ORB, 255, 230, 120, 255);
     }
     CLOSE_DISPS(play->state.gfxCtx);
 }
