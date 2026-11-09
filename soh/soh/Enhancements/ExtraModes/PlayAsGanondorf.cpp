@@ -876,6 +876,11 @@ extern "C" s32 PlayAsGanondorf_AdjustCutsceneView(Camera* camera, Vec3f* eye, Ve
         return true;
     }
 
+    // Link's house opening: he broods by the bed, not where Link lies, and the scene's own shots frame him there. Raised
+    // and drawn back (aimed at Link in bed) they cut him off at the shins and showed him out in the room.
+    if ((play != NULL) && (play->sceneNum == SCENE_LINKS_HOUSE) && (play->csCtx.state != CS_STATE_IDLE)) {
+        return false;
+    }
     if ((player == NULL) || LINK_IS_ADULT || (lift <= 0.0f) || !CVarGetInteger(CVAR_PLAY_AS_GDF("CutsceneCamera"), 1) ||
         !ShouldHideLink(play, player) || (player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON)) {
         return false;
