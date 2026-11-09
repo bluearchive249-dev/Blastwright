@@ -12456,11 +12456,16 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
     f32 floorY = this->playerFloorY;
     f32 hover = BossGanon_Player_GetHoverHeight();
     f32 heightTarget;
-    // On the ground he hops up and slams down onto his feet (his legs stand, see StandLegs); the floating heights
-    // are for levitating, where he rises above his hover height and slams down to just over the floor
+    // On the ground he hops up and slams down with his legs tucked as when he levitates (the pound's own floating
+    // legs), his lowest knee or foot coming down to the floor (the ground offset follows his pose, at once here); the
+    // floating heights are for levitating, where he rises above his hover height and slams down to just over the floor
     u8 grounded = this->playerGrounded;
-    f32 baseY = grounded ? player->actor.world.pos.y : (player->actor.world.pos.y + hover);
-    f32 impactY = grounded ? player->actor.world.pos.y : (floorY + 60.0f);
+    f32 baseY = grounded ? (player->actor.world.pos.y + this->playerGroundOffset) : (player->actor.world.pos.y + hover);
+    f32 impactY = grounded ? baseY : (floorY + 60.0f);
+
+    if (grounded) {
+        sGdfFastGroundTimer = MAX(sGdfFastGroundTimer, 2);
+    }
     s16 i;
     Vec3f sp6C;
     Vec3f sp60;
@@ -12552,6 +12557,9 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
                     this->unk_1C2 = 4;
                 } else {
                     BossGanon_Player_SetupFloat(this, play);
+                    if (grounded) {
+                        sGdfFastGroundTimer = 16; // (onto his feet through the blend into his idle)
+                    }
                 }
             }
             break;
@@ -13243,8 +13251,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
                         (this->actionFunc == BossGanon_Player_ChargeLightBall) ||
                         (this->actionFunc == BossGanon_Player_Throw) ||
                         (this->actionFunc == BossGanon_Player_ChargeBigMagic) ||
-                        (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Hurt) ||
-                        (this->actionFunc == BossGanon_Player_Pound));
+                        (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Hurt));
+        // (the ground pound keeps its own floating legs, tucked as when he levitates, on the ground too)
 
         // In fast (the morph into the action already smooths it); out over ~13 frames, longer than the 10-frame
         // morph back to his standing idle, so the floating root height never shows
