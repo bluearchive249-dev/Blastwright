@@ -2131,6 +2131,15 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "The ones he throws (D-Pad Down) go limp: a ragdoll built from their own skeleton tumbles through the "
             "air, slams into the ground, slides and flops to a stop against the floor and walls, then they get up."));
+    AddWidget(path, "Link as the Villain in His Cutscenes", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.VillainLink"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "The roles swapped in Ganondorf's cutscenes: adult Link plays the villain's part, in his own voice. So "
+            "far: the drawbridge escape, where Link rides out on Epona and his Light Arrow drops Ganondorf to his "
+            "knees."));
     AddWidget(path, "Cutscene Camera at His Height", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CutsceneCamera"))
         .PreFunc([](WidgetInfo& info) {

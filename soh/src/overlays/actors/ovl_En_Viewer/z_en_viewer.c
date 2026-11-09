@@ -15,7 +15,38 @@
 #include "objects/object_ganon/object_ganon.h"
 #include "objects/object_opening_demo1/object_opening_demo1.h"
 #include "soh/frame_interpolation.h"
+#include "objects/object_horse/object_horse.h"
+#include "objects/object_link_boy/object_link_boy.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 #include <assert.h>
+
+// SoH: "Play as Ganondorf", the drawbridge escape (Hyrule Field, layer 5) with the roles swapped: adult Link rides out
+// on Epona in Ganondorf's place, answers in his own voice, and instead of Ganondorf's dark magic fires a Light Arrow
+// that drops Ganondorf (the player) to his knees. The rest of the scene (the cutscene's paths, camera and timing) is
+// unchanged.
+s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId);
+
+s32 GdfVillain_Active(PlayState* play) {
+    return PlayAsGanondorf_ShouldHideLink(play, GET_PLAYER(play)) && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.VillainLink"), 1) &&
+           (play->sceneNum == SCENE_HYRULE_FIELD) && (gSaveContext.sceneLayer == 5);
+}
+void BossGanon_Player_CsStagger(s16 frames);
+
+static SkelAnime sVlSkel;       // the riding Link
+static Vec3s sVlJoints[PLAYER_LIMB_BUF_COUNT];
+static Vec3s sVlMorph[PLAYER_LIMB_BUF_COUNT];
+static SkelAnime sVlBowSkel;    // his arms with the bow, over the riding
+static Vec3s sVlBowJoints[PLAYER_LIMB_BUF_COUNT];
+static Vec3s sVlBowMorph[PLAYER_LIMB_BUF_COUNT];
+static u8 sVlReady = false;
+static u8 sVlBow = 0;           // 0 riding, 1 raising the bow, 2 aiming, 3 the shot
+static Vec3f sVlRider;          // the saddle (from Epona's draw)
+static u8 sVlRiderValid = false;
+static Vec3f sVlBowHand;
+static Vec3f sVlArrow;          // the Light Arrow, flying
+static Vec3f sVlArrowFrom;
+static s16 sVlArrowT = -1;
+#define GDF_VL_ARROW_FRAMES 7
 
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
@@ -101,8 +132,18 @@ void EnViewer_Init(Actor* thisx, PlayState* play) {
     this->unused = 0;
     this->state = 0;
     this->isVisible = false;
-    if (type == ENVIEWER_TYPE_3_GANONDORF || type == ENVIEWER_TYPE_5_GANONDORF || type == ENVIEWER_TYPE_7_GANONDORF ||
-        type == ENVIEWER_TYPE_8_GANONDORF || type == ENVIEWER_TYPE_9_GANONDORF) {
+    if (GdfVillain_Active(play) && (type == ENVIEWER_TYPE_4_HORSE_GANONDORF) &&
+        (Object_GetIndex(&play->objectCtx, OBJECT_HORSE) < 0)) {
+        Object_Spawn(&play->objectCtx, OBJECT_HORSE); // (Epona)
+    }
+    if (GdfVillain_Active(play) && (type == ENVIEWER_TYPE_3_GANONDORF)) {
+        sVlReady = false; // (Link rides instead: no cape)
+        sVlBow = 0;
+        sVlArrowT = -1;
+        sVlRiderValid = false;
+    } else if (type == ENVIEWER_TYPE_3_GANONDORF || type == ENVIEWER_TYPE_5_GANONDORF ||
+               type == ENVIEWER_TYPE_7_GANONDORF || type == ENVIEWER_TYPE_8_GANONDORF ||
+               type == ENVIEWER_TYPE_9_GANONDORF) {
         sGanondorfCape = (EnGanonMant*)Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_GANON_MANT,
                                                           0.0f, 0.0f, 0.0f, 0, 0, 0, 35);
     }
@@ -169,7 +210,17 @@ static ActorShadowFunc sShadowDrawFuncs[] = {
 
 void EnViewer_InitImpl(EnViewer* this, PlayState* play) {
     EnViewerInitData* initData = &sInitData[this->actor.params >> 8];
-    s32 skelObjBankIndex = Object_GetIndex(&play->objectCtx, initData->skeletonObject);
+    EnViewerInitData epona;
+    s32 skelObjBankIndex;
+
+    if (GdfVillain_Active(play) && ((this->actor.params >> 8) == ENVIEWER_TYPE_4_HORSE_GANONDORF)) {
+        epona = *initData;
+        epona.skeletonObject = epona.animObject = OBJECT_HORSE;
+        epona.skeletonHeaderSeg = (void*)gEponaSkel;
+        epona.anim = (AnimationHeader*)gEponaRearingAnim;
+        initData = &epona;
+    }
+    skelObjBankIndex = Object_GetIndex(&play->objectCtx, initData->skeletonObject);
 
     assert(skelObjBankIndex >= 0);
 
@@ -195,10 +246,146 @@ void EnViewer_InitImpl(EnViewer* this, PlayState* play) {
 
 static s16 sTimer = 0;
 
+// The villain's ride: the cutscene's moments for Ganondorf, as Link's (see GdfVillain_Active)
+static void EnViewer_VillainLinkAnim(PlayState* play, LinkAnimationHeader* anim, f32 speed, s32 loop) {
+    if (sVlSkel.animation != anim) {
+        LinkAnimation_Change(play, &sVlSkel, anim, speed, 0.0f, Animation_GetLastFrame(anim),
+                             loop ? ANIMMODE_LOOP : ANIMMODE_ONCE, -6.0f);
+    }
+}
+
+static void EnViewer_VillainBowAnim(PlayState* play, LinkAnimationHeader* anim, s32 loop) {
+    if (sVlBowSkel.animation != anim) {
+        LinkAnimation_Change(play, &sVlBowSkel, anim, 1.0f, 0.0f, Animation_GetLastFrame(anim),
+                             loop ? ANIMMODE_LOOP : ANIMMODE_ONCE, -6.0f);
+    }
+}
+
+static void EnViewer_VillainVoice(EnViewer* this, u16 sfx) {
+    Audio_PlayActorSound2(&this->actor, sfx);
+}
+
+static void EnViewer_UpdateVillainLink(EnViewer* this, PlayState* play) {
+    u16 csFrames = play->csCtx.frames;
+    s16 action = ((play->csCtx.state != CS_STATE_IDLE) && (play->csCtx.npcActions[1] != NULL))
+                     ? play->csCtx.npcActions[1]->action
+                     : 0;
+    Player* player = GET_PLAYER(play);
+
+    if (!sVlReady) {
+        s32 age = gSaveContext.linkAge;
+
+        gSaveContext.linkAge = LINK_AGE_ADULT;
+        SkelAnime_InitLink(play, &sVlSkel, gPlayerSkelHeaders[LINK_AGE_ADULT], (LinkAnimationHeader*)gPlayerAnim_link_uma_wait_1, 9,
+                           sVlJoints, sVlMorph, PLAYER_LIMB_MAX);
+        SkelAnime_InitLink(play, &sVlBowSkel, gPlayerSkelHeaders[LINK_AGE_ADULT], (LinkAnimationHeader*)gPlayerAnim_link_bow_bow_wait, 9,
+                           sVlBowJoints, sVlBowMorph, PLAYER_LIMB_MAX);
+        gSaveContext.linkAge = age;
+        sVlReady = true;
+    }
+
+    // His riding: still, rearing with Epona, looking about, and off at a gallop
+    if (action == 12) {
+        EnViewer_VillainLinkAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_uma_anim_fastrun, 1.5f, true);
+    } else if (action == 1) {
+        EnViewer_VillainLinkAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_uma_anim_stop, 1.0f, false);
+    } else if (action == 4) {
+        EnViewer_VillainLinkAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_uma_wait_2, 1.0f, true);
+    } else {
+        EnViewer_VillainLinkAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_uma_wait_1, 1.0f, true);
+    }
+    // The bow: raised (where Ganondorf charged his magic), held drawn, loosed, and lowered again as he rides off
+    switch (sVlBow) {
+        case 0:
+            if (action == 5) {
+                sVlBow = 1;
+                EnViewer_VillainBowAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_bow_bow_ready, false);
+                Audio_PlayActorSound2(&this->actor, NA_SE_IT_BOW_DRAW);
+            }
+            break;
+        case 1:
+            if (sVlBowSkel.curFrame >= sVlBowSkel.endFrame - 1.0f) {
+                sVlBow = 2;
+                EnViewer_VillainBowAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_bow_bow_wait, true);
+            }
+            break;
+        case 2:
+            break;
+        case 3:
+            if ((action == 8) || (action == 12)) {
+                sVlBow = 0;
+            }
+            break;
+    }
+    if (csFrames == 1508) {
+        EnViewer_VillainVoice(this, NA_SE_VO_LI_SWORD_L); // (where Ganondorf laughed: a battle cry)
+    }
+    // The shot (where Ganondorf's magic flew): a Light Arrow at Ganondorf
+    if ((csFrames == 1545) && (sVlArrowT < 0)) {
+        sVlBow = 3;
+        EnViewer_VillainBowAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_bow_bow_shoot, false);
+        EnViewer_VillainVoice(this, NA_SE_VO_LI_SWORD_N);
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_ARROW_SHOT);
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_LIGHT);
+        sVlArrowFrom = sVlArrow = sVlBowHand;
+        sVlArrowT = 0;
+    }
+    if (sVlArrowT >= 0) {
+        Vec3f to = player->actor.world.pos;
+        f32 u;
+
+        to.y += 90.0f; // (his chest)
+        sVlArrowT++;
+        u = MIN(sVlArrowT / (f32)GDF_VL_ARROW_FRAMES, 1.0f);
+        sVlArrow.x = sVlArrowFrom.x + (to.x - sVlArrowFrom.x) * u;
+        sVlArrow.y = sVlArrowFrom.y + (to.y - sVlArrowFrom.y) * u;
+        sVlArrow.z = sVlArrowFrom.z + (to.z - sVlArrowFrom.z) * u;
+        {
+            static Vec3f sZero = { 0.0f, 0.0f, 0.0f };
+            static Color_RGBA8 sPrim = { 255, 255, 200, 255 };
+            static Color_RGBA8 sEnv = { 255, 220, 60, 0 };
+
+            EffectSsKiraKira_SpawnDispersed(play, &sVlArrow, &sZero, &sZero, &sPrim, &sEnv, 1500, 12);
+        }
+        if (sVlArrowT == GDF_VL_ARROW_FRAMES) {
+            // It strikes him: a burst of light, and he drops to his knees
+            EffectSsHitMark_SpawnFixedScale(play, 3, &to);
+            Audio_PlayActorSound2(&player->actor, NA_SE_IT_EXPLOSION_LIGHT);
+            Audio_PlayActorSound2(&player->actor, NA_SE_EN_GANON_DAMAGE2);
+            BossGanon_Player_CsStagger(120);
+        }
+        if (sVlArrowT > GDF_VL_ARROW_FRAMES + 2) {
+            sVlArrowT = -2; // (spent)
+        }
+    }
+    if (action == 12) {
+        static u8 sCried = false;
+
+        if (!sCried) {
+            EnViewer_VillainVoice(this, NA_SE_VO_LI_AUTO_JUMP); // off at a gallop
+            sCried = true;
+        }
+    }
+
+    LinkAnimation_Update(play, &sVlSkel);
+    if (sVlBow != 0) {
+        LinkAnimation_Update(play, &sVlBowSkel);
+    }
+}
+
 void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
     u8 type = this->actor.params >> 8;
     u16 csFrames;
     s32 animationEnded;
+    u8 villain = GdfVillain_Active(play);
+    // (Epona in place of Ganondorf's horse)
+    AnimationHeader* horseRear = villain ? (AnimationHeader*)gEponaRearingAnim : (AnimationHeader*)gHorseGanonRearingAnim;
+    AnimationHeader* horseIdle = villain ? (AnimationHeader*)gEponaIdleAnim : (AnimationHeader*)gHorseGanonIdleAnim;
+    AnimationHeader* horseGallop = villain ? (AnimationHeader*)gEponaGallopingAnim : (AnimationHeader*)gHorseGanonGallopingAnim;
+
+    if (villain && (type == ENVIEWER_TYPE_3_GANONDORF)) {
+        EnViewer_UpdateVillainLink(this, play);
+    }
 
     if (type == ENVIEWER_TYPE_2_ZELDA) {
         if (gSaveContext.sceneLayer == 5) {
@@ -233,7 +420,7 @@ void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
                     break;
             }
         }
-        if (gSaveContext.sceneLayer == 5) {
+        if ((gSaveContext.sceneLayer == 5) && !villain) {
             if (play->csCtx.frames == 1508) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_ST_LAUGH);
             }
@@ -256,18 +443,18 @@ void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
     } else if (type == ENVIEWER_TYPE_4_HORSE_GANONDORF) {
         s16 curFrame = this->skin.skelAnime.curFrame;
 
-        if (this->skin.skelAnime.animation == &gHorseGanonRearingAnim) {
+        if (this->skin.skelAnime.animation == horseRear) {
             if (curFrame == 8) {
-                Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_HORSE_NEIGH);
+                Audio_PlayActorSound2(&this->actor, villain ? NA_SE_EV_HORSE_NEIGH : NA_SE_EV_GANON_HORSE_NEIGH);
             }
             if (curFrame == 30) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_HORSE_LAND2);
             }
-        } else if (this->skin.skelAnime.animation == &gHorseGanonIdleAnim) {
+        } else if (this->skin.skelAnime.animation == horseIdle) {
             if (curFrame == 25) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_HORSE_SANDDUST);
             }
-        } else if (this->skin.skelAnime.animation == &gHorseGanonGallopingAnim) {
+        } else if (this->skin.skelAnime.animation == horseGallop) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EV_HORSE_RUN_LEVEL - SFX_FLAG);
         }
     }
@@ -287,8 +474,8 @@ void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
                     if (this->skin.skelAnime.animation != &gYoungGanondorfHorsebackIdleAnim) {
                         Animation_PlayLoopSetSpeed(&this->skin.skelAnime, &gYoungGanondorfHorsebackIdleAnim, 1.0f);
                     }
-                } else if (this->skin.skelAnime.animation != &gHorseGanonIdleAnim) {
-                    Animation_PlayLoopSetSpeed(&this->skin.skelAnime, &gHorseGanonIdleAnim, 1.0f);
+                } else if (this->skin.skelAnime.animation != horseIdle) {
+                    Animation_PlayLoopSetSpeed(&this->skin.skelAnime, horseIdle, 1.0f);
                 }
             } else if (play->csCtx.npcActions[1]->action == 1) {
                 sTimer = 100;
@@ -296,8 +483,8 @@ void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
                     if (this->skin.skelAnime.animation != &gYoungGanondorfHorsebackRearAnim) {
                         Animation_PlayLoopSetSpeed(&this->skin.skelAnime, &gYoungGanondorfHorsebackRearAnim, 1.0f);
                     }
-                } else if (this->skin.skelAnime.animation != &gHorseGanonRearingAnim) {
-                    Animation_PlayLoopSetSpeed(&this->skin.skelAnime, &gHorseGanonRearingAnim, 1.0f);
+                } else if (this->skin.skelAnime.animation != horseRear) {
+                    Animation_PlayLoopSetSpeed(&this->skin.skelAnime, horseRear, 1.0f);
                 }
             } else if (type == ENVIEWER_TYPE_3_GANONDORF) {
                 switch (this->state) {
@@ -344,7 +531,9 @@ void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
                         break;
                     case 6:
                         if (play->csCtx.npcActions[1]->action == 12) {
-                            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_VOICE_DEMO);
+                            if (!villain) {
+                                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_VOICE_DEMO);
+                            }
                             Animation_PlayLoopSetSpeed(&this->skin.skelAnime, &gYoungGanondorfHorsebackRideAnim, 3.0f);
                             this->state++;
                         }
@@ -353,9 +542,9 @@ void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
                         this->state = 0;
                         break;
                 }
-            } else if (this->skin.skelAnime.animation != &gHorseGanonGallopingAnim &&
+            } else if (this->skin.skelAnime.animation != horseGallop &&
                        play->csCtx.npcActions[1]->action == 12) {
-                Animation_PlayLoopSetSpeed(&this->skin.skelAnime, &gHorseGanonGallopingAnim, 3.0f);
+                Animation_PlayLoopSetSpeed(&this->skin.skelAnime, horseGallop, 3.0f);
             }
         }
     } else if (type == ENVIEWER_TYPE_1_IMPA) {
@@ -529,9 +718,16 @@ void EnViewer_GanondorfPostLimbDrawUpdateCapeVec(PlayState* play, s32 limbIndex,
     }
 }
 
+static void EnViewer_DrawVillainLink(EnViewer* this, PlayState* play);
+
 void EnViewer_DrawGanondorf(EnViewer* this, PlayState* play) {
     s16 frames = 0;
     s16 type;
+
+    if (GdfVillain_Active(play) && ((this->actor.params >> 8) == ENVIEWER_TYPE_3_GANONDORF)) {
+        EnViewer_DrawVillainLink(this, play);
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
     type = this->actor.params >> 8;
@@ -581,7 +777,100 @@ void EnViewer_DrawGanondorf(EnViewer* this, PlayState* play) {
 }
 
 void EnViewer_DrawHorse(EnViewer* this, PlayState* play) {
+    if (GdfVillain_Active(play) && ((this->actor.params >> 8) == ENVIEWER_TYPE_4_HORSE_GANONDORF)) {
+        Vec3f riderOffset = { 600.0f, -1670.0f, 0.0f }; // (EnHorse's: the saddle)
+
+        OPEN_DISPS(play->state.gfxCtx);
+        gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gEponaEyeOpenTex));
+        CLOSE_DISPS(play->state.gfxCtx);
+        func_800A6330(&this->actor, play, &this->skin, NULL, true);
+        Skin_GetLimbPos(&this->skin, 30, &riderOffset, &sVlRider);
+        sVlRiderValid = true;
+        return;
+    }
     func_800A6330(&this->actor, play, &this->skin, NULL, true);
+}
+
+// The villain Link's hands: closed on the reins, or holding the bow (in his right hand, as he does)
+static s32 EnViewer_VillainOverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
+                                            void* thisx) {
+    if (limbIndex == PLAYER_LIMB_L_HAND) {
+        *dList = gLinkAdultLeftHandClosedNearDL;
+    } else if (limbIndex == PLAYER_LIMB_R_HAND) {
+        *dList = (sVlBow != 0) ? gLinkAdultRightHandHoldingBowNearDL : gLinkAdultRightHandClosedNearDL;
+    } else if (limbIndex == PLAYER_LIMB_SHEATH) {
+        *dList = gLinkAdultHylianShieldSwordAndSheathNearDL;
+    }
+    return false;
+}
+
+static void EnViewer_VillainPostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
+    static Vec3f sZero = { 0.0f, 0.0f, 0.0f };
+
+    if (limbIndex == PLAYER_LIMB_R_HAND) {
+        Matrix_MultVec3f(&sZero, &sVlBowHand);
+        if (sVlBow != 0) {
+            OPEN_DISPS(play->state.gfxCtx);
+            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_OPA_DISP++, gLinkAdultBowStringDL);
+            CLOSE_DISPS(play->state.gfxCtx);
+        }
+    }
+}
+
+static void EnViewer_DrawVillainLink(EnViewer* this, PlayState* play) {
+    Actor* horse = NULL;
+    Actor* a;
+    s32 age = gSaveContext.linkAge;
+    s32 i;
+
+    if (!sVlReady) {
+        return;
+    }
+    for (a = play->actorCtx.actorLists[this->actor.category].head; a != NULL; a = a->next) {
+        if ((a->id == ACTOR_EN_VIEWER) && ((a->params >> 8) == ENVIEWER_TYPE_4_HORSE_GANONDORF)) {
+            horse = a;
+        }
+    }
+    // His arms from the bow's animation while he has it up (over the riding's legs and body)
+    if (sVlBow != 0) {
+        for (i = PLAYER_LIMB_UPPER; i < PLAYER_LIMB_TORSO; i++) {
+            sVlJoints[i] = sVlBowJoints[i];
+        }
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    if ((horse != NULL) && sVlRiderValid) {
+        Matrix_Translate(sVlRider.x, sVlRider.y - 27.0f, sVlRider.z, MTXMODE_NEW);
+        Matrix_RotateY(BINANG_TO_RAD(horse->shape.rot.y), MTXMODE_APPLY);
+    } else {
+        Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, MTXMODE_NEW);
+        Matrix_RotateY(BINANG_TO_RAD(this->actor.shape.rot.y), MTXMODE_APPLY);
+    }
+    Matrix_Scale(0.01f, 0.01f, 0.01f, MTXMODE_APPLY);
+    gSPSegment(POLY_OPA_DISP++, 0x0C, gCullBackDList);
+    gSPSegment(POLY_XLU_DISP++, 0x0C, gCullBackDList);
+    gSaveContext.linkAge = LINK_AGE_ADULT; // (his textures and parts, whatever age the player is)
+    Player_DrawImpl(play, sVlSkel.skeleton, sVlJoints, sVlSkel.dListCount, 0, PLAYER_TUNIC_KOKIRI, 0, 0,
+                    EnViewer_VillainOverrideLimbDraw, EnViewer_VillainPostLimbDraw, &this->actor);
+    gSaveContext.linkAge = age;
+
+    // The Light Arrow in flight
+    if ((sVlArrowT > 0) && (sVlArrowT <= GDF_VL_ARROW_FRAMES)) {
+        Vec3f to = GET_PLAYER(play)->actor.world.pos;
+
+        to.y += 90.0f;
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        Matrix_Translate(sVlArrow.x, sVlArrow.y, sVlArrow.z, MTXMODE_NEW);
+        Matrix_RotateY(Math_Atan2F(to.z - sVlArrowFrom.z, to.x - sVlArrowFrom.x), MTXMODE_APPLY);
+        Matrix_RotateX(-Math_Atan2F(to.y - sVlArrowFrom.y,
+                                    sqrtf(SQ(to.x - sVlArrowFrom.x) + SQ(to.z - sVlArrowFrom.z))),
+                       MTXMODE_APPLY);
+        Matrix_Scale(0.012f, 0.012f, 0.012f, MTXMODE_APPLY);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 170, 255);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, gArrowNearDL);
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
 }
 
 s32 EnViewer_ZeldaOverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {

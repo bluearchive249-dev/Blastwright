@@ -12770,8 +12770,22 @@ static s32 BossGanon_Player_InBossRoom(PlayState* play) {
     }
 }
 
+// The villain Link's Light Arrow in the drawbridge escape (z_en_viewer.c): struck, he drops to his knees for a while
+static s16 sGdfCsStagger = 0;
+
+void BossGanon_Player_CsStagger(s16 frames) {
+    sGdfCsStagger = frames;
+    if (sPlayerGanondorf != NULL) {
+        Actor_SetColorFilter(&sPlayerGanondorf->actor, 0, 255, 0, 12);
+    }
+}
+
 static s32 BossGanon_Player_ShouldKneel(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
+
+    if ((sGdfCsStagger > 0) && !this->playerHidden && this->playerGrounded) {
+        return true;
+    }
 
     if (BossGanon_Player_InBossRoom(play) || !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.CutsceneKneel"), 0)) {
         return false; // (off by default: the cutscene camera rises to his height instead, PlayAsGanondorf.cpp)
@@ -13173,6 +13187,12 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     sGdfKneelStill = (Math_Vec3f_DistXZ(&player->actor.world.pos, &player->actor.prevPos) < 0.5f)
                          ? MIN(sGdfKneelStill + 1, 1000)
                          : 0;
+    if (sGdfCsStagger > 0) {
+        sGdfCsStagger--;
+        if ((this->actionFunc != BossGanon_Player_CsKneel) && !this->playerHidden && this->playerGrounded) {
+            BossGanon_Player_SetupCsKneel(this, play); // struck: down at once
+        }
+    }
     if ((this->actionFunc == BossGanon_Player_Float) && BossGanon_Player_ShouldKneel(this, play)) {
         BossGanon_Player_SetupCsKneel(this, play);
     }
