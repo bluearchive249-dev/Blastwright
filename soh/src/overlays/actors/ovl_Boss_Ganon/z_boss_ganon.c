@@ -11650,12 +11650,12 @@ static void BossGanon_Player_PlaceBrood(BossGanon* this, PlayState* play) {
     Vec3f spot = { GDF_BROOD_SPOT_X, 100.0f, GDF_BROOD_SPOT_Z };
     f32 floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &spot);
 
-    // His ankles stand GDF_ANKLE_HEIGHT above the floor (from the last draw, as UpdateGroundOffset does)
-    f32 ankleAboveRoot = MIN(this->unk_2EC[GDF_LEFT_FOOT_BODYPART].y, this->unk_2EC[GDF_RIGHT_FOOT_BODYPART].y) -
-                         this->actor.world.pos.y;
+    // His ankles stand GDF_ANKLE_HEIGHT above the floor, from this frame's pose (as UpdateGroundOffset does; the last
+    // draw's ankles were stale or wrong here, and he stood sunk to his shins in the floor)
+    f32 ankleAboveRoot = BossGanon_Player_PoseLowest(this);
 
-    if ((ankleAboveRoot < -60.0f) || (ankleAboveRoot > 60.0f)) {
-        ankleAboveRoot = GDF_ANKLE_HEIGHT; // first frame here (stale): stand on the floor
+    if ((ankleAboveRoot < -300.0f) || (ankleAboveRoot > 100.0f)) {
+        ankleAboveRoot = GDF_ANKLE_HEIGHT; // (not a sensible pose: stand on the floor)
     }
     spot.y = ((floorY > BGCHECK_Y_MIN) ? floorY : 0.0f) + GDF_ANKLE_HEIGHT - ankleAboveRoot;
     this->actor.world.pos = spot;
