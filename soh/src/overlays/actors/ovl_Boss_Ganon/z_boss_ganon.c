@@ -7111,15 +7111,15 @@ static void BossGanon_Player_ApplyMixamoWalk(BossGanon* this, PlayState* play, f
     f32 w;
 
     phase -= floorf(phase);
-    // Running (the stick pushed far): Mixamo's run clip, the trident stance's own run, taking over from the walk as he
-    // speeds up (its right heel comes down at its frame 17). With the trident, its own run does this.
+    // Running (the stick pushed far): the sprint's own run (Mixamo's "Running", as when holding A), taking over from the
+    // walk as he speeds up (its right heel comes down at its frame 17). With the trident, its own run does this.
     if (!back && (pace < 1.0f) && !BossGanon_Player_HasTrident()) {
         // (in full under the walk, which blends over it: no stick run shows through)
         f32 rw = this->playerWalkWeight * (1.0f - this->playerSprintWeight);
 
         if (rw > 0.0f) {
-            BossGanon_Player_ApplyClip(this, sGdfClipRun, ARRAY_COUNT(sGdfClipRun),
-                                       17.0f + phase * ARRAY_COUNT(sGdfClipRun), true, rw, 1.0f);
+            BossGanon_Player_ApplyClip(this, sGdfClipSprint, ARRAY_COUNT(sGdfClipSprint),
+                                       17.0f + phase * ARRAY_COUNT(sGdfClipSprint), true, rw, 1.0f);
         }
     }
     w = this->playerWalkWeight * (1.0f - this->playerSprintWeight) * (back ? 1.0f : pace);
@@ -7166,11 +7166,19 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
 
     rate = CLAMP(speed / BossGanon_Player_WalkNaturalSpeed(this, play, speed), 0.5f,
                  GDF_WALK_MAX_RATE + this->playerSprintWeight);
-    // Sprinting: as many strides as his speed covers (the run's own stride: no sliding feet)
-    if (this->playerSprintWeight > 0.0f) {
-        f32 sprintRate = MAX(speed * GDF_WALK_CYCLE_FRAMES / GDF_SPRINT_STRIDE, 0.5f);
+    // Sprinting, or running on the stick (the same run): as many strides as his speed covers (the run's own stride:
+    // no sliding feet)
+    {
+        f32 runAmt = MAX(this->playerSprintWeight,
+                         (BossGanon_Player_HasTrident() || BossGanon_Player_MixamoWalkBack(play, speed))
+                             ? 0.0f
+                             : 1.0f - BossGanon_Player_TridentWalkAmount(speed));
 
-        rate += (sprintRate - rate) * this->playerSprintWeight;
+        if (runAmt > 0.0f) {
+            f32 sprintRate = MAX(speed * GDF_WALK_CYCLE_FRAMES / GDF_SPRINT_STRIDE, 0.5f);
+
+            rate += (sprintRate - rate) * runAmt;
+        }
     }
     this->playerWalkStride = speed / (GDF_WALK_NATURAL_SPEED * GDF_WALK_MAX_RATE);
     if (moving || (this->playerWalkWeight > 0.0f)) {
