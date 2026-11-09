@@ -458,7 +458,18 @@ void DoorWarp1_WarpAppear(DoorWarp1* this, PlayState* play) {
     }
 }
 
+// SoH: "Play as Ganondorf", the gold warp up to the Goddesses' Spring (GanondorfSacredTemple.cpp: a Sages' warp
+// marked by its z rotation): it stays lit, and is drawn gold
+#define GDF_GOLD_WARP_MARK 0x4744
+#define GDF_IS_GOLD_WARP(warp) ((warp)->actor.home.rot.z == GDF_GOLD_WARP_MARK)
+
 void func_809998A4(DoorWarp1* this, PlayState* play) {
+    if (GDF_IS_GOLD_WARP(this)) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EV_WARP_HOLE - SFX_FLAG);
+        Math_SmoothStepToF(&this->lightRayAlpha, 255.0f, 0.4f, 10.0f, 0.01f);
+        Math_SmoothStepToF(&this->warpAlpha, 255.0f, 0.4f, 10.0f, 0.01f);
+        return;
+    }
     if (this->lightRayAlpha != 0.0f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EV_WARP_HOLE - SFX_FLAG);
     }
@@ -1020,6 +1031,10 @@ void DoorWarp1_DrawWarp(DoorWarp1* this, PlayState* play) {
             gDPSetEnvColor(POLY_XLU_DISP++, 0, 255 * temp_f0, 255, 255);
             break;
     }
+    if (GDF_IS_GOLD_WARP(this)) {
+        gDPSetPrimColor(POLY_XLU_DISP++, 0x00, 0x80, 255, 255, 220, (u8)this->warpAlpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 255, 185, 20, 255);
+    }
     gDPSetColorDither(POLY_XLU_DISP++, G_CD_DISABLE);
     gDPSetColorDither(POLY_XLU_DISP++, G_AD_NOTPATTERN | G_CD_MAGICSQ);
 
@@ -1061,6 +1076,10 @@ void DoorWarp1_DrawWarp(DoorWarp1* this, PlayState* play) {
                 gDPSetPrimColor(POLY_XLU_DISP++, 0x00, 0x80, 255 * temp_f0, 255, 255, (u8)this->lightRayAlpha);
                 gDPSetEnvColor(POLY_XLU_DISP++, 0, 255 * temp_f0, 255, 255);
                 break;
+        }
+        if (GDF_IS_GOLD_WARP(this)) {
+            gDPSetPrimColor(POLY_XLU_DISP++, 0x00, 0x80, 255, 255, 220, (u8)this->lightRayAlpha);
+            gDPSetEnvColor(POLY_XLU_DISP++, 255, 185, 20, 255);
         }
         spEC *= 2;
 

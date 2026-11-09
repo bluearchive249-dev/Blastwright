@@ -1615,8 +1615,11 @@ typedef struct {
     s16 frames;
 } GdfPortal;
 
+// The game's own warp (a Sages' warp, as in their cutscenes), drawn gold and kept lit (z_door_warp1.c's gold mark)
 static void Portal_Init(Actor* thisx, PlayState* play) {
     Audio_PlayActorSound2(thisx, NA_SE_EV_TRIFORCE_FLASH);
+    Actor_Spawn(&play->actorCtx, play, ACTOR_DOOR_WARP1, thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z, 0, 0,
+                0x4744, 2 /* WARP_SAGES */);
 }
 
 static void Portal_Update(Actor* thisx, PlayState* play) {
@@ -1636,22 +1639,7 @@ static void Portal_Update(Actor* thisx, PlayState* play) {
 }
 
 static void Portal_Draw(Actor* thisx, PlayState* play) {
-    GdfPortal* p = (GdfPortal*)thisx;
-    u8 k = (u8)(200 + 55 * Math_SinS(p->frames * 0x900));
-
-    OPEN_DISPS(play->state.gfxCtx);
-    Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    // a pillar of pale light, and a disc of it on the floor
-    Matrix_Translate(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z, MTXMODE_NEW);
-    Matrix_RotateY(p->frames * 0.05f, MTXMODE_APPLY);
-    Matrix_Scale(2.4f, 30.0f, 2.4f, MTXMODE_APPLY);
-    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, k * 3 / 4, k * 9 / 10, k, 255);
-    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
-    Matrix_Translate(thisx->world.pos.x, thisx->world.pos.y + 1.0f, thisx->world.pos.z, MTXMODE_NEW);
-    Matrix_Scale(5.0f, 0.08f, 5.0f, MTXMODE_APPLY);
-    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 170, 215, 255, 255);
-    DrawObj(play, sOrbDL, &POLY_OPA_DISP);
-    CLOSE_DISPS(play->state.gfxCtx);
+    // (the warp draws itself)
 }
 
 // ---- The Golden Goddesses: figures of light round the Triforce's dais, to talk to ----
@@ -1875,6 +1863,9 @@ static void SetUpRoom(PlayState* play, Player* player) {
                 player->actor.world.pos.y = (floorY > BGCHECK_Y_MIN) ? floorY : (player->actor.world.pos.y - 800.0f);
                 player->actor.prevPos = player->actor.home.pos = player->actor.world.pos;
                 player->actor.velocity.y = 0.0f;
+                // and out of the arrival (it waits for a Sage's cutscene to take him out of it): the game's own "end of
+                // cutscene" for Link, back on his feet and in control (down on the floor alone, he hung there still)
+                Player_SetCsAction(play, NULL, 7);
             }
             // the way up to the Goddesses' Spring, where the Triforce waits
             if (((sFrom == RAURU_SCENE) || (sFrom == SPRING_SCENE)) && TFlag(play, FLAG_RAURU_DOWN) &&
