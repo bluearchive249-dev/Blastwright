@@ -264,6 +264,10 @@ static ActorFunc sGdfCapeletDraw = NULL;
 // passing through it. The Hood option: a hood on his head (GanondorfHood.cpp), its brim casting a dark shadow over his
 // brow and eyes (his eyes only just glowing through it); his nose and mouth below it in the light.
 static MtxF sGdfLimbWorld[25]; // (from his last draw)
+// His torso where it's drawn (this draw, before his hair), and his hair kept off his collar (see HairOverride)
+static MtxF sGdfHairTorso;
+static u8 sGdfHairTorsoValid = false;
+static void BossGanon_Player_HairOverride(BossGanon* this, Vec3s* rot);
 static u8 sGdfLimbWorldValid = false;
 #define GDF_CLOAK_CAPSULES 12
 static GanonMantCapsule sGdfCapsules[GDF_CLOAK_CAPSULES];
@@ -3902,6 +3906,11 @@ static void BossGanon_Update_Impl(Actor* thisx, PlayState* play2) {
 s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     BossGanon* this = (BossGanon*)thisx;
 
+    // SoH: "Play as Ganondorf", the upper half of his hair (limb 14) hangs from his torso's way, not his head's
+    if ((limbIndex == 15) && GDF_IS_PLAYER(this) && sGdfHairTorsoValid) {
+        BossGanon_Player_HairOverride(this, rot);
+    }
+
     switch (limbIndex) {
         case 10:
             if (this->useOpenHand) {
@@ -4066,6 +4075,11 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
     // SoH: Phantom Ganon skin, every limb's matrix for posing his skeleton
     if (sGdfPgCapture && (limbIndex >= 1) && (limbIndex <= 25)) {
         Matrix_Get(&sGdfLimbMtx[limbIndex - 1]);
+    }
+
+    if ((limbIndex == 2) && GDF_IS_PLAYER(this)) {
+        Matrix_Get(&sGdfHairTorso);
+        sGdfHairTorsoValid = true;
     }
 
     // SoH: "Play as Ganondorf", every limb where it's drawn (his cloak drapes over them; his hood sits on his head)
@@ -8924,6 +8938,87 @@ static s32 BossGanon_Pg_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** d
         *dList = NULL;
     }
     return false;
+}
+
+// His hair: the running clips pitch his head, and the hair (hanging from it) swung in through the back of his armour's
+// collar. Its upper half is turned to hang as it does in his idle stance, seen from his torso (down, and back off his
+// shoulders), streaming further back the faster he runs and swaying a little with his strides; the player's lags
+// behind a little, like hair. The lower half follows it as it always did.
+static void BossGanon_Player_HairOverride(BossGanon* this, Vec3s* rot) {
+    static Vec3f sLag = { -0.83f, -0.55f, -0.12f };
+    MtxF parentMtx;
+    GdfMat3 P;
+    GdfMat3 T;
+    GdfMat3 R0;
+    GdfMat3 Q;
+    GdfMat3 Rn;
+    f32 want[3];
+    f32 w[3];
+    f32 l[3];
+    f32 c[3];
+    f32 v[3];
+    f32 len;
+    f32 cc;
+    f32 k;
+    f32 run = 0.0f;
+    s32 i;
+    s32 j;
+
+    if (this == sPlayerGanondorf) {
+        run = CLAMP(sGdfWalkSpeed / 8.0f, 0.0f, 1.0f) * this->playerWalkWeight;
+    }
+    want[0] = -0.83f;
+    want[1] = -0.55f - 0.35f * run;
+    want[2] = -0.12f + 0.08f * run * Math_SinS((s16)(this->playerWalkFrame * (0x10000 / 30.0f)));
+    if (this == sPlayerGanondorf) {
+        sLag.x += (want[0] - sLag.x) * 0.25f;
+        sLag.y += (want[1] - sLag.y) * 0.25f;
+        sLag.z += (want[2] - sLag.z) * 0.25f;
+        want[0] = sLag.x;
+        want[1] = sLag.y;
+        want[2] = sLag.z;
+    }
+    len = sqrtf(SQ(want[0]) + SQ(want[1]) + SQ(want[2]));
+    for (i = 0; i < 3; i++) {
+        want[i] /= len;
+    }
+
+    // That way in the world (from his torso), then in his head's own space
+    Matrix_Get(&parentMtx);
+    BossGanon_Pg_FromMtxF(&parentMtx, P, NULL);
+    BossGanon_Pg_FromMtxF(&sGdfHairTorso, T, NULL);
+    for (i = 0; i < 3; i++) {
+        w[i] = T[i][0] * want[0] + T[i][1] * want[1] + T[i][2] * want[2];
+    }
+    for (i = 0; i < 3; i++) {
+        l[i] = P[0][i] * w[0] + P[1][i] * w[1] + P[2][i] * w[2];
+    }
+
+    // The least turn that takes the hair's way (its local x) there, keeping its own twist
+    BossGanon_Pg_FromRot(rot, R0);
+    for (i = 0; i < 3; i++) {
+        c[i] = R0[i][0];
+    }
+    v[0] = c[1] * l[2] - c[2] * l[1];
+    v[1] = c[2] * l[0] - c[0] * l[2];
+    v[2] = c[0] * l[1] - c[1] * l[0];
+    cc = c[0] * l[0] + c[1] * l[1] + c[2] * l[2];
+    if (cc < -0.95f) {
+        return; // (turned right round: something's off, leave it)
+    }
+    k = 1.0f / (1.0f + cc);
+    {
+        f32 V[3][3] = { { 0.0f, -v[2], v[1] }, { v[2], 0.0f, -v[0] }, { -v[1], v[0], 0.0f } };
+
+        for (i = 0; i < 3; i++) {
+            for (j = 0; j < 3; j++) {
+                Q[i][j] = ((i == j) ? 1.0f : 0.0f) + V[i][j] +
+                          k * (V[i][0] * V[0][j] + V[i][1] * V[1][j] + V[i][2] * V[2][j]);
+            }
+        }
+    }
+    BossGanon_Pg_Mul(Q, R0, Rn, false);
+    BossGanon_Pg_ToRot(Rn, rot);
 }
 
 static void BossGanon_Pg_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
