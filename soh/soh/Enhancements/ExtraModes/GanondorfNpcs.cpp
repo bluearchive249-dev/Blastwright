@@ -27,6 +27,15 @@ const std::unordered_map<uint16_t, NpcLine> sNpcLines = {
 #include "GanondorfNpcLines.inc"
 };
 
+// His own part of the conversation: a greeting before the NPC's line and a goodbye after it (Kokiri Forest so far)
+struct NpcTalk {
+    const char* greeting;
+    const char* goodbye;
+};
+const std::unordered_map<uint16_t, NpcTalk> sNpcTalk = {
+#include "GanondorfNpcTalk.inc"
+};
+
 void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) ||
         !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 1) ||
@@ -37,8 +46,18 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     if (it == sNpcLines.end()) {
         return;
     }
-    CustomMessage msg =
-        CustomMessage(it->second.text, (TextBoxType)it->second.type, (TextBoxPosition)it->second.position);
+    std::string text = it->second.text;
+    auto talk = sNpcTalk.find(*textId);
+    if (talk != sNpcTalk.end()) {
+        // his greeting as the first box, their line, then his goodbye as the last box (\x04 starts a new box, \x02
+        // ends the message)
+        size_t end = text.rfind('\x02');
+        if (end != std::string::npos) {
+            text = std::string(talk->second.greeting) + "\x04" + text.substr(0, end) + "\x04" + talk->second.goodbye +
+                   text.substr(end);
+        }
+    }
+    CustomMessage msg = CustomMessage(text, (TextBoxType)it->second.type, (TextBoxPosition)it->second.position);
     *loadFromMessageTable = false;
     msg.LoadIntoFont();
 }
