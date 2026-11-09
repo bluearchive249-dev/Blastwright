@@ -268,6 +268,14 @@ static MtxF sGdfLimbWorld[25]; // (from his last draw)
 static MtxF sGdfHairTorso;
 static u8 sGdfHairTorsoValid = false;
 static void BossGanon_Player_HairOverride(BossGanon* this, Vec3s* rot);
+// First person (C-Up): his body stays, seen from his eyes, with his head left out (the view is from inside it)
+static u8 sGdfFpBodyQuery = false;
+static s32 BossGanon_Player_FpBodyOn(void) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.FirstPersonBody"), 1);
+}
+static s32 BossGanon_Player_HeadHidden(BossGanon* this, PlayState* play) {
+    return (this == sPlayerGanondorf) && (GET_PLAYER(play)->unk_6AD == 1) && BossGanon_Player_FpBodyOn();
+}
 static u8 sGdfLimbWorldValid = false;
 #define GDF_CLOAK_CAPSULES 12
 static GanonMantCapsule sGdfCapsules[GDF_CLOAK_CAPSULES];
@@ -3906,6 +3914,11 @@ static void BossGanon_Update_Impl(Actor* thisx, PlayState* play2) {
 s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     BossGanon* this = (BossGanon*)thisx;
 
+    // SoH: "Play as Ganondorf", first person: no head (limbs 10-17: head, face, jaw and hair)
+    if ((limbIndex >= 11) && (limbIndex <= 18) && BossGanon_Player_HeadHidden(this, play)) {
+        *dList = NULL;
+    }
+
     // SoH: "Play as Ganondorf", the upper half of his hair (limb 14) hangs from his torso's way, not his head's
     if ((limbIndex == 15) && GDF_IS_PLAYER(this) && sGdfHairTorsoValid) {
         BossGanon_Player_HairOverride(this, rot);
@@ -4107,7 +4120,7 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
         OPEN_DISPS(play->state.gfxCtx);
 
         Matrix_MultVec3f(&D_808E4DB8, &this->unk_208);
-        if (!sGdfPgCapture) {
+        if (!sGdfPgCapture && !BossGanon_Player_HeadHidden(this, play)) {
             // SoH: "Play as Ganondorf", he blinks: his glowing eyes squeezed shut toward their middle line (his head
             // limb's y runs down his face; the eyes span y -146 to 133 about -10), shut for two frames
             f32 open = GDF_IS_PLAYER(this) ? BossGanon_Player_EyesOpen() : 1.0f;
@@ -7529,8 +7542,8 @@ s32 BossGanon_Player_ShouldHideAnyForm(PlayState* play) {
         return true;
     }
 
-    // First person
-    if ((player->unk_6AD == 1) || (player->unk_6AD == 2)) {
+    // First person (looking about with C-Up, Ganondorf himself stays: see BossGanon_Player_HeadHidden)
+    if ((player->unk_6AD == 2) || ((player->unk_6AD == 1) && !(sGdfFpBodyQuery && BossGanon_Player_FpBodyOn()))) {
         return true;
     }
     // Link isn't drawn either
@@ -7550,8 +7563,13 @@ s32 BossGanon_Player_ShouldHideAnyForm(PlayState* play) {
 }
 
 static s32 BossGanon_Player_ShouldHide(BossGanon* this, PlayState* play) {
+    s32 hide;
+
+    sGdfFpBodyQuery = (this == sPlayerGanondorf);
+    hide = BossGanon_Player_ShouldHideAnyForm(play);
+    sGdfFpBodyQuery = false;
     // Ganon is out instead of him
-    return BossGanon_Player_ShouldHideAnyForm(play) || PlayAsGanondorf_IsGanonOut(play);
+    return hide || PlayAsGanondorf_IsGanonOut(play);
 }
 
 static s32 BossGanon_Player_CanStartAttack(BossGanon* this, PlayState* play) {
