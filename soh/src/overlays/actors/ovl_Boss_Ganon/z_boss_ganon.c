@@ -4138,6 +4138,10 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
                     Matrix_Scale(1.0f, open, 1.0f, MTXMODE_APPLY);
                     Matrix_Translate(0.0f, -GDF_EYES_MID_Y, 0.0f, MTXMODE_APPLY);
                 }
+                // (his eyes' own drawing state and texture again, right before them: whatever else was drawn in the
+                // see-through pass since his draw set them up, between his limbs, left them garbled)
+                Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+                gSPSegment(POLY_XLU_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gGanondorfNormalEyeTex));
                 gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
                           G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
                 gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfEyesDL));
