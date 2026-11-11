@@ -266,8 +266,11 @@ static ActorFunc sGdfCapeletDraw = NULL;
 // passing through it. The Hood option: a hood on his head (GanondorfHood.cpp), its brim casting a dark shadow over his
 // brow and eyes (his eyes only just glowing through it); his nose and mouth below it in the light.
 static MtxF sGdfLimbWorld[25]; // (from his last draw)
+static f32 sGdfWalkSpeed; // (defined with UpdateWalk)
 static f32 sGdfCapeRunLift = 0.0f; // how much he's running (0 to 1, see UpdateWalk): his cape's hold rises with it
 #define GDF_CAPE_RUN_LIFT 7.0f
+#define GDF_CAPE_HEM_FLARE 1.6f // how far out his cape's hem flares (its edges, at the bottom; per step)
+#define GDF_CAPE_BILLOW 2.6f    // how strongly it billows at a run
 void BossGanon_Player_Float(BossGanon* this, PlayState* play);
 // His torso where it's drawn (this draw, before his hair), and his hair kept off his collar (see HairOverride)
 static MtxF sGdfHairTorso;
@@ -444,6 +447,19 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
 
     if ((this != sPlayerGanondorf) || !sGdfLimbWorldValid || (sCape == NULL)) {
         return;
+    }
+
+    // His cape wider toward its hem, always, and billowing as he walks and runs: a ripple rolling down it, quicker and
+    // fuller the faster he goes, swelling out behind him (set back to still as he stops)
+    {
+        f32 go = this->playerGrounded ? this->playerWalkWeight * CLAMP(sGdfWalkSpeed / 10.0f, 0.0f, 1.0f) : 0.0f;
+
+        sCape->hemFlare = GDF_CAPE_HEM_FLARE;
+        Math_ApproachF(&sCape->billow, GDF_CAPE_BILLOW * go, 0.2f, 0.3f);
+        sCape->billowPhase += 0.18f + 0.22f * go;
+        if (sCape->billowPhase > 2.0f * M_PI * 100.0f) {
+            sCape->billowPhase -= 2.0f * M_PI * 100.0f;
+        }
     }
     for (i = 0; i < GDF_CLOAK_CAPSULES; i++) {
         MtxF* m = &sGdfLimbWorld[sSpec[i][0]];

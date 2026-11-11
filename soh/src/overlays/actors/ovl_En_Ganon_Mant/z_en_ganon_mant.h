@@ -80,6 +80,12 @@ typedef struct EnGanonMant {
     struct EnGanonMant* linked[GANON_MANT_MAX_LINKED];
     s16 linkedCount;
     u8 isLinked; // sewn onto another (drawn by it)
+    // SoH: the player-controlled Ganondorf's cape: its hem flared out wider than its top (outward push growing down the
+    // cape), and a billow: a ripple travelling down it and out behind him, at billowPhase (radians, advanced from
+    // outside), as he walks and runs. Both 0 on every other cape.
+    f32 hemFlare;
+    f32 billow;
+    f32 billowPhase;
 } EnGanonMant;
 
 // SoH: the player-controlled Ganondorf's hood, drawn with his cape (z_boss_ganon.c / GanondorfHood.cpp); null if off

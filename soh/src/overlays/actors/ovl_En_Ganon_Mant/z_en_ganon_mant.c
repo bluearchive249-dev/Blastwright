@@ -309,6 +309,23 @@ void EnGanonMant_UpdateStrand(PlayState* play, EnGanonMant* this, Vec3f* root, V
             delta.z = 0;
             Matrix_MultVec3f(&delta, &sideSwayOffset);
 
+            // SoH: the player-controlled Ganondorf's cape: its hem flared wide (its edge strands pushed out to either
+            // side, more the lower the joint), and its billow (a wave rolling down it from the collar, swelling out
+            // behind him and fluttering its sides)
+            if ((this->hemFlare != 0.0f) || (this->billow != 0.0f)) {
+                f32 down = i / (GANON_MANT_NUM_JOINTS - 1.0f);
+                f32 across = cosf((strandNum * M_PI) / (GANON_MANT_NUM_STRANDS - 1.0f));
+                f32 wave = sinf(this->billowPhase - i * 0.55f + strandNum * 0.35f);
+                Vec3f extra;
+
+                delta.x = -across * (this->hemFlare * down * down +
+                                     this->billow * 0.6f * sinf(this->billowPhase * 1.3f - i * 0.45f) * down);
+                delta.z = -this->billow * (0.55f + 0.45f * wave) * down;
+                Matrix_MultVec3f(&delta, &extra);
+                sideSwayOffset.x += extra.x;
+                sideSwayOffset.z += extra.z;
+            }
+
             // Calculate position difference
             gravity = this->gravity;
             x = ((pos->x + vel->x) - (pos - 1)->x) + (backSwayOffset.x + sideSwayOffset.x);
