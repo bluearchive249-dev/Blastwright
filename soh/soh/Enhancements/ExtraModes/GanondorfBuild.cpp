@@ -72,6 +72,7 @@ const PieceKind sKinds[PIECE_COUNT + 1] = {
 struct PieceData {
     u32 uid;
     u8 type;
+    u8 tex = 0; // its texture (sTexList)
     Vec3f pos;
     s16 rotY;
     f32 w, h, l;
@@ -82,6 +83,7 @@ struct GdfPiece {
     u32 uid;
     u8 type;
     u8 ghost; // being placed: see-through, no collision yet
+    u8 tex;
     f32 w, h, l;
 };
 
@@ -226,6 +228,7 @@ void Piece_Init(Actor* thisx, PlayState* play) {
     BuildShapes();
     self->uid = sSpawnSpec.uid;
     self->type = sSpawnSpec.type;
+    self->tex = sSpawnSpec.tex;
     self->w = sSpawnSpec.w;
     self->h = sSpawnSpec.h;
     self->l = sSpawnSpec.l;
@@ -265,6 +268,33 @@ void Piece_Update(Actor* thisx, PlayState* play) {
 // they would name new functions of their own, which don't exist)
 // The game's own textures: stone from its push blocks, water from Lake Hylia (read from the player's game data)
 #define STONE_TEX "__OTR__objects/gameplay_dangeon_keep/gPushBlockGrayTex"
+// The textures a piece can have (cycled with L while placing). Any the game keeps in indexed colour show as plain
+// stone colour instead.
+struct TexChoice {
+    const char* name;
+    const char* path;
+};
+static const TexChoice sTexList[] = {
+    { "Dungeon stone", STONE_TEX },
+    { "Forest brick", "__OTR__objects/object_mori_tex/gForestTwistedHallBrickTex" },
+    { "Forest stone wall", "__OTR__objects/object_mori_tex/gMoriStoneWallTex" },
+    { "Kakariko brick", "__OTR__objects/object_spot01_matoyab/gKakarikoConstructionSiteBrickTex" },
+    { "Brick with grass", "__OTR__objects/object_spot01_matoyab/gKakarikoConstructionSiteBrickWithGrassTex" },
+    { "Kakariko wood", "__OTR__objects/object_spot01_matoyab/gKakarikoConstructionSiteWoodTex" },
+    { "Drawbridge planks", "__OTR__objects/object_spot00_objects/gHyruleFieldCastleDrawbridgeWoodTex" },
+    { "Well stone", "__OTR__objects/object_spot01_matoya/gKakarikoBOTWStoneTex" },
+    { "Stone wall", "__OTR__objects/object_bowl/gBowlingStoneWallTex" },
+    { "Wood panels", "__OTR__objects/object_bowl/gBowlingWoodPanelTex" },
+    { "Crater rock", "__OTR__objects/object_spot17_obj/gCraterRockTex" },
+    { "Cavern rock", "__OTR__objects/object_spot16_obj/gDodongosCavernRockTex" },
+    { "Silver rock", "__OTR__objects/gameplay_field_keep/gFieldSilverRockTex" },
+    { "Colossus wall", "__OTR__objects/object_spot11_obj/gDesertColossusBombableWallTex" },
+    { "Ice", "__OTR__objects/object_spot06_objects/gLakeHyliaZoraShortcutIceblockTex" },
+    { "Red ice", "__OTR__objects/object_ice_objects/gRedIcePlatformTex" },
+    { "Metal", "__OTR__objects/object_mori_tex/gMoriKaitenkabeMetalWallTex" },
+    { "Grass", "__OTR__objects/object_haka/gGravestoneGrassTex" },
+};
+#define TEX_COUNT ((int)ARRAY_COUNT(sTexList))
 #define WATER_TEX "__OTR__objects/object_spot06_objects/gLakeHyliaWaterTex"
 #define TEX_REPEAT 60.0f // world units per repeat of the texture
 
@@ -377,9 +407,16 @@ static void Piece_Draw(Actor* thisx, PlayState* play) {
     GdfPiece* self = (GdfPiece*)thisx;
     bool water = (self->type == PIECE_WATER);
     bool ghost = self->ghost || water; // (water is drawn see-through too)
-    static TexInfo sStone = LoadTexInfo(STONE_TEX);
+    static TexInfo sTexInfo[TEX_COUNT];
+    static bool sTexLoaded[TEX_COUNT] = {};
     static TexInfo sWater = LoadTexInfo(WATER_TEX);
-    const TexInfo& tex = water ? sWater : sStone;
+    int texIndex = (self->tex < TEX_COUNT) ? self->tex : 0;
+
+    if (!sTexLoaded[texIndex]) {
+        sTexInfo[texIndex] = LoadTexInfo(sTexList[texIndex].path);
+        sTexLoaded[texIndex] = true;
+    }
+    const TexInfo& tex = water ? sWater : sTexInfo[texIndex];
     bool textured = (self->type != PIECE_BRUSH);
 
     OPEN_DISPS(play->state.gfxCtx);
@@ -390,7 +427,7 @@ static void Piece_Draw(Actor* thisx, PlayState* play) {
     } else {
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
     }
-    textured = textured && SetupTex(disp, water ? WATER_TEX : STONE_TEX, tex);
+    textured = textured && SetupTex(disp, water ? WATER_TEX : sTexList[texIndex].path, tex);
     if (textured) {
         // The game's texture, lit by the scene's light on each face, tinted by the primitive colour
         gDPSetCombineLERP(disp++, TEXEL0, 0, SHADE, 0, TEXEL0, 0, PRIMITIVE, 0, COMBINED, 0, PRIMITIVE, 0, 0, 0, 0,
@@ -403,8 +440,10 @@ static void Piece_Draw(Actor* thisx, PlayState* play) {
         gDPSetPrimColor(disp++, 0, 0, 160, 210, 255, self->ghost ? 110 : 170);
     } else if (ghost) {
         gDPSetPrimColor(disp++, 0, 0, 255, 225, 150, 140);
-    } else {
+    } else if (textured) {
         gDPSetPrimColor(disp++, 0, 0, 255, 255, 255, 255);
+    } else {
+        gDPSetPrimColor(disp++, 0, 0, 150, 142, 132, 255); // (plain stone, where a texture can't be used)
     }
     // At its real size: the actor's scale undone, the vertices made to size (so the texture keeps its size)
     Matrix_Scale(1.0f / MAX(thisx->scale.x, 0.0001f), 1.0f / MAX(thisx->scale.y, 0.0001f),
@@ -751,7 +790,7 @@ void SaveBuild(const SaveContext& saveContext, int sectionID, bool fullSave) {
     for (auto& [scene, list] : sPieces) {
         for (auto& p : list) {
             data.push_back((uint32_t)(int32_t)scene);
-            data.push_back(p.type);
+            data.push_back(p.type | ((uint32_t)p.tex << 8)); // (its texture in the second byte)
             data.push_back((uint32_t)(int32_t)lroundf(p.pos.x));
             data.push_back((uint32_t)(int32_t)lroundf(p.pos.y));
             data.push_back((uint32_t)(int32_t)lroundf(p.pos.z));
@@ -799,7 +838,8 @@ void LoadBuild() {
         PieceData p;
 
         p.uid = sNextUid++;
-        p.type = (u8)std::min<uint32_t>(data[i + 1], PIECE_COUNT - 1);
+        p.type = (u8)std::min<uint32_t>(data[i + 1] & 0xFF, PIECE_COUNT - 1);
+        p.tex = (u8)((data[i + 1] >> 8) & 0xFF);
         p.pos = { (f32)(int32_t)data[i + 2], (f32)(int32_t)data[i + 3], (f32)(int32_t)data[i + 4] };
         p.rotY = (s16)(int32_t)data[i + 5];
         p.w = (f32)data[i + 6];
@@ -914,6 +954,13 @@ int GdfBuild_MaxHere() {
 
 bool GdfBuild_IsPlacing() {
     return (sPlacing != nullptr) || (sBrush != nullptr);
+}
+
+const char* GdfBuild_PlacingTexName() {
+    if ((sPlacing == nullptr) || (sPlacing->type == PIECE_WATER)) {
+        return nullptr;
+    }
+    return sTexList[(sPlacing->tex < TEX_COUNT) ? sPlacing->tex : 0].name;
 }
 
 bool GdfBuild_IsSculpting() {
@@ -1181,6 +1228,10 @@ bool GdfBuild_PlacingFrame(Input* input) {
     if (Rep(input, BTN_DRIGHT, 7)) {
         self->w += 10.0f;
     }
+    if (CHECK_BTN_ALL(input->press.button, BTN_L) && (self->type != PIECE_WATER)) {
+        self->tex = (self->tex + 1) % TEX_COUNT;
+        Sfx(NA_SE_SY_CURSOR);
+    }
     if (Rep(input, BTN_DLEFT, 8)) {
         self->w -= 10.0f;
     }
@@ -1221,6 +1272,7 @@ bool GdfBuild_PlacingFrame(Input* input) {
         d.w = self->w;
         d.h = self->h;
         d.l = self->l;
+        d.tex = self->tex;
         a->home.pos = a->world.pos;
         sPieces[play->sceneNum].push_back(d);
         Piece_Solidify(self, play);

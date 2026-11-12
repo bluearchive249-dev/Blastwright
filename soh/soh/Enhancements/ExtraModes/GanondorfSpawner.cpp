@@ -456,12 +456,15 @@ void GdfSpawnerWindow::Draw() {
         ImDrawList* list = ImGui::GetForegroundDrawList(v);
         std::string where = sLast + "    Stick: move the marker    C-Left/Right: turn    A: summon here    "
                                     "B: back to the list";
+        const char* texName = GdfBuild_PlacingTexName();
+        std::string piece = std::string(texName != nullptr ? std::string("Texture: ") + texName + "  (L: next)    " : "") +
+                            "Stick: move    C-Left/Right: turn    C-Up/Down: raise/lower (R held: taller/shorter)    "
+                            "D-pad: longer/shorter, wider/narrower    Z: onto the floor    A: set down    B: cancel";
         const char* help = GdfBuild_IsTargeting() ? where.c_str()
                            : GdfBuild_IsSculpting()
                                ? "Stick: move the brush    A (hold): raise    Z (hold): lower    D-pad: brush size    "
                                  "B: done"
-                               : "Stick: move    C-Left/Right: turn    C-Up/Down: raise/lower (R held: taller/shorter)    "
-                           "D-pad: longer/shorter, wider/narrower    Z: onto the floor    A: set down    B: cancel";
+                               : piece.c_str();
         float fontSize = ImGui::GetFontSize() * std::max(v->Size.y / 720.0f, 1.0f);
         ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fontSize, v->Size.x * 0.9f, v->Size.x * 0.9f, help);
         ImVec2 p(v->Pos.x + (v->Size.x - ts.x) * 0.5f, v->Pos.y + v->Size.y - ts.y - 24.0f);
