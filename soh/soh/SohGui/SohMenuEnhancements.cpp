@@ -2140,6 +2140,22 @@ void SohMenu::AddMenuEnhancements() {
             "The roles swapped in Ganondorf's cutscenes: adult Link plays the villain's part, in his own voice. So "
             "far: the drawbridge escape, where Link rides out on Epona and his Light Arrow drops Ganondorf to his "
             "knees."));
+    AddWidget(path, "Play the Drawbridge Scene", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.options->disabled = (gPlayState == NULL);
+        })
+        .Options(ButtonOptions().Tooltip("Go straight to the drawbridge escape cutscene in Hyrule Field (to try "
+                                         "\"Link as the Villain\" out). Your save's story flags are left alone.")
+                     .Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo& info) {
+            if (gPlayState != NULL) {
+                gPlayState->nextEntranceIndex = ENTR_HYRULE_FIELD_PAST_BRIDGE_SPAWN;
+                gSaveContext.nextCutsceneIndex = 0xFFF1;
+                gPlayState->transitionTrigger = TRANS_TRIGGER_START;
+                gPlayState->transitionType = TRANS_TYPE_FADE_BLACK_FAST;
+            }
+        });
     AddWidget(path, "Cutscene Camera at His Height", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CutsceneCamera"))
         .PreFunc([](WidgetInfo& info) {
