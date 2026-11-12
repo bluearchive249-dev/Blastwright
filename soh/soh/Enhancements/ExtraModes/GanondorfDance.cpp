@@ -1,4 +1,4 @@
-// Play as Ganondorf: the dance emote's song. Any .wav in the ganondorf_songs folder (a file called dance.wav first)
+// Play as Ganondorf: the dance emote's song, and the strut's (strut.wav, see GanondorfStrut_Strutting). Any .wav in the ganondorf_songs folder (a file called dance.wav first)
 // is read on the first dance, converted to the game's 32 kHz stereo, and mixed into its sound output while he dances.
 // The file stays the player's own: nothing of it is shipped.
 #include "GanondorfDance.h"
@@ -44,7 +44,7 @@ void Notify(const std::string& prefix, const std::string& message) {
     Notification::Emit({ .prefix = prefix, .message = message, .remainingTime = 4.0f, .mute = true });
 }
 
-std::string FindSong() {
+std::string FindSong(const char* only = nullptr) {
     std::string first;
     for (const std::string& dir : { Ship::Context::GetPathRelativeToAppDirectory("ganondorf_songs"),
                                     Ship::Context::GetPathRelativeToAppDirectory("mods/ganondorf_songs") }) {
@@ -60,10 +60,16 @@ std::string FindSong() {
             }
             std::string stem = entry.path().stem().string();
             std::transform(stem.begin(), stem.end(), stem.begin(), ::tolower);
+            if (only != nullptr) {
+                if (stem == only) {
+                    return entry.path().string();
+                }
+                continue;
+            }
             if (stem == "dance") {
                 return entry.path().string();
             }
-            if (first.empty()) {
+            if ((stem != "strut") && first.empty()) {
                 first = entry.path().string();
             }
         }
@@ -166,7 +172,47 @@ void BeginLoad() {
     }).detach();
 }
 
+// The strut's song: strut.wav, played while he struts (the "Strut Walk" walk), picked up where it left off each time
+// he struts again, faded in and out over a moment so short stops don't chop it
+std::vector<int16_t> sStrutSong;
+std::atomic<int> sStrutState{ 0 }; // as sState
+std::atomic<bool> sStrutOn{ false };
+std::atomic<uint32_t> sStrutPos{ 0 };
+std::atomic<float> sStrutFade{ 0.0f };
+int sStrutSince = 0;
+
+void BeginStrutLoad() {
+    int expect = 0;
+    if (!sStrutState.compare_exchange_strong(expect, 1)) {
+        return;
+    }
+    std::string path = FindSong("strut");
+    if (path.empty()) {
+        sStrutState = 3;
+        return; // (no strut song: he struts in silence)
+    }
+    std::thread([path]() {
+        std::vector<int16_t> song;
+        bool ok = LoadWav(path, song);
+        if (ok) {
+            sStrutSong.swap(song);
+        }
+        sStrutState = ok ? 2 : 3;
+    }).detach();
+}
+
 } // namespace
+
+// He is strutting this frame (called each frame while he struts; when the calls stop, the song fades out)
+extern "C" void GanondorfStrut_Strutting(void) {
+    BeginStrutLoad();
+    sStrutSince = 0;
+    if (!sStrutOn) {
+        sStrutOn = true;
+        sMusicVol = CVarGetInteger(CVAR_SETTING("Volume.MainMusic"), 100) / 100.0f;
+        Audio_SetVolScale(SEQ_PLAYER_BGM_MAIN, 1, 0, 10);
+    }
+}
 
 extern "C" void GanondorfDance_Request(void) {
     sRequest = true;
@@ -208,7 +254,42 @@ extern "C" float GanondorfDance_Time(void) {
     return (float)sPos.load() / GDF_DANCE_RATE;
 }
 
+static void MixStrut(int16_t* samples, uint32_t frames) {
+    float fade = sStrutFade;
+    bool on = sStrutOn;
+
+    if ((sStrutState != 2) || (!on && (fade <= 0.0f)) || sHeld) {
+        return;
+    }
+    const size_t len = sStrutSong.size() / 2;
+    uint32_t pos = sStrutPos;
+    float vol = AudioSettings_GetMasterVolume() * sMusicVol;
+    float target = on ? 1.0f : 0.0f;
+    float fadeStep = 1.0f / (0.4f * GDF_DANCE_RATE);
+
+    for (uint32_t i = 0; i < frames; i++) {
+        if (fade < target) {
+            fade = std::min(target, fade + fadeStep);
+        } else if (fade > target) {
+            fade = std::max(target, fade - fadeStep);
+        }
+        if (pos >= len) {
+            pos = 0;
+        }
+        for (int k = 0; k < 2; k++) {
+            int32_t v = samples[i * 2 + k] + (int32_t)(sStrutSong[pos * 2 + k] * vol * fade);
+            samples[i * 2 + k] = (int16_t)std::clamp(v, -32768, 32767);
+        }
+        if (fade > 0.0f) {
+            pos++; // (it only moves on while heard: the next strut picks up where this one stopped)
+        }
+    }
+    sStrutFade = fade;
+    sStrutPos = pos;
+}
+
 extern "C" void GanondorfDance_Mix(int16_t* samples, uint32_t frames) {
+    MixStrut(samples, frames);
     if (sState != 2) {
         return;
     }
@@ -244,6 +325,13 @@ extern "C" void GanondorfDance_Mix(int16_t* samples, uint32_t frames) {
 // He stopped dancing without saying so (a new scene, the mode turned off): the song stops and the area music comes
 // back. On the pause screen the song only waits.
 static void OnFrame() {
+    // The strut: stopped a moment after he stops strutting (a quarter second's grace: steps between stick pushes)
+    if (sStrutOn && (++sStrutSince > 5)) {
+        sStrutOn = false;
+        if (!sPlaying) {
+            Audio_SetVolScale(SEQ_PLAYER_BGM_MAIN, 1, 0x7F, 20);
+        }
+    }
     if (!sPlaying) {
         return;
     }

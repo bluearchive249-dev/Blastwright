@@ -16,6 +16,9 @@ void GanondorfDance_Start(void);
 void GanondorfDance_Stop(void);
 // Seconds into the song as it's heard, or -1 without one (no .wav, or still loading)
 float GanondorfDance_Time(void);
+// He struts this frame (the "Strut Walk" at walking pace): strut.wav plays on from where it last stopped, and fades out
+// once the calls stop
+void GanondorfStrut_Strutting(void);
 // The audio thread: the song added into the game's mix (32 kHz stereo)
 void GanondorfDance_Mix(int16_t* samples, uint32_t frames);
 

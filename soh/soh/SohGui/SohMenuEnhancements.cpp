@@ -2507,7 +2507,8 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "He struts instead of walking: shoulders back, a swagger in every step. (Off: his ordinary walk.) "
-            "At a full run, and walking backwards while Z-targeting, he moves as usual."));
+            "At a full run, and walking backwards while Z-targeting, he moves as usual.\n\nIts song: put a strut.wav "
+            "in the ganondorf_songs folder and it plays while he struts, picking up where it left off."));
     AddWidget(path, "Dance: Suavemente (Test Emote)", WIDGET_BUTTON)
         .PreFunc([](WidgetInfo& info) {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
