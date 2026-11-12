@@ -2,6 +2,10 @@
 // Play as Ganondorf: terraforming, step 1: placed pieces. From the Dark Summoning menu's "Build" page he sets down
 // stairs, ramps, platforms, walls, pillars and bridges: each its own actor with real (dynamic) collision and a stone
 // look made here in code. What he builds is kept per area in the save file and stands again whenever he returns.
+// Step 2, water: a "Water pool" piece is a block of real water (a water box added to the area's list: he wades, swims
+// and dives in it), drawn see-through blue. Step 3, sculpting: a brush raises and lowers the area's own ground: a field
+// of height offsets on a grid, applied to the area's collision points and to the vertices of its room meshes alike
+// (from their untouched values, which are put back when the area is left; the game's files are never changed).
 // Placing (the world still, the camera overhead on the piece, shown see-through until it's set down):
 //   Stick: move   C-Left/C-Right: turn   C-Up/C-Down: raise/lower (with R held: taller/shorter)
 //   D-pad up/down: longer/shorter   D-pad left/right: wider/narrower   Z: down onto the floor   A: set down   B: cancel
@@ -9,12 +13,21 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
+
+#include <ship/Context.h>
+#include <ship/resource/ResourceManager.h>
+#include <fast/resource/type/Vertex.h>
 
 #include "soh/ActorDB.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/SaveManager.h"
 #include "soh/ShipInit.hpp"
+#include "soh/ResourceManagerHelpers.h"
+#include "soh/frame_interpolation.h" // gives the OPEN_DISPS macros C linkage for FrameInterpolation_*
 
 extern "C" {
 #include "z64.h"
@@ -28,17 +41,28 @@ extern PlayState* gPlayState;
 
 namespace {
 
-enum PieceType { PIECE_STAIRS, PIECE_RAMP, PIECE_PLATFORM, PIECE_WALL, PIECE_PILLAR, PIECE_BRIDGE, PIECE_COUNT };
+enum PieceType {
+    PIECE_STAIRS,
+    PIECE_RAMP,
+    PIECE_PLATFORM,
+    PIECE_WALL,
+    PIECE_PILLAR,
+    PIECE_BRIDGE,
+    PIECE_WATER,
+    PIECE_COUNT,
+    PIECE_BRUSH = PIECE_COUNT // (not a piece: the sculpting brush's marker on the ground)
+};
 
 struct PieceKind {
     const char* name;
     bool wedge;       // rises along its length (stairs, ramp); else a box
     f32 w, h, l;      // its size as it first appears
 };
-const PieceKind sKinds[PIECE_COUNT] = {
+const PieceKind sKinds[PIECE_COUNT + 1] = {
     { "Stairs", true, 120.0f, 100.0f, 160.0f },  { "Ramp", true, 120.0f, 80.0f, 220.0f },
     { "Platform", false, 200.0f, 20.0f, 200.0f }, { "Wall", false, 240.0f, 160.0f, 24.0f },
     { "Pillar", false, 50.0f, 240.0f, 50.0f },    { "Bridge", false, 100.0f, 12.0f, 400.0f },
+    { "Water pool", false, 300.0f, 60.0f, 300.0f }, { "Brush", false, 200.0f, 3.0f, 200.0f },
 };
 
 #define MAX_PIECES_PER_SCENE 16 // (the game's dynamic collision has room for only so many polygons an area)
@@ -66,6 +90,8 @@ s32 sActorId = -1;
 PieceData sSpawnSpec;
 bool sSpawnGhost = false;
 GdfPiece* sPlacing = nullptr;
+GdfPiece* sBrush = nullptr; // the sculpting brush's marker (sculpting while it exists)
+f32 sBrushRadius = 100.0f;
 int sHeld[16] = {};
 
 // ---- The two shapes: a box and a wedge (collision and display list from the same triangles) ----
@@ -178,6 +204,9 @@ void Piece_ApplySize(GdfPiece* self) {
 
 void Piece_Solidify(GdfPiece* self, PlayState* play) {
     self->ghost = false;
+    if (self->type == PIECE_WATER) {
+        return; // (water has no walls: it's in the area's water list, see RebuildWater)
+    }
     self->dyna.bgId = DynaPoly_SetBgActor(play, &play->colCtx.dyna, &self->dyna.actor,
                                           sKinds[self->type].wedge ? &sWedge.col : &sBox.col);
 }
@@ -204,11 +233,14 @@ void Piece_Init(Actor* thisx, PlayState* play) {
 void Piece_Destroy(Actor* thisx, PlayState* play) {
     GdfPiece* self = (GdfPiece*)thisx;
 
-    if (!self->ghost) {
+    if (!self->ghost && (self->dyna.bgId != BGACTOR_NEG_ONE)) {
         DynaPoly_DeleteBgActor(play, &play->colCtx.dyna, self->dyna.bgId);
     }
     if (sPlacing == self) {
         sPlacing = nullptr;
+    }
+    if (sBrush == self) {
+        sBrush = nullptr;
     }
 }
 
@@ -217,7 +249,8 @@ void Piece_Update(Actor* thisx, PlayState* play) {
 
 void Piece_Draw(Actor* thisx, PlayState* play) {
     GdfPiece* self = (GdfPiece*)thisx;
-    bool ghost = self->ghost;
+    bool water = (self->type == PIECE_WATER);
+    bool ghost = self->ghost || water; // (water is drawn see-through too)
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx*& disp = ghost ? POLY_XLU_DISP : POLY_OPA_DISP;
@@ -229,7 +262,9 @@ void Piece_Draw(Actor* thisx, PlayState* play) {
     }
     // Plain lit stone (no texture): its colour times the scene's light on each face
     gDPSetCombineLERP(disp++, PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE, 0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
-    if (ghost) {
+    if (water) {
+        gDPSetPrimColor(disp++, 0, 0, 70, 140, 215, self->ghost ? 90 : 125);
+    } else if (ghost) {
         gDPSetPrimColor(disp++, 0, 0, 255, 215, 120, 130);
     } else {
         gDPSetPrimColor(disp++, 0, 0, 150, 142, 132, 255);
@@ -303,6 +338,270 @@ void Sfx(u16 id) {
                          &gSfxDefaultReverb);
 }
 
+
+// ---- Water: the area's own water boxes plus one for each pool he set down ----
+
+CollisionHeader* sWaterHeader = nullptr;
+WaterBox* sOrigWater = nullptr;
+u16 sOrigWaterCount = 0;
+std::vector<WaterBox> sWaterBuf;
+
+void RestoreWater() {
+    if (sWaterHeader != nullptr) {
+        sWaterHeader->waterBoxes = sOrigWater;
+        sWaterHeader->numWaterBoxes = sOrigWaterCount;
+        sWaterHeader = nullptr;
+    }
+}
+
+void RebuildWater(CollisionHeader* header, s16 scene) {
+    if (header == nullptr) {
+        return;
+    }
+    if (sWaterHeader != header) {
+        RestoreWater();
+        sWaterHeader = header;
+        sOrigWater = header->waterBoxes;
+        sOrigWaterCount = header->numWaterBoxes;
+    }
+    sWaterBuf.assign(sOrigWater, sOrigWater + ((sOrigWater != nullptr) ? sOrigWaterCount : 0));
+    auto it = sPieces.find(scene);
+    if (it != sPieces.end()) {
+        for (auto& p : it->second) {
+            if (p.type != PIECE_WATER) {
+                continue;
+            }
+            WaterBox box = {};
+            box.xMin = (s16)(p.pos.x - p.w * 0.5f);
+            box.zMin = (s16)(p.pos.z - p.l * 0.5f);
+            box.xLength = (s16)p.w;
+            box.zLength = (s16)p.l;
+            box.ySurface = (s16)(p.pos.y + p.h);
+            box.properties = (0x3F << 13) | (0x1F << 8); // every room, the area's own light, its default camera
+            sWaterBuf.push_back(box);
+        }
+    }
+    if (sWaterBuf.size() == sOrigWaterCount) {
+        header->waterBoxes = sOrigWater;
+    } else {
+        header->waterBoxes = sWaterBuf.data();
+    }
+    header->numWaterBoxes = (u16)sWaterBuf.size();
+}
+
+// ---- Sculpting: a field of height offsets over the area, on a grid ----
+
+#define GRID 50.0f       // the grid's spacing (world units)
+#define REACH 300.0f     // a point of the grid only moves ground within this height of where it was sculpted
+#define MAX_OFFSET 400.0f
+
+struct Node {
+    f32 dy;
+    f32 refY;
+};
+typedef std::unordered_map<uint32_t, Node> Field;
+std::map<s16, Field> sFields; // by scene
+
+uint32_t NodeKey(int gx, int gz) {
+    return ((uint32_t)(uint16_t)(int16_t)gx << 16) | (uint16_t)(int16_t)gz;
+}
+
+// How far the ground at (x, z), at height y before any sculpting, has been moved
+f32 Offset(const Field& field, f32 x, f32 y, f32 z) {
+    f32 fx = x / GRID, fz = z / GRID;
+    int gx = (int)floorf(fx), gz = (int)floorf(fz);
+    f32 tx = fx - gx, tz = fz - gz;
+    f32 sum = 0.0f;
+
+    for (int i = 0; i < 4; i++) {
+        auto it = field.find(NodeKey(gx + (i & 1), gz + (i >> 1)));
+
+        if ((it != field.end()) && (fabsf(y - it->second.refY) < REACH)) {
+            sum += it->second.dy * ((i & 1) ? tx : 1.0f - tx) * ((i >> 1) ? tz : 1.0f - tz);
+        }
+    }
+    return sum;
+}
+
+// The area's collision as it was, and its room meshes' vertices as they were
+CollisionHeader* sColHeader = nullptr;
+std::vector<Vec3s> sColVtx;
+std::vector<CollisionPoly> sColPolys;
+Vec3s sColMin, sColMax;
+struct MeshVtx {
+    std::shared_ptr<Fast::Vertex> res;
+    std::vector<s16> origY;
+};
+std::unordered_map<std::string, MeshVtx> sMeshes;
+std::vector<std::string> sRoomFiles; // rooms loaded in this area, their meshes not yet looked up
+s16 sFieldScene = -1;
+
+void RestoreGround() {
+    if (sColHeader != nullptr) {
+        std::copy(sColVtx.begin(), sColVtx.end(), sColHeader->vtxList);
+        std::copy(sColPolys.begin(), sColPolys.end(), sColHeader->polyList);
+        sColHeader->minBounds = sColMin;
+        sColHeader->maxBounds = sColMax;
+        sColHeader = nullptr;
+    }
+    for (auto& [path, m] : sMeshes) {
+        for (size_t i = 0; i < m.origY.size() && i < m.res->VertexList.size(); i++) {
+            m.res->VertexList[i].v.ob[1] = m.origY[i];
+        }
+    }
+    sMeshes.clear();
+    sRoomFiles.clear();
+}
+
+void TrackCollision(CollisionHeader* header) {
+    if ((header == nullptr) || (sColHeader == header)) {
+        return;
+    }
+    sColHeader = header;
+    sColVtx.assign(header->vtxList, header->vtxList + header->numVertices);
+    sColPolys.assign(header->polyList, header->polyList + header->numPolygons);
+    sColMin = header->minBounds;
+    sColMax = header->maxBounds;
+}
+
+// The meshes of the rooms loaded since last time: their vertex lists, by name beside the room's file
+void TrackMeshes() {
+    for (std::string path : sRoomFiles) {
+        if (path.substr(0, 7) == "__OTR__") {
+            path = path.substr(7);
+        }
+        size_t pos;
+        if (ResourceMgr_IsGameMasterQuest() && ((pos = path.find("/nonmq/")) != std::string::npos)) {
+            path.replace(pos, 7, "/mq/");
+        }
+        int count = 0;
+        char** files = ResourceMgr_ListFiles((path + "Vtx_*").c_str(), &count);
+
+        for (int i = 0; i < count; i++) {
+            std::string name = files[i];
+
+            free(files[i]);
+            if (sMeshes.count(name)) {
+                continue;
+            }
+            auto res = std::dynamic_pointer_cast<Fast::Vertex>(
+                Ship::Context::GetRawInstance()->GetResourceManager()->LoadResource(name.c_str()));
+            if (res == nullptr) {
+                continue;
+            }
+            MeshVtx m;
+            m.res = res;
+            m.origY.reserve(res->VertexList.size());
+            for (auto& v : res->VertexList) {
+                m.origY.push_back(v.v.ob[1]);
+            }
+            sMeshes.emplace(name, std::move(m));
+        }
+        free(files);
+    }
+    sRoomFiles.clear();
+}
+
+// The field onto the area: its collision points and polygons, and its meshes
+void ApplyGround(s16 scene, bool growBounds) {
+    auto fit = sFields.find(scene);
+    static const Field sNone;
+    const Field& field = (fit != sFields.end()) ? fit->second : sNone;
+
+    TrackMeshes();
+    if (sColHeader != nullptr) {
+        CollisionHeader* h = sColHeader;
+        std::vector<u8> moved(h->numVertices, 0);
+        f32 lo = 0.0f, hi = 0.0f;
+
+        for (int i = 0; i < h->numVertices; i++) {
+            const Vec3s& o = sColVtx[i];
+            f32 d = field.empty() ? 0.0f : Offset(field, o.x, o.y, o.z);
+            s16 y = (s16)CLAMP(o.y + d, -32000.0f, 32000.0f);
+
+            moved[i] = (h->vtxList[i].y != y) || (d != 0.0f);
+            h->vtxList[i].y = y;
+            lo = std::min(lo, d);
+            hi = std::max(hi, d);
+        }
+        for (int i = 0; i < h->numPolygons; i++) {
+            CollisionPoly* p = &h->polyList[i];
+            int a = p->flags_vIA & 0x1FFF, b = p->flags_vIB & 0x1FFF, c = p->vIC;
+
+            if ((a >= h->numVertices) || (b >= h->numVertices) || (c >= h->numVertices) ||
+                !(moved[a] || moved[b] || moved[c])) {
+                continue;
+            }
+            Vec3f va = { (f32)h->vtxList[a].x, (f32)h->vtxList[a].y, (f32)h->vtxList[a].z };
+            Vec3f ab = { h->vtxList[b].x - va.x, h->vtxList[b].y - va.y, h->vtxList[b].z - va.z };
+            Vec3f ac = { h->vtxList[c].x - va.x, h->vtxList[c].y - va.y, h->vtxList[c].z - va.z };
+            Vec3f n = { ab.y * ac.z - ab.z * ac.y, ab.z * ac.x - ab.x * ac.z, ab.x * ac.y - ab.y * ac.x };
+            f32 len = sqrtf(SQ(n.x) + SQ(n.y) + SQ(n.z));
+
+            if (len < 0.001f) {
+                continue;
+            }
+            n.x /= len, n.y /= len, n.z /= len;
+            {
+                // (facing the way it did: a floor stays a floor)
+                const Vec3s& was = sColPolys[i].normal;
+
+                if (n.x * was.x + n.y * was.y + n.z * was.z < 0.0f) {
+                    n.x = -n.x, n.y = -n.y, n.z = -n.z;
+                }
+            }
+            p->normal.x = (s16)(n.x * 32767.0f);
+            p->normal.y = (s16)(n.y * 32767.0f);
+            p->normal.z = (s16)(n.z * 32767.0f);
+            p->dist = (s16)CLAMP(-(n.x * va.x + n.y * va.y + n.z * va.z), -32767.0f, 32767.0f);
+        }
+        if (growBounds) {
+            // (before the game sorts the area's polygons into its lookup grid: room for what was raised and dug)
+            h->minBounds.y = (s16)CLAMP(sColMin.y + lo - 50.0f, -32000.0f, 32000.0f);
+            h->maxBounds.y = (s16)CLAMP(sColMax.y + hi + 50.0f, -32000.0f, 32000.0f);
+        }
+    }
+    for (auto& [path, m] : sMeshes) {
+        auto& list = m.res->VertexList;
+
+        for (size_t i = 0; i < m.origY.size() && i < list.size(); i++) {
+            f32 d = field.empty() ? 0.0f : Offset(field, list[i].v.ob[0], m.origY[i], list[i].v.ob[2]);
+
+            list[i].v.ob[1] = (s16)CLAMP(m.origY[i] + d, -32000.0f, 32000.0f);
+        }
+    }
+}
+
+// The brush: every point of the grid within its radius up or down, most at its middle
+void BrushStroke(PlayState* play, Vec3f at, f32 radius, f32 amount) {
+    Field& field = sFields[play->sceneNum];
+    int r = (int)ceilf(radius / GRID);
+    int cx = (int)lroundf(at.x / GRID), cz = (int)lroundf(at.z / GRID);
+
+    for (int gx = cx - r; gx <= cx + r; gx++) {
+        for (int gz = cz - r; gz <= cz + r; gz++) {
+            f32 d = sqrtf(SQ(gx * GRID - at.x) + SQ(gz * GRID - at.z));
+
+            if (d >= radius) {
+                continue;
+            }
+            auto it = field.find(NodeKey(gx, gz));
+            if (it == field.end()) {
+                if (field.size() >= 6000) {
+                    continue; // (enough for one area)
+                }
+                // (new: it moves the ground that's at the brush's height, as it was before any sculpting)
+                Node node = { 0.0f, at.y - Offset(field, gx * GRID, at.y, gz * GRID) };
+                it = field.emplace(NodeKey(gx, gz), node).first;
+            }
+            it->second.dy = CLAMP(it->second.dy + amount * 0.5f * (1.0f + cosf(M_PI * d / radius)), -MAX_OFFSET,
+                                  MAX_OFFSET);
+        }
+    }
+    TrackCollision(play->colCtx.colHeader);
+    ApplyGround(play->sceneNum, false);
+}
+
 // ---- Saving: every piece of every area, with the file ----
 
 void SaveBuild(const SaveContext& saveContext, int sectionID, bool fullSave) {
@@ -324,6 +623,23 @@ void SaveBuild(const SaveContext& saveContext, int sectionID, bool fullSave) {
     SaveManager::Instance->SaveData("count", (uint32_t)data.size());
     SaveManager::Instance->SaveArray("data", data.size(),
                                      [&](size_t i) { SaveManager::Instance->SaveData("", data[i]); });
+
+    // The sculpted ground: scene, grid point, offset (in quarter units), the height it was sculpted at
+    std::vector<uint32_t> ground;
+    for (auto& [scene, field] : sFields) {
+        for (auto& [key, node] : field) {
+            if (fabsf(node.dy) < 0.25f) {
+                continue;
+            }
+            ground.push_back((uint32_t)(int32_t)scene);
+            ground.push_back(key);
+            ground.push_back((uint32_t)(int32_t)lroundf(node.dy * 4.0f));
+            ground.push_back((uint32_t)(int32_t)lroundf(node.refY));
+        }
+    }
+    SaveManager::Instance->SaveData("groundCount", (uint32_t)ground.size());
+    SaveManager::Instance->SaveArray("ground", ground.size(),
+                                     [&](size_t i) { SaveManager::Instance->SaveData("", ground[i]); });
 }
 
 void LoadBuild() {
@@ -350,12 +666,30 @@ void LoadBuild() {
         p.l = (f32)data[i + 8];
         sPieces[(s16)(int32_t)data[i]].push_back(p);
     }
+
+    uint32_t groundCount = 0;
+    std::vector<uint32_t> ground;
+
+    sFields.clear();
+    SaveManager::Instance->LoadData("groundCount", groundCount, (uint32_t)0);
+    SaveManager::Instance->LoadArray("ground", groundCount, [&](size_t i) {
+        uint32_t v = 0;
+
+        SaveManager::Instance->LoadData("", v, (uint32_t)0);
+        ground.push_back(v);
+    });
+    for (size_t i = 0; i + 4 <= ground.size(); i += 4) {
+        Node node = { (f32)(int32_t)ground[i + 2] / 4.0f, (f32)(int32_t)ground[i + 3] };
+
+        sFields[(s16)(int32_t)ground[i]][ground[i + 1]] = node;
+    }
 }
 
 void OnSceneSpawnActors() {
     PlayState* play = gPlayState;
 
     sPlacing = nullptr;
+    sBrush = nullptr;
     if (play == nullptr) {
         return;
     }
@@ -369,7 +703,15 @@ void OnSceneSpawnActors() {
 }
 
 void RegisterGanondorfBuild() {
-    SaveManager::Instance->AddInitFunction([](bool isDebug) { sPieces.clear(); });
+    SaveManager::Instance->AddInitFunction([](bool isDebug) {
+        sPieces.clear();
+        sFields.clear();
+    });
+    // Leaving an area: its water list, collision and meshes as they were (they're the game's own, loaded once)
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayDestroy>([]() {
+        RestoreWater();
+        RestoreGround();
+    });
     SaveManager::Instance->AddLoadFunction("ganondorfBuild", 1, LoadBuild);
     SaveManager::Instance->AddSaveFunction("ganondorfBuild", 1, SaveBuild, true, SECTION_PARENT_NONE);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneSpawnActors>(OnSceneSpawnActors);
@@ -378,6 +720,36 @@ void RegisterGanondorfBuild() {
 static RegisterShipInitFunc initFunc(RegisterGanondorfBuild, {});
 
 } // namespace
+
+// The area's collision is about to be set up: his pools into its water, his sculpting onto its ground
+extern "C" void GdfBuild_BeforeCollision(PlayState* play, CollisionHeader* header) {
+    RestoreWater();
+    RestoreGround();
+    if ((play == nullptr) || (header == nullptr)) {
+        return;
+    }
+    if (sPieces.count(play->sceneNum)) {
+        RebuildWater(header, play->sceneNum);
+    }
+    sFieldScene = play->sceneNum;
+    auto it = sFields.find(play->sceneNum);
+    if ((it != sFields.end()) && !it->second.empty()) {
+        TrackCollision(header);
+        ApplyGround(play->sceneNum, true);
+    }
+}
+
+// A room of the area is loading: its mesh gets the sculpting too
+extern "C" void GdfBuild_RoomLoading(PlayState* play, const char* roomFile) {
+    if ((play == nullptr) || (roomFile == nullptr)) {
+        return;
+    }
+    sRoomFiles.push_back(roomFile);
+    auto it = sFields.find(play->sceneNum);
+    if ((it != sFields.end()) && !it->second.empty()) {
+        ApplyGround(play->sceneNum, false);
+    }
+}
 
 int GdfBuild_KindCount() {
     return PIECE_COUNT;
@@ -400,14 +772,20 @@ int GdfBuild_MaxHere() {
 }
 
 bool GdfBuild_IsPlacing() {
-    return sPlacing != nullptr;
+    return (sPlacing != nullptr) || (sBrush != nullptr);
+}
+
+bool GdfBuild_IsSculpting() {
+    return sBrush != nullptr;
 }
 
 bool GdfBuild_Focus(Vec3f* pos) {
-    if (sPlacing == nullptr) {
+    GdfPiece* p = (sPlacing != nullptr) ? sPlacing : sBrush;
+
+    if (p == nullptr) {
         return false;
     }
-    *pos = sPlacing->dyna.actor.world.pos;
+    *pos = p->dyna.actor.world.pos;
     return true;
 }
 
@@ -440,6 +818,11 @@ bool GdfBuild_Begin(int kind) {
 }
 
 void GdfBuild_Cancel() {
+    if (sBrush != nullptr) {
+        sBrush->dyna.actor.draw = nullptr;
+        Actor_Kill(&sBrush->dyna.actor);
+        sBrush = nullptr;
+    }
     if (sPlacing != nullptr) {
         sPlacing->dyna.actor.draw = nullptr;
         Actor_Kill(&sPlacing->dyna.actor);
@@ -447,11 +830,95 @@ void GdfBuild_Cancel() {
     }
 }
 
+// The brush out on the ground in front of him
+bool GdfBuild_BeginSculpt() {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || GdfBuild_IsPlacing()) {
+        return false;
+    }
+    Player* player = GET_PLAYER(play);
+    PieceData d = {};
+
+    d.uid = 0;
+    d.type = PIECE_BRUSH;
+    d.w = d.l = sBrushRadius * 2.0f;
+    d.h = 3.0f;
+    d.pos = player->actor.world.pos;
+    d.pos.x += Math_SinS(player->actor.shape.rot.y) * 120.0f;
+    d.pos.z += Math_CosS(player->actor.shape.rot.y) * 120.0f;
+    sBrush = SpawnPiece(play, d, true);
+    for (int& h : sHeld) {
+        h = 0;
+    }
+    return sBrush != nullptr;
+}
+
+// Everything sculpted in this area, back as it was
+bool GdfBuild_RestoreGroundHere() {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || !sFields.count(play->sceneNum)) {
+        return false;
+    }
+    sFields.erase(play->sceneNum);
+    TrackCollision(play->colCtx.colHeader);
+    ApplyGround(play->sceneNum, false);
+    Sfx(NA_SE_EV_WALL_BROKEN);
+    return true;
+}
+
+static bool SculptFrame(Input* input) {
+    PlayState* play = gPlayState;
+    Actor* a = &sBrush->dyna.actor;
+    Player* player = GET_PLAYER(play);
+    s16 yaw = player->actor.shape.rot.y;
+    f32 fx = Math_SinS(yaw), fz = Math_CosS(yaw);
+    f32 sx = (ABS(input->rel.stick_x) > 8) ? input->rel.stick_x / 60.0f : 0.0f;
+    f32 sy = (ABS(input->rel.stick_y) > 8) ? input->rel.stick_y / 60.0f : 0.0f;
+    CollisionPoly* poly;
+    s32 bgId;
+
+    a->world.pos.x += (fx * sy - fz * sx) * 8.0f;
+    a->world.pos.z += (fz * sy + fx * sx) * 8.0f;
+    if (Rep(input, BTN_DUP, 5) || Rep(input, BTN_DRIGHT, 7)) {
+        sBrushRadius += 10.0f;
+    }
+    if (Rep(input, BTN_DDOWN, 6) || Rep(input, BTN_DLEFT, 8)) {
+        sBrushRadius -= 10.0f;
+    }
+    sBrushRadius = CLAMP(sBrushRadius, 50.0f, 400.0f);
+    sBrush->w = sBrush->l = sBrushRadius * 2.0f;
+    Piece_ApplySize(sBrush);
+    // The marker lies on the ground under it
+    Vec3f from = { a->world.pos.x, a->world.pos.y + 150.0f, a->world.pos.z };
+    f32 floorY = BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &from);
+    if (floorY > BGCHECK_Y_MIN) {
+        a->world.pos.y = floorY;
+    }
+    if (CHECK_BTN_ALL(input->cur.button, BTN_A)) {
+        BrushStroke(play, a->world.pos, sBrushRadius, 3.0f);
+        a->world.pos.y += 3.0f;
+    } else if (CHECK_BTN_ALL(input->cur.button, BTN_Z)) {
+        BrushStroke(play, a->world.pos, sBrushRadius, -3.0f);
+        a->world.pos.y -= 3.0f;
+    }
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        GdfBuild_Cancel();
+        Sfx(NA_SE_SY_CANCEL);
+        return false;
+    }
+    return true;
+}
+
 // One frame of placing (the world is still: this moves the piece itself). False once it's set down or cancelled.
 bool GdfBuild_PlacingFrame(Input* input) {
     PlayState* play = gPlayState;
     GdfPiece* self = sPlacing;
 
+    if ((play != nullptr) && (sBrush != nullptr)) {
+        return SculptFrame(input);
+    }
     if ((play == nullptr) || (self == nullptr)) {
         return false;
     }
@@ -511,6 +978,9 @@ bool GdfBuild_PlacingFrame(Input* input) {
             a->world.pos.y = floorY;
         }
     }
+    if (self->type == PIECE_WATER) {
+        a->shape.rot.y = 0; // (the game's water lies square to the world)
+    }
     a->world.rot.y = a->shape.rot.y;
     Piece_ApplySize(self);
 
@@ -534,6 +1004,9 @@ bool GdfBuild_PlacingFrame(Input* input) {
         a->home.pos = a->world.pos;
         sPieces[play->sceneNum].push_back(d);
         Piece_Solidify(self, play);
+        if (d.type == PIECE_WATER) {
+            RebuildWater(play->colCtx.colHeader, play->sceneNum);
+        }
         sPlacing = nullptr;
         Sfx(NA_SE_EV_STONE_BOUND);
         return false;
@@ -558,6 +1031,7 @@ bool GdfBuild_RemoveNearest() {
     });
     RemoveActor(play, best->uid);
     it->second.erase(best);
+    RebuildWater(play->colCtx.colHeader, play->sceneNum);
     Sfx(NA_SE_EV_WALL_BROKEN);
     return true;
 }
@@ -578,6 +1052,7 @@ int GdfBuild_ClearHere() {
         RemoveActor(play, p.uid);
     }
     sPieces.erase(it);
+    RebuildWater(play->colCtx.colHeader, play->sceneNum);
     if (n > 0) {
         Sfx(NA_SE_EV_WALL_BROKEN);
     }

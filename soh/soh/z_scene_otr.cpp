@@ -37,6 +37,8 @@ extern "C" {
 }
 
 extern Ship::IResource* OTRPlay_LoadFile(PlayState* play, const char* fileName);
+extern "C" void GdfBuild_BeforeCollision(PlayState* play, CollisionHeader* header);
+extern "C" void GdfBuild_RoomLoading(PlayState* play, const char* roomFile);
 extern "C" s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId);
 extern "C" RomFile sNaviMsgFiles[];
 s32 OTRScene_ExecuteCommands(PlayState* play, SOH::Scene* scene);
@@ -75,6 +77,8 @@ bool Scene_CommandUnused2(PlayState* play, SOH::ISceneCommand* cmd) {
 bool Scene_CommandCollisionHeader(PlayState* play, SOH::ISceneCommand* cmd) {
     // SOH::SetCollisionHeader* cmdCol = std::static_pointer_cast<SOH::SetCollisionHeader>(cmd);
     SOH::SetCollisionHeader* cmdCol = (SOH::SetCollisionHeader*)cmd;
+    // SoH: "Play as Ganondorf", what he built and sculpted in this area goes into its collision before it's set up
+    GdfBuild_BeforeCollision(play, (CollisionHeader*)cmdCol->GetRawPointer());
     BgCheck_Allocate(&play->colCtx, play, (CollisionHeader*)cmdCol->GetRawPointer());
 
     return false;
@@ -516,6 +520,7 @@ extern "C" s32 OTRRoom_RequestNewRoom(PlayState* play, RoomContext* roomCtx, s32
 
         auto roomData = std::static_pointer_cast<SOH::Scene>(
             ResourceMgr_GetResourceByNameHandlingMQ(play->roomList[roomNum].fileName));
+        GdfBuild_RoomLoading(play, play->roomList[roomNum].fileName); // (his sculpting onto this room's mesh)
         roomCtx->status = 1;
         roomCtx->roomToLoad = roomData.get();
 

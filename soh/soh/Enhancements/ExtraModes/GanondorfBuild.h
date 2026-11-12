@@ -13,3 +13,6 @@ bool GdfBuild_PlacingFrame(Input* input);
 bool GdfBuild_RemoveNearest();
 int GdfBuild_ClearHere();
 void GdfBuild_Cancel();
+bool GdfBuild_IsSculpting();
+bool GdfBuild_BeginSculpt();
+bool GdfBuild_RestoreGroundHere();

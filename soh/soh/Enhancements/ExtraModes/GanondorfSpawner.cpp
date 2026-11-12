@@ -147,7 +147,7 @@ void BuildAll() {
 int PageCount(int page) {
     switch (page) {
         case PAGE_BUILD:
-            return GdfBuild_KindCount() + 2;
+            return GdfBuild_KindCount() + 4;
         case PAGE_ENEMIES:
             return ARRAY_COUNT(sEnemies);
         case PAGE_BOSSES:
@@ -165,8 +165,12 @@ Summon PageEntry(int page, int i) {
             if (i < GdfBuild_KindCount()) {
                 return { GdfBuild_KindName(i), (s16)(BUILD_ID - i), 0 };
             }
-            return { (i == GdfBuild_KindCount()) ? "Remove the nearest piece" : "Clear everything built in this area",
-                     (s16)(BUILD_ID - i), 0 };
+            {
+                static const char* sExtra[4] = { "Sculpt the ground (A raise, Z lower)", "Remove the nearest piece",
+                                                 "Clear everything built in this area",
+                                                 "Put this area's ground back as it was" };
+                return { sExtra[i - GdfBuild_KindCount()], (s16)(BUILD_ID - i), 0 };
+            }
         case PAGE_ENEMIES:
             return sEnemies[i];
         case PAGE_BOSSES:
@@ -225,9 +229,13 @@ void DoSummon(const Summon& s) {
                 sLast = "No more pieces fit in this area (" + std::to_string(GdfBuild_MaxHere()) + ")";
             }
         } else if (i == GdfBuild_KindCount()) {
+            GdfBuild_BeginSculpt();
+        } else if (i == GdfBuild_KindCount() + 1) {
             sLast = GdfBuild_RemoveNearest() ? "Removed the nearest piece" : "Nothing built here";
-        } else {
+        } else if (i == GdfBuild_KindCount() + 2) {
             sLast = "Cleared " + std::to_string(GdfBuild_ClearHere()) + " pieces";
+        } else {
+            sLast = GdfBuild_RestoreGroundHere() ? "The ground is as it was" : "Nothing sculpted here";
         }
         return;
     }
@@ -344,8 +352,8 @@ void OnFrame() {
     if (GdfBuild_IsPlacing()) {
         // Setting a piece down: the controls are the piece's until it's placed or cancelled
         if (!GdfBuild_PlacingFrame(input)) {
-            sLast = GdfBuild_IsPlacing() ? "" : "Built: " + std::to_string(GdfBuild_CountHere()) + " of " +
-                                                    std::to_string(GdfBuild_MaxHere()) + " pieces in this area";
+            sLast = "Built: " + std::to_string(GdfBuild_CountHere()) + " of " + std::to_string(GdfBuild_MaxHere()) +
+                    " pieces in this area";
         }
         OverheadCamera(play);
         return;
@@ -427,7 +435,10 @@ void GdfSpawnerWindow::Draw() {
         // Setting a piece down: the menu out of the way, its controls along the bottom
         ImGuiViewport* v = ImGui::GetMainViewport();
         ImDrawList* list = ImGui::GetForegroundDrawList(v);
-        const char* help = "Stick: move    C-Left/Right: turn    C-Up/Down: raise/lower (R held: taller/shorter)    "
+        const char* help = GdfBuild_IsSculpting()
+                               ? "Stick: move the brush    A (hold): raise    Z (hold): lower    D-pad: brush size    "
+                                 "B: done"
+                               : "Stick: move    C-Left/Right: turn    C-Up/Down: raise/lower (R held: taller/shorter)    "
                            "D-pad: longer/shorter, wider/narrower    Z: onto the floor    A: set down    B: cancel";
         float fontSize = ImGui::GetFontSize() * std::max(v->Size.y / 720.0f, 1.0f);
         ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fontSize, v->Size.x * 0.9f, v->Size.x * 0.9f, help);
