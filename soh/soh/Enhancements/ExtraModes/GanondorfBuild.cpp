@@ -459,7 +459,7 @@ static void DrawGroundRing(PlayState* play, Vec3f center, f32 radius, s16 facing
     }
     if (pointer) {
         // A bright point at the rim, the way the summoned thing will face
-        f32 a = BINANG_TO_RAD(facing);
+        f32 a = (f32)BINANG_TO_RAD(facing);
         Vec3f tip = { center.x + sinf(a) * radius * 1.5f, center.y + 3.0f, center.z + cosf(a) * radius * 1.5f };
         Vec3f l = { center.x + sinf(a + 0.35f) * radius, center.y + 3.0f, center.z + cosf(a + 0.35f) * radius };
         Vec3f rr = { center.x + sinf(a - 0.35f) * radius, center.y + 3.0f, center.z + cosf(a - 0.35f) * radius };
