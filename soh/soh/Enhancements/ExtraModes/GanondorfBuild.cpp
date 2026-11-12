@@ -28,6 +28,7 @@
 #include "soh/SaveManager.h"
 #include "soh/ShipInit.hpp"
 #include "soh/ResourceManagerHelpers.h"
+#include <libultraship/bridge/resourcebridge.h>
 #include "soh/frame_interpolation.h" // gives the OPEN_DISPS macros C linkage for FrameInterpolation_*
 
 extern "C" {
@@ -403,8 +404,88 @@ static void EmitShape(Gfx*& disp, PlayState* play, const Shape& shape, f32 w, f3
     }
 }
 
+// The brush and the summoning marker: a glowing circle like a blue warp's, lying on the ground's own shape (each point
+// set down on the floor beneath it), pulsing; the summoning marker's has a pointer for which way it will face
+static void DrawGroundRing(PlayState* play, Vec3f center, f32 radius, s16 facing, bool pointer) {
+    static const f32 sRad[] = { 0.0f, 0.45f, 0.75f, 0.9f, 1.0f, 1.08f };
+    static const u8 sAlpha[] = { 25, 45, 90, 210, 230, 0 };
+    const int segs = 28, bands = ARRAY_COUNT(sRad) - 1;
+    f32 pulse = 0.8f + 0.2f * sinf(play->gameplayFrames * 0.15f);
+    Vec3f pts[ARRAY_COUNT(sRad)][28 + 1];
+
+    for (int r = 0; r <= bands; r++) {
+        for (int k = 0; k <= segs; k++) {
+            f32 a = (2.0f * (f32)M_PI * k) / segs;
+            Vec3f p = { center.x + sinf(a) * radius * sRad[r], center.y + 120.0f, center.z + cosf(a) * radius * sRad[r] };
+            CollisionPoly* poly;
+            s32 bgId;
+            f32 y = BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &p);
+
+            p.y = ((y > BGCHECK_Y_MIN) && (fabsf(y - center.y) < 250.0f)) ? y + 2.5f : center.y + 2.5f;
+            pts[r][k] = p;
+        }
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gSPClearGeometryMode(POLY_XLU_DISP++, G_LIGHTING | G_CULL_BACK | G_FOG);
+    gDPSetCombineLERP(POLY_XLU_DISP++, 0, 0, 0, SHADE, 0, 0, 0, SHADE, 0, 0, 0, SHADE, 0, 0, 0, SHADE);
+    Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+
+    int numTris = bands * segs * 2 + (pointer ? 1 : 0);
+    Vtx* v = (Vtx*)Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * numTris * 3);
+    int n = 0;
+    auto put = [&](const Vec3f& p, int ring) {
+        Vtx* o = &v[n++];
+        f32 t = sRad[ring];
+        u8 alpha = (u8)(sAlpha[ring] * pulse);
+
+        o->v.ob[0] = (s16)p.x;
+        o->v.ob[1] = (s16)p.y;
+        o->v.ob[2] = (s16)p.z;
+        o->v.flag = 0;
+        o->v.tc[0] = o->v.tc[1] = 0;
+        // White-blue in the middle to a bright warp blue at the rim
+        o->v.cn[0] = (u8)(200 - 120 * t);
+        o->v.cn[1] = (u8)(235 - 45 * t);
+        o->v.cn[2] = 255;
+        o->v.cn[3] = alpha;
+    };
+    for (int r = 0; r < bands; r++) {
+        for (int k = 0; k < segs; k++) {
+            put(pts[r][k], r), put(pts[r + 1][k], r + 1), put(pts[r + 1][k + 1], r + 1);
+            put(pts[r][k], r), put(pts[r + 1][k + 1], r + 1), put(pts[r][k + 1], r);
+        }
+    }
+    if (pointer) {
+        // A bright point at the rim, the way the summoned thing will face
+        f32 a = BINANG_TO_RAD(facing);
+        Vec3f tip = { center.x + sinf(a) * radius * 1.5f, center.y + 3.0f, center.z + cosf(a) * radius * 1.5f };
+        Vec3f l = { center.x + sinf(a + 0.35f) * radius, center.y + 3.0f, center.z + cosf(a + 0.35f) * radius };
+        Vec3f rr = { center.x + sinf(a - 0.35f) * radius, center.y + 3.0f, center.z + cosf(a - 0.35f) * radius };
+
+        put(tip, 4), put(l, 4), put(rr, 4);
+    }
+    for (int t = 0; t < numTris; t += 10) {
+        int count = std::min(numTris - t, 10);
+
+        gSPVertex(POLY_XLU_DISP++, (uintptr_t)&v[t * 3], count * 3, 0);
+        for (int k = 0; k < count; k++) {
+            gSP1Triangle(POLY_XLU_DISP++, k * 3, k * 3 + 1, k * 3 + 2, 0);
+        }
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static void Piece_Draw(Actor* thisx, PlayState* play) {
     GdfPiece* self = (GdfPiece*)thisx;
+
+    if (self->type == PIECE_BRUSH) {
+        bool target = (self->l != self->w); // (the summoning marker: longer than wide)
+
+        DrawGroundRing(play, thisx->world.pos, target ? 45.0f : self->w * 0.5f, thisx->shape.rot.y, target);
+        return;
+    }
     bool water = (self->type == PIECE_WATER);
     bool ghost = self->ghost || water; // (water is drawn see-through too)
     static TexInfo sTexInfo[TEX_COUNT];
@@ -613,6 +694,7 @@ struct MeshVtx {
     std::vector<s16> origY;
 };
 std::unordered_map<std::string, MeshVtx> sMeshes;
+std::vector<const void*> sWalkedRooms; // room meshes already read in this area
 std::vector<std::string> sRoomFiles; // rooms loaded in this area, their meshes not yet looked up
 s16 sFieldScene = -1;
 
@@ -631,6 +713,7 @@ void RestoreGround() {
     }
     sMeshes.clear();
     sRoomFiles.clear();
+    sWalkedRooms.clear();
 }
 
 void TrackCollision(CollisionHeader* header) {
@@ -645,41 +728,139 @@ void TrackCollision(CollisionHeader* header) {
 }
 
 // The meshes of the rooms loaded since last time: their vertex lists, by name beside the room's file
-void TrackMeshes() {
-    for (std::string path : sRoomFiles) {
-        if (path.substr(0, 7) == "__OTR__") {
-            path = path.substr(7);
-        }
-        size_t pos;
-        if (ResourceMgr_IsGameMasterQuest() && ((pos = path.find("/nonmq/")) != std::string::npos)) {
-            path.replace(pos, 7, "/mq/");
-        }
-        int count = 0;
-        char** files = ResourceMgr_ListFiles((path + "Vtx_*").c_str(), &count);
-
-        for (int i = 0; i < count; i++) {
-            std::string name = files[i];
-
-            free(files[i]);
-            if (sMeshes.count(name)) {
-                continue;
-            }
-            auto res = std::dynamic_pointer_cast<Fast::Vertex>(
-                Ship::Context::GetRawInstance()->GetResourceManager()->LoadResource(name.c_str()));
-            if (res == nullptr) {
-                continue;
-            }
-            MeshVtx m;
-            m.res = res;
-            m.origY.reserve(res->VertexList.size());
-            for (auto& v : res->VertexList) {
-                m.origY.push_back(v.v.ob[1]);
-            }
-            sMeshes.emplace(name, std::move(m));
-        }
-        free(files);
+void TrackVertexResource(const char* name) {
+    if ((name == nullptr) || sMeshes.count(name)) {
+        return;
     }
+    auto res = std::dynamic_pointer_cast<Fast::Vertex>(
+        Ship::Context::GetRawInstance()->GetResourceManager()->LoadResource(name));
+    if (res == nullptr) {
+        return;
+    }
+    MeshVtx m;
+    m.res = res;
+    m.origY.reserve(res->VertexList.size());
+    for (auto& v : res->VertexList) {
+        m.origY.push_back(v.v.ob[1]);
+    }
+    sMeshes.emplace(name, std::move(m));
+}
+
+// Every vertex list a display list draws with (following the display lists it calls), as the game's graphics
+// debugger reads them
+void WalkDList(const Gfx* dl, int depth, int& budget) {
+    if ((dl == nullptr) || (depth > 10)) {
+        return;
+    }
+    const Gfx* cmd = dl;
+    while (budget-- > 0) {
+        u8 op = (u8)(cmd->words.w0 >> 24);
+        bool branch = ((cmd->words.w0 >> 16) & 1) != 0;
+
+        switch (op) {
+            case 0xDF: // G_ENDDL
+                return;
+            case 0xDE: // G_DL (a segment address: not followed)
+                if (branch) {
+                    return;
+                }
+                cmd++;
+                break;
+            case 0xE4: // G_TEXRECT, G_TEXRECTFLIP, G_IMAGERECT, G_SETTILESIZE_INTERP: 3 words
+            case 0xE5:
+            case G_IMAGERECT:
+            case G_SETTILESIZE_INTERP:
+                cmd += 3;
+                break;
+            case G_SETTILESIZE_LERP:
+                cmd += 5;
+                break;
+            case G_MARKER:
+            case G_SETTIMG_OTR_HASH:
+            case G_MTX_OTR:
+            case G_MOVEMEM_OTR:
+            case G_BRANCH_Z_OTR:
+                cmd += 2;
+                break;
+            case G_DL_OTR_HASH: {
+                uint64_t hash = ((uint64_t)cmd[1].words.w0 << 32) + (uint32_t)cmd[1].words.w1;
+                WalkDList((const Gfx*)ResourceGetDataByCrc(hash), depth + 1, budget);
+                if (branch) {
+                    return;
+                }
+                cmd += 2;
+                break;
+            }
+            case G_DL_OTR_FILEPATH: {
+                const char* name = (const char*)cmd->words.w1;
+                if ((uintptr_t)name > 0x10000) {
+                    WalkDList((const Gfx*)ResourceGetDataByName(name), depth + 1, budget);
+                }
+                if (branch) {
+                    return;
+                }
+                cmd++;
+                break;
+            }
+            case G_VTX_OTR_HASH: {
+                uint64_t hash = ((uint64_t)cmd[1].words.w0 << 32) + (uint32_t)cmd[1].words.w1;
+                TrackVertexResource(ResourceGetNameByCrc(hash));
+                cmd += 2;
+                break;
+            }
+            case G_VTX_OTR_FILEPATH: {
+                const char* name = (const char*)cmd->words.w1;
+                if ((uintptr_t)name > 0x10000) {
+                    TrackVertexResource(name);
+                }
+                cmd += 2;
+                break;
+            }
+            case G_TEXRECT_WIDE:
+            case G_FILLWIDERECT:
+            case G_LOADBLOCK_WIDE:
+            case G_VTX_WIDE:
+            case G_TRI1_WIDE:
+                return; // (not in room meshes; their lengths aren't known here, so stop rather than misread)
+            default:
+                cmd++;
+                break;
+        }
+    }
+}
+
+// The meshes of the rooms now loaded (the one he's in and the one he came from): their vertex lists
+void TrackMeshes() {
+    PlayState* play = gPlayState;
+
     sRoomFiles.clear();
+    if (play == nullptr) {
+        return;
+    }
+    Room* rooms[2] = { &play->roomCtx.curRoom, &play->roomCtx.prevRoom };
+    for (Room* room : rooms) {
+        MeshHeader* mesh = room->meshHeader;
+        int budget = 200000;
+
+        if ((room->num < 0) || (mesh == nullptr) ||
+            (std::find(sWalkedRooms.begin(), sWalkedRooms.end(), mesh) != sWalkedRooms.end())) {
+            continue;
+        }
+        sWalkedRooms.push_back(mesh);
+        if (mesh->base.type == 0) {
+            PolygonDlist* e = (PolygonDlist*)mesh->polygon0.start;
+            for (int i = 0; (e != nullptr) && (i < mesh->polygon0.num); i++) {
+                WalkDList(e[i].opa, 0, budget);
+                WalkDList(e[i].xlu, 0, budget);
+            }
+        } else if (mesh->base.type == 2) {
+            PolygonDlist2* e = (PolygonDlist2*)mesh->polygon2.start;
+            for (int i = 0; (e != nullptr) && (i < mesh->polygon2.num); i++) {
+                WalkDList(e[i].opa, 0, budget);
+                WalkDList(e[i].xlu, 0, budget);
+            }
+        }
+    }
 }
 
 // The field onto the area: its collision points and polygons, and its meshes
@@ -889,6 +1070,18 @@ void RegisterGanondorfBuild() {
         sFields.clear();
     });
     // Leaving an area: its water list, collision and meshes as they were (they're the game's own, loaded once)
+    // A room loaded since (walking into the next one): its mesh gets the area's sculpting too
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>([]() {
+        PlayState* play = gPlayState;
+
+        if ((play == nullptr) || !sFields.count(play->sceneNum) || sFields[play->sceneNum].empty()) {
+            return;
+        }
+        const void* cur = play->roomCtx.curRoom.meshHeader;
+        if ((cur != nullptr) && (std::find(sWalkedRooms.begin(), sWalkedRooms.end(), cur) == sWalkedRooms.end())) {
+            ApplyGround(play->sceneNum, false);
+        }
+    });
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayDestroy>([]() {
         RestoreWater();
         RestoreGround();
