@@ -21,3 +21,4 @@ bool GdfBuild_IsTargeting();
 void GdfBuild_EndTarget();
 int GdfBuild_TargetFrame(Input* input, Vec3f* pos, s16* yaw);
 const char* GdfBuild_PlacingTexName();
+const char* GdfBuild_SculptInfo();

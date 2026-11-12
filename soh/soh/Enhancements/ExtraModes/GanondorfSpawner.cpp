@@ -460,10 +460,11 @@ void GdfSpawnerWindow::Draw() {
         std::string piece = std::string(texName != nullptr ? std::string("Texture: ") + texName + "  (L: next)    " : "") +
                             "Stick: move    C-Left/Right: turn    C-Up/Down: raise/lower (R held: taller/shorter)    "
                             "D-pad: longer/shorter, wider/narrower    Z: onto the floor    A: set down    B: cancel";
+        std::string sculpt = std::string(GdfBuild_SculptInfo()) +
+                             "    Stick: move the brush    A (hold): raise    Z (hold): lower    D-pad: brush size    B: done";
         const char* help = GdfBuild_IsTargeting() ? where.c_str()
                            : GdfBuild_IsSculpting()
-                               ? "Stick: move the brush    A (hold): raise    Z (hold): lower    D-pad: brush size    "
-                                 "B: done"
+                               ? sculpt.c_str()
                                : piece.c_str();
         float fontSize = ImGui::GetFontSize() * std::max(v->Size.y / 720.0f, 1.0f);
         ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fontSize, v->Size.x * 0.9f, v->Size.x * 0.9f, help);

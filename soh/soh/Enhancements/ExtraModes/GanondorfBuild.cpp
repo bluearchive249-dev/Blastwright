@@ -863,6 +863,8 @@ void TrackMeshes() {
     }
 }
 
+int sMovedCol = 0, sMovedMesh = 0; // how many of the area's collision points and mesh vertices the sculpting moves
+
 // The field onto the area: its collision points and polygons, and its meshes
 void ApplyGround(s16 scene, bool growBounds) {
     auto fit = sFields.find(scene);
@@ -870,6 +872,7 @@ void ApplyGround(s16 scene, bool growBounds) {
     const Field& field = (fit != sFields.end()) ? fit->second : sNone;
 
     TrackMeshes();
+    sMovedCol = sMovedMesh = 0;
     if (sColHeader != nullptr) {
         CollisionHeader* h = sColHeader;
         std::vector<u8> moved(h->numVertices, 0);
@@ -881,6 +884,9 @@ void ApplyGround(s16 scene, bool growBounds) {
             s16 y = (s16)CLAMP(o.y + d, -32000.0f, 32000.0f);
 
             moved[i] = (h->vtxList[i].y != y) || (d != 0.0f);
+            if (d != 0.0f) {
+                sMovedCol++;
+            }
             h->vtxList[i].y = y;
             lo = std::min(lo, d);
             hi = std::max(hi, d);
@@ -929,13 +935,39 @@ void ApplyGround(s16 scene, bool growBounds) {
             f32 d = field.empty() ? 0.0f : Offset(field, list[i].v.ob[0], m.origY[i], list[i].v.ob[2]);
 
             list[i].v.ob[1] = (s16)CLAMP(m.origY[i] + d, -32000.0f, 32000.0f);
+            if (d != 0.0f) {
+                sMovedMesh++;
+            }
         }
     }
 }
 
 // The brush: every point of the grid within its radius up or down, most at its middle
-void BrushStroke(PlayState* play, Vec3f at, f32 radius, f32 amount) {
+// The game's ground is made of large triangles: a brush between their corners would move nothing. So the stroke lands
+// on the corner nearest the brush when none is well inside it (the brush is moved there, to show where it acts).
+void BrushStroke(PlayState* play, Vec3f& at, f32 radius, f32 amount) {
     Field& field = sFields[play->sceneNum];
+
+    TrackCollision(play->colCtx.colHeader);
+    if (sColHeader != nullptr) {
+        f32 best = 1.0e12f;
+        int bestI = -1;
+
+        for (int i = 0; i < (int)sColVtx.size(); i++) {
+            const Vec3s& o = sColVtx[i];
+            f32 d = SQ(o.x - at.x) + SQ(o.z - at.z);
+
+            if ((d < best) && (fabsf(sColHeader->vtxList[i].y - at.y) < REACH)) {
+                best = d;
+                bestI = i;
+            }
+        }
+        if ((bestI >= 0) && (best > SQ(radius * 0.4f)) && (best < SQ(2500.0f))) {
+            at.x = sColVtx[bestI].x;
+            at.z = sColVtx[bestI].z;
+            at.y = sColHeader->vtxList[bestI].y;
+        }
+    }
     int r = (int)ceilf(radius / GRID);
     int cx = (int)lroundf(at.x / GRID), cz = (int)lroundf(at.z / GRID);
 
@@ -959,7 +991,6 @@ void BrushStroke(PlayState* play, Vec3f at, f32 radius, f32 amount) {
                                   MAX_OFFSET);
         }
     }
-    TrackCollision(play->colCtx.colHeader);
     ApplyGround(play->sceneNum, false);
 }
 
@@ -1154,6 +1185,15 @@ const char* GdfBuild_PlacingTexName() {
         return nullptr;
     }
     return sTexList[(sPlacing->tex < TEX_COUNT) ? sPlacing->tex : 0].name;
+}
+
+// What the sculpting is moving, for the help bar: the ground's corners he walks on, and the corners of what's seen
+const char* GdfBuild_SculptInfo() {
+    static char buf[96];
+
+    snprintf(buf, sizeof(buf), "Moved: %d ground points, %d visible points (%d meshes found)", sMovedCol, sMovedMesh,
+             (int)sMeshes.size());
+    return buf;
 }
 
 bool GdfBuild_IsSculpting() {
@@ -1357,11 +1397,11 @@ static bool SculptFrame(Input* input) {
         a->world.pos.y = floorY;
     }
     if (CHECK_BTN_ALL(input->cur.button, BTN_A)) {
-        BrushStroke(play, a->world.pos, sBrushRadius, 3.0f);
-        a->world.pos.y += 3.0f;
+        BrushStroke(play, a->world.pos, sBrushRadius, 4.0f);
+        a->world.pos.y += 4.0f;
     } else if (CHECK_BTN_ALL(input->cur.button, BTN_Z)) {
-        BrushStroke(play, a->world.pos, sBrushRadius, -3.0f);
-        a->world.pos.y -= 3.0f;
+        BrushStroke(play, a->world.pos, sBrushRadius, -4.0f);
+        a->world.pos.y -= 4.0f;
     }
     if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
         GdfBuild_Cancel();
