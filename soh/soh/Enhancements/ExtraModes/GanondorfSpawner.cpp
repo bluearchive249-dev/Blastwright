@@ -33,7 +33,33 @@ s32 GdfSacred_HasTriforce(void);
 extern PlayState* gPlayState;
 }
 
+// Terraforming (the Build page and the summoning marker) where this copy of the game has it (GanondorfBuild.cpp);
+// without it, the Build page is gone and things are summoned straight in front of him
+#if __has_include("GanondorfBuild.h")
 #include "GanondorfBuild.h"
+#define GDF_HAS_BUILD 1
+#else
+#define GDF_HAS_BUILD 0
+static int GdfBuild_KindCount() { return 0; }
+static const char* GdfBuild_KindName(int) { return ""; }
+static int GdfBuild_CountHere() { return 0; }
+static int GdfBuild_MaxHere() { return 0; }
+static bool GdfBuild_IsPlacing() { return false; }
+static bool GdfBuild_IsSculpting() { return false; }
+static bool GdfBuild_IsTargeting() { return false; }
+static bool GdfBuild_Focus(Vec3f*) { return false; }
+static bool GdfBuild_Begin(int) { return false; }
+static bool GdfBuild_BeginSculpt() { return false; }
+static bool GdfBuild_BeginTarget() { return false; }
+static bool GdfBuild_PlacingFrame(Input*) { return false; }
+static int GdfBuild_TargetFrame(Input*, Vec3f*, s16*) { return -1; }
+static bool GdfBuild_RemoveNearest() { return false; }
+static int GdfBuild_ClearHere() { return 0; }
+static bool GdfBuild_RestoreGroundHere() { return false; }
+static void GdfBuild_Cancel() {}
+static const char* GdfBuild_PlacingTexName() { return nullptr; }
+static const char* GdfBuild_SculptInfo() { return ""; }
+#endif
 
 namespace {
 
@@ -223,6 +249,8 @@ void SetOpen(bool open) {
     }
 }
 
+void SummonAt(const Summon& s, Vec3f pos, s16 yaw);
+
 void DoSummon(const Summon& s) {
     PlayState* play = gPlayState;
 
@@ -250,6 +278,16 @@ void DoSummon(const Summon& s) {
     sPending.name = sPendingName.c_str();
     if (GdfBuild_BeginTarget()) {
         sLast = std::string("Where? ") + s.name;
+    } else if (!GDF_HAS_BUILD) {
+        // (no marker in this copy: straight in front of him, facing him)
+        Player* player = GET_PLAYER(play);
+        s16 yaw = player->actor.shape.rot.y;
+        f32 dist = (ActorDB::Instance->RetrieveEntry(s.id).entry.category == ACTORCAT_BOSS) ? 300.0f : 120.0f;
+        Vec3f pos = player->actor.world.pos;
+
+        pos.x += Math_SinS(yaw) * dist;
+        pos.z += Math_CosS(yaw) * dist;
+        SummonAt(sPending, pos, (s16)(yaw + 0x8000));
     }
 }
 
@@ -298,6 +336,9 @@ void MoveSel(int delta) {
 
 void MovePage(int delta) {
     sPage = (sPage + delta + PAGE_COUNT) % PAGE_COUNT;
+    if (!GDF_HAS_BUILD && (sPage == PAGE_BUILD)) {
+        sPage = (sPage + delta + PAGE_COUNT) % PAGE_COUNT;
+    }
     sScrollToSel = true;
     Audio_PlaySfxGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                          &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -527,6 +568,9 @@ void GdfSpawnerWindow::Draw() {
 
     // Pages
     for (int p = 0; p < PAGE_COUNT; p++) {
+        if (!GDF_HAS_BUILD && (p == PAGE_BUILD)) {
+            continue;
+        }
         if (p > 0) {
             ImGui::SameLine();
         }
