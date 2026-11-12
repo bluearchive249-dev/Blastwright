@@ -594,7 +594,7 @@ void BrushStroke(PlayState* play, Vec3f at, f32 radius, f32 amount) {
                 Node node = { 0.0f, at.y - Offset(field, gx * GRID, at.y, gz * GRID) };
                 it = field.emplace(NodeKey(gx, gz), node).first;
             }
-            it->second.dy = CLAMP(it->second.dy + amount * 0.5f * (1.0f + cosf(M_PI * d / radius)), -MAX_OFFSET,
+            it->second.dy = CLAMP(it->second.dy + amount * 0.5f * (1.0f + cosf((f32)M_PI * d / radius)), -MAX_OFFSET,
                                   MAX_OFFSET);
         }
     }
