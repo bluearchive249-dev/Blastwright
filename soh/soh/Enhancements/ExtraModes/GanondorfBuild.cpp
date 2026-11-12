@@ -247,7 +247,11 @@ void Piece_Destroy(Actor* thisx, PlayState* play) {
 void Piece_Update(Actor* thisx, PlayState* play) {
 }
 
-void Piece_Draw(Actor* thisx, PlayState* play) {
+} // namespace
+
+// (outside the unnamed namespace: the draw macros declare the game's frame interpolation functions in place, and inside it
+// they would name new functions of their own, which don't exist)
+static void Piece_Draw(Actor* thisx, PlayState* play) {
     GdfPiece* self = (GdfPiece*)thisx;
     bool water = (self->type == PIECE_WATER);
     bool ghost = self->ghost || water; // (water is drawn see-through too)
@@ -288,6 +292,8 @@ void Piece_Draw(Actor* thisx, PlayState* play) {
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
+
+namespace {
 
 void RegisterActor() {
     if (sActorId >= 0) {
