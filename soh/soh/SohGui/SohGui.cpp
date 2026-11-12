@@ -23,6 +23,7 @@
 #include "soh/Enhancements/mod_menu.h"
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
+std::shared_ptr<Ship::GuiWindow> GdfSpawner_CreateWindow();
 #include "soh/Enhancements/audio/AudioEditor.h"
 #include "soh/Enhancements/controls/InputViewer.h"
 #include "soh/Enhancements/cosmetics/CosmeticsEditor.h"
@@ -113,6 +114,7 @@ std::shared_ptr<Notification::Window> mNotificationWindow;
 std::shared_ptr<TimeDisplayWindow> mTimeDisplayWindow;
 std::shared_ptr<AnchorRoomWindow> mAnchorRoomWindow;
 std::shared_ptr<Ship::GuiWindow> mGdfInvasionHud;
+std::shared_ptr<Ship::GuiWindow> mGdfSpawner;
 
 UIWidgets::Colors GetMenuThemeColor() {
     return mSohMenu->GetMenuThemeColor();
@@ -274,6 +276,9 @@ void SetupGuiElements() {
     gui->AddGuiWindow(mAnchorRoomWindow);
     mGdfInvasionHud = GdfInvasion_CreateHudWindow();
     gui->AddGuiWindow(mGdfInvasionHud);
+    mGdfSpawner = GdfSpawner_CreateWindow();
+    gui->AddGuiWindow(mGdfSpawner);
+    mGdfSpawner->Show();
 }
 
 void Destroy() {
@@ -312,6 +317,7 @@ void Destroy() {
     mTimeDisplayWindow = nullptr;
     mAnchorRoomWindow = nullptr;
     mGdfInvasionHud = nullptr;
+    mGdfSpawner = nullptr;
 }
 
 void RegisterPopup(std::string title, std::string message, std::string button1, std::string button2,
