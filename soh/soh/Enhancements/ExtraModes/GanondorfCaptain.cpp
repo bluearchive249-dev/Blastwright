@@ -13,6 +13,7 @@
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
+#include "soh/frame_interpolation.h" // (the draw macros' frame interpolation calls, with C linkage)
 
 extern "C" {
 #include "z64.h"
@@ -31,7 +32,8 @@ extern PlayState* gPlayState;
 #define CAPTAIN_LIMB_L_SWORD 16
 #define BODYGUARDS_CVAR CVAR_ENHANCEMENT("PlayAsGanondorf.Bodyguards")
 
-namespace {
+// (no unnamed namespace here: the draw macros declare the game's functions in place, which inside one would name
+// new functions of their own)
 
 typedef struct {
     Actor actor;
@@ -44,11 +46,11 @@ typedef struct {
     u8 talking;
 } GdfCaptain;
 
-s16 sCaptainId = -1;
-bool sSpawnedHere = false;
+static s16 sCaptainId = -1;
+static bool sSpawnedHere = false;
 
 // Her words, and his order, by whether his guard is with him (calling them, or sending them back)
-const char* sCallLines[] = {
+static const char* sCallLines[] = {
     "%rCaptain:%w My king. Your blades are idle, and your road is long.^%rGanondorf:%w Then let them walk it with "
     "me. Choose three of your best, Captain. I would have the desert at my back.^%rCaptain:%w They are chosen. "
     "Green, blue and red, sworn to your shadow. Where you go, they go.",
@@ -56,7 +58,7 @@ const char* sCallLines[] = {
     "learn what it means to face the Gerudo in earnest.^%rCaptain:%w Three swords for the king. They will not fall "
     "behind.",
 };
-const char* sDismissLines[] = {
+static const char* sDismissLines[] = {
     "%rCaptain:%w My king. Your guard has fought well at your side.^%rGanondorf:%w Well enough. Send them back to "
     "the walls, Captain. A fortress without its sisters is only stone.^%rCaptain:%w As you command. Call, and they "
     "will come again.",
@@ -64,9 +66,9 @@ const char* sDismissLines[] = {
     "walk alone a while. It suits me.^%rCaptain:%w They return to their posts. The fortress will be ready when you "
     "are.",
 };
-int sLine = 0;
+static int sLine = 0;
 
-void Captain_Init(Actor* thisx, PlayState* play) {
+static void Captain_Init(Actor* thisx, PlayState* play) {
     GdfCaptain* c = (GdfCaptain*)thisx;
 
     SkelAnime_InitFlex(play, &c->skelAnime, (FlexSkeletonHeader*)"__OTR__objects/object_geldb/gGerudoRedSkel",
@@ -80,10 +82,10 @@ void Captain_Init(Actor* thisx, PlayState* play) {
     c->blinkTimer = 40;
 }
 
-void Captain_Destroy(Actor* thisx, PlayState* play) {
+static void Captain_Destroy(Actor* thisx, PlayState* play) {
 }
 
-void Captain_Update(Actor* thisx, PlayState* play) {
+static void Captain_Update(Actor* thisx, PlayState* play) {
     GdfCaptain* c = (GdfCaptain*)thisx;
     Player* player = GET_PLAYER(play);
 
@@ -125,7 +127,7 @@ void Captain_Update(Actor* thisx, PlayState* play) {
     (void)player;
 }
 
-s32 Captain_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
+static s32 Captain_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     GdfCaptain* c = (GdfCaptain*)thisx;
 
     OPEN_DISPS(play->state.gfxCtx);
@@ -146,7 +148,7 @@ s32 Captain_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f*
     return false;
 }
 
-void Captain_Draw(Actor* thisx, PlayState* play) {
+static void Captain_Draw(Actor* thisx, PlayState* play) {
     static const char* sEyes[] = { "__OTR__objects/object_geldb/gGerudoRedEyeOpenTex",
                                    "__OTR__objects/object_geldb/gGerudoRedEyeHalfTex",
                                    "__OTR__objects/object_geldb/gGerudoRedEyeShutTex",
@@ -160,7 +162,7 @@ void Captain_Draw(Actor* thisx, PlayState* play) {
     SkelAnime_DrawSkeletonOpa(play, &c->skelAnime, Captain_OverrideLimbDraw, NULL, c);
 }
 
-void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
+static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     if ((gPlayState == nullptr) || (*textId != CAPTAIN_TEXT_ID) || (gPlayState->sceneNum != SCENE_GERUDOS_FORTRESS)) {
         return;
     }
@@ -175,7 +177,7 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
 }
 
 // She waits where he arrives in the fortress, a few steps to his side
-void OnFrame() {
+static void OnFrame() {
     PlayState* play = gPlayState;
 
     if ((play == nullptr) || (play->sceneNum != SCENE_GERUDOS_FORTRESS) || !PlayAsGanondorf_ShouldHideLink(play, GET_PLAYER(play))) {
@@ -210,12 +212,10 @@ void OnFrame() {
     sSpawnedHere = true;
 }
 
-void RegisterGanondorfCaptain() {
+static void RegisterGanondorfCaptain() {
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(OnOpenText);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(OnFrame);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) { sSpawnedHere = false; });
 }
 
 static RegisterShipInitFunc initFunc(RegisterGanondorfCaptain, {});
-
-} // namespace
