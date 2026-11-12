@@ -30,7 +30,7 @@ const std::unordered_map<uint16_t, NpcLine> sNpcLines = {
 };
 
 // His own part of the conversation: a greeting before the NPC's line and a goodbye after it, written for that one
-// conversation (Kokiri Forest so far; every other conversation takes a pair from its people's lines, see PoolFor)
+// conversation (Kokiri Forest so far; every other conversation takes its lines from its people's, see PoolFor)
 struct NpcTalk {
     const char* greeting;
     const char* goodbye;
@@ -140,8 +140,14 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
         // ends the message)
         size_t end = text.rfind('\x02');
         if (end != std::string::npos) {
-            text = std::string(talk->second.greeting) + "\x04" + text.substr(0, end) + "\x04" + talk->second.goodbye +
-                   text.substr(end);
+            std::string body = text.substr(0, end);
+            std::string out = std::string(talk->second.greeting) + "\x04" + body;
+
+            // (his answer only where their line ends the talk: not before a choice or a follow-on line)
+            if ((talk->second.goodbye[0] != '\0') && EndsPlainly(body)) {
+                out += std::string("\x04") + talk->second.goodbye;
+            }
+            text = out + text.substr(end);
         }
     }
     CustomMessage msg = CustomMessage(text, (TextBoxType)it->second.type, (TextBoxPosition)it->second.position);
