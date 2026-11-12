@@ -33,6 +33,8 @@ s32 GdfSacred_HasTriforce(void);
 extern PlayState* gPlayState;
 }
 
+#include "GanondorfBuild.h"
+
 namespace {
 
 struct Summon {
@@ -101,8 +103,8 @@ const Summon sObjects[] = {
     { "Arrows", ACTOR_EN_ITEM00, ITEM00_ARROWS_LARGE },
 };
 
-enum Page { PAGE_ENEMIES, PAGE_BOSSES, PAGE_OBJECTS, PAGE_ALL, PAGE_COUNT };
-const char* sPageNames[PAGE_COUNT] = { "Enemies", "Bosses", "Objects & items", "Everything" };
+enum Page { PAGE_ENEMIES, PAGE_BOSSES, PAGE_OBJECTS, PAGE_BUILD, PAGE_ALL, PAGE_COUNT };
+const char* sPageNames[PAGE_COUNT] = { "Enemies", "Bosses", "Objects & items", "Build", "Everything" };
 
 bool sOpen = false;
 int sPage = PAGE_ENEMIES;
@@ -140,8 +142,12 @@ void BuildAll() {
     }
 }
 
+#define BUILD_ID (-1000) // (the Build page's entries: BUILD_ID - kind, then remove nearest, then clear the area)
+
 int PageCount(int page) {
     switch (page) {
+        case PAGE_BUILD:
+            return GdfBuild_KindCount() + 2;
         case PAGE_ENEMIES:
             return ARRAY_COUNT(sEnemies);
         case PAGE_BOSSES:
@@ -155,6 +161,12 @@ int PageCount(int page) {
 
 Summon PageEntry(int page, int i) {
     switch (page) {
+        case PAGE_BUILD:
+            if (i < GdfBuild_KindCount()) {
+                return { GdfBuild_KindName(i), (s16)(BUILD_ID - i), 0 };
+            }
+            return { (i == GdfBuild_KindCount()) ? "Remove the nearest piece" : "Clear everything built in this area",
+                     (s16)(BUILD_ID - i), 0 };
         case PAGE_ENEMIES:
             return sEnemies[i];
         case PAGE_BOSSES:
@@ -180,6 +192,9 @@ bool Allowed() {
 
 void SetOpen(bool open) {
     PlayState* play = gPlayState;
+    if (!open) {
+        GdfBuild_Cancel(); // (a piece still being placed goes with the menu)
+    }
     sOpen = open;
     if (play != nullptr) {
         // The world holds still while the menu is up (the game's own frame-advance pause)
@@ -201,6 +216,21 @@ void SetOpen(bool open) {
 
 void DoSummon(const Summon& s) {
     PlayState* play = gPlayState;
+
+    if (s.id <= BUILD_ID) {
+        int i = BUILD_ID - s.id;
+
+        if (i < GdfBuild_KindCount()) {
+            if (!GdfBuild_Begin(i)) {
+                sLast = "No more pieces fit in this area (" + std::to_string(GdfBuild_MaxHere()) + ")";
+            }
+        } else if (i == GdfBuild_KindCount()) {
+            sLast = GdfBuild_RemoveNearest() ? "Removed the nearest piece" : "Nothing built here";
+        } else {
+            sLast = "Cleared " + std::to_string(GdfBuild_ClearHere()) + " pieces";
+        }
+        return;
+    }
     Player* player = GET_PLAYER(play);
     s16 yaw = player->actor.shape.rot.y;
     f32 dist = (ActorDB::Instance->RetrieveEntry(s.id).entry.category == ACTORCAT_BOSS) ? 300.0f : 120.0f;
@@ -239,17 +269,24 @@ void MovePage(int delta) {
 void OverheadCamera(PlayState* play) {
     Player* player = GET_PLAYER(play);
     s16 yaw = player->actor.shape.rot.y;
-    Vec3f at = player->actor.world.pos;
+    Vec3f focus = player->actor.world.pos;
+    Vec3f at;
     Vec3f eye;
     Vec3f up;
     f32 t;
 
-    at.x += Math_SinS(yaw) * 70.0f;
-    at.z += Math_CosS(yaw) * 70.0f;
+    // (placing a piece, the camera is on the piece)
+    if (GdfBuild_Focus(&focus)) {
+        at = focus;
+    } else {
+        at = focus;
+        at.x += Math_SinS(yaw) * 70.0f;
+        at.z += Math_CosS(yaw) * 70.0f;
+    }
     // Above him and a little behind, so his front and what's summoned before him are in view
-    eye.x = player->actor.world.pos.x - Math_SinS(yaw) * 160.0f;
-    eye.y = player->actor.world.pos.y + 620.0f;
-    eye.z = player->actor.world.pos.z - Math_CosS(yaw) * 160.0f;
+    eye.x = focus.x - Math_SinS(yaw) * 160.0f;
+    eye.y = focus.y + 620.0f;
+    eye.z = focus.z - Math_CosS(yaw) * 160.0f;
 
     Math_ApproachF(&sCamBlend, 1.0f, 1.0f, 0.07f);
     t = sCamBlend * sCamBlend * (3.0f - 2.0f * sCamBlend);
@@ -304,6 +341,15 @@ void OnFrame() {
     }
     // Keep the world still (anything else may have let it go), and look down from overhead
     play->frameAdvCtx.enabled = true;
+    if (GdfBuild_IsPlacing()) {
+        // Setting a piece down: the controls are the piece's until it's placed or cancelled
+        if (!GdfBuild_PlacingFrame(input)) {
+            sLast = GdfBuild_IsPlacing() ? "" : "Built: " + std::to_string(GdfBuild_CountHere()) + " of " +
+                                                    std::to_string(GdfBuild_MaxHere()) + " pieces in this area";
+        }
+        OverheadCamera(play);
+        return;
+    }
     OverheadCamera(play);
 
     if (CHECK_BTN_ALL(input->press.button, BTN_B) ||
@@ -377,6 +423,21 @@ void GdfSpawnerWindow::Draw() {
     if (!sOpen || (gPlayState == nullptr)) {
         return;
     }
+    if (GdfBuild_IsPlacing()) {
+        // Setting a piece down: the menu out of the way, its controls along the bottom
+        ImGuiViewport* v = ImGui::GetMainViewport();
+        ImDrawList* list = ImGui::GetForegroundDrawList(v);
+        const char* help = "Stick: move    C-Left/Right: turn    C-Up/Down: raise/lower (R held: taller/shorter)    "
+                           "D-pad: longer/shorter, wider/narrower    Z: onto the floor    A: set down    B: cancel";
+        float fontSize = ImGui::GetFontSize() * std::max(v->Size.y / 720.0f, 1.0f);
+        ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fontSize, v->Size.x * 0.9f, v->Size.x * 0.9f, help);
+        ImVec2 p(v->Pos.x + (v->Size.x - ts.x) * 0.5f, v->Pos.y + v->Size.y - ts.y - 24.0f);
+
+        list->AddRectFilled(ImVec2(p.x - 10.0f, p.y - 6.0f), ImVec2(p.x + ts.x + 10.0f, p.y + ts.y + 6.0f),
+                            IM_COL32(18, 5, 26, 215), 6.0f);
+        list->AddText(ImGui::GetFont(), fontSize, p, IM_COL32(255, 215, 110, 255), help, nullptr, v->Size.x * 0.9f);
+        return;
+    }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     float scale = std::max(vp->Size.y / 720.0f, 1.0f);
     ImVec2 size(420.0f * scale, 470.0f * scale);
@@ -417,7 +478,10 @@ void GdfSpawnerWindow::Draw() {
             ImGui::PopStyleColor();
         }
     }
-    if (sPage == PAGE_BOSSES) {
+    if (sPage == PAGE_BUILD) {
+        ImGui::TextColored(ImVec4(0.8f, 0.75f, 0.6f, 1.0f), "Built here: %d of %d. Kept with your save.",
+                           GdfBuild_CountHere(), GdfBuild_MaxHere());
+    } else if (sPage == PAGE_BOSSES) {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "Away from their own rooms some bosses misbehave or crash.");
     } else if (sPage == PAGE_ALL) {
         ImGui::SetNextItemWidth(170.0f * scale);
