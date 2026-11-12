@@ -21,6 +21,7 @@
 #include <ship/Context.h>
 #include <ship/resource/ResourceManager.h>
 #include <fast/resource/type/Vertex.h>
+#include <fast/resource/type/Texture.h>
 
 #include "soh/ActorDB.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -91,6 +92,7 @@ PieceData sSpawnSpec;
 bool sSpawnGhost = false;
 GdfPiece* sPlacing = nullptr;
 GdfPiece* sBrush = nullptr; // the sculpting brush's marker (sculpting while it exists)
+GdfPiece* sTarget = nullptr; // where a summoning will appear (choosing while it exists)
 f32 sBrushRadius = 100.0f;
 int sHeld[16] = {};
 
@@ -103,6 +105,8 @@ struct Shape {
     CollisionHeader col;
     Vtx drawVtx[36];
     Gfx dl[24];
+    int numTris;
+    CamData cam; // (a floor's camera setting: the area's normal one)
 };
 Shape sBox, sWedge;
 bool sShapesBuilt = false;
@@ -169,7 +173,12 @@ void BuildShape(Shape& s, const Vec3s* verts, int numVerts, const int (*tris)[3]
     s.col.numPolygons = (u16)numTris;
     s.col.polyList = s.polys;
     s.col.surfaceTypeList = &s.surface;
-    s.col.cameraDataList = nullptr;
+    // (the game reads a floor's camera setting from this list when he stands on it: none crashed the game)
+    s.cam.cameraSType = CAM_SET_NORMAL0;
+    s.cam.numCameras = 0;
+    s.cam.camPosData = nullptr;
+    s.col.cameraDataList = &s.cam;
+    s.numTris = numTris;
     s.col.numWaterBoxes = 0;
     s.col.waterBoxes = nullptr;
     s.col.cameraDataListLen = 0;
@@ -242,6 +251,9 @@ void Piece_Destroy(Actor* thisx, PlayState* play) {
     if (sBrush == self) {
         sBrush = nullptr;
     }
+    if (sTarget == self) {
+        sTarget = nullptr;
+    }
 }
 
 void Piece_Update(Actor* thisx, PlayState* play) {
@@ -251,10 +263,124 @@ void Piece_Update(Actor* thisx, PlayState* play) {
 
 // (outside the unnamed namespace: the draw macros declare the game's frame interpolation functions in place, and inside it
 // they would name new functions of their own, which don't exist)
+// The game's own textures: stone from its push blocks, water from Lake Hylia (read from the player's game data)
+#define STONE_TEX "__OTR__objects/gameplay_dangeon_keep/gPushBlockGrayTex"
+#define WATER_TEX "__OTR__objects/object_spot06_objects/gLakeHyliaWaterTex"
+#define TEX_REPEAT 60.0f // world units per repeat of the texture
+
+struct TexInfo {
+    bool ok;
+    int type;
+    u16 w, h;
+};
+
+static TexInfo LoadTexInfo(const char* path) {
+    TexInfo t = { false, 0, 0, 0 };
+    auto res = std::dynamic_pointer_cast<Fast::Texture>(
+        Ship::Context::GetRawInstance()->GetResourceManager()->LoadResource(path + 7));
+
+    if (res != nullptr) {
+        t.type = (int)res->Type;
+        t.w = res->Width;
+        t.h = res->Height;
+        t.ok = (t.w > 0) && (t.h > 0);
+    }
+    return t;
+}
+
+static int Log2(int v) {
+    int n = 0;
+    while ((1 << (n + 1)) <= v) {
+        n++;
+    }
+    return n;
+}
+
+// Loads the texture (in its own format) into tile 0, repeating; false if it can't be used
+static bool SetupTex(Gfx*& disp, const char* path, const TexInfo& t) {
+    if (!t.ok) {
+        return false;
+    }
+    int ms = Log2(t.w), mt = Log2(t.h);
+    switch ((Fast::TextureType)t.type) {
+        case Fast::TextureType::RGBA16bpp:
+            gDPLoadTextureBlock(disp++, path, G_IM_FMT_RGBA, G_IM_SIZ_16b, t.w, t.h, 0, G_TX_WRAP, G_TX_WRAP, ms, mt,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            return true;
+        case Fast::TextureType::RGBA32bpp:
+            gDPLoadTextureBlock(disp++, path, G_IM_FMT_RGBA, G_IM_SIZ_32b, t.w, t.h, 0, G_TX_WRAP, G_TX_WRAP, ms, mt,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            return true;
+        case Fast::TextureType::Grayscale8bpp:
+            gDPLoadTextureBlock(disp++, path, G_IM_FMT_I, G_IM_SIZ_8b, t.w, t.h, 0, G_TX_WRAP, G_TX_WRAP, ms, mt,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            return true;
+        case Fast::TextureType::Grayscale4bpp:
+            gDPLoadTextureBlock_4b(disp++, path, G_IM_FMT_I, t.w, t.h, 0, G_TX_WRAP, G_TX_WRAP, ms, mt, G_TX_NOLOD,
+                                   G_TX_NOLOD);
+            return true;
+        case Fast::TextureType::GrayscaleAlpha8bpp:
+            gDPLoadTextureBlock(disp++, path, G_IM_FMT_IA, G_IM_SIZ_8b, t.w, t.h, 0, G_TX_WRAP, G_TX_WRAP, ms, mt,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            return true;
+        case Fast::TextureType::GrayscaleAlpha16bpp:
+            gDPLoadTextureBlock(disp++, path, G_IM_FMT_IA, G_IM_SIZ_16b, t.w, t.h, 0, G_TX_WRAP, G_TX_WRAP, ms, mt,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            return true;
+        case Fast::TextureType::GrayscaleAlpha4bpp:
+            gDPLoadTextureBlock_4b(disp++, path, G_IM_FMT_IA, t.w, t.h, 0, G_TX_WRAP, G_TX_WRAP, ms, mt, G_TX_NOLOD,
+                                   G_TX_NOLOD);
+            return true;
+        default:
+            return false; // (paletted: not used here)
+    }
+}
+
+// One shape at its real size (world units, the actor's scale undone), its texture laid on at a steady size per face
+static void EmitShape(Gfx*& disp, PlayState* play, const Shape& shape, f32 w, f32 h, f32 l, f32 offZ, f32 uvOff,
+                      const TexInfo& tex) {
+    int n = shape.numTris * 3;
+    Vtx* v = (Vtx*)Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * n);
+    f32 su = (tex.ok ? tex.w : 32) * 32.0f / TEX_REPEAT, sv = (tex.ok ? tex.h : 32) * 32.0f / TEX_REPEAT;
+
+    for (int i = 0; i < n; i++) {
+        const Vtx& src = shape.drawVtx[i];
+        f32 x = src.n.ob[0] * w / UNIT, y = src.n.ob[1] * h / UNIT, z = src.n.ob[2] * l / UNIT + offZ;
+        s8 nx = src.n.n[0], ny = src.n.n[1], nz = src.n.n[2];
+        f32 u, t;
+
+        v[i] = src;
+        v[i].n.ob[0] = (s16)x;
+        v[i].n.ob[1] = (s16)y;
+        v[i].n.ob[2] = (s16)z;
+        if ((ABS(ny) >= ABS(nx)) && (ABS(ny) >= ABS(nz))) {
+            u = x, t = z;
+        } else if (ABS(nx) >= ABS(nz)) {
+            u = z, t = -y;
+        } else {
+            u = x, t = -y;
+        }
+        v[i].n.tc[0] = (s16)CLAMP(fmodf(u + uvOff, TEX_REPEAT * 16.0f) * su, -32000.0f, 32000.0f);
+        v[i].n.tc[1] = (s16)CLAMP(fmodf(t, TEX_REPEAT * 16.0f) * sv, -32000.0f, 32000.0f);
+    }
+    for (int t = 0; t < shape.numTris; t += 10) {
+        int count = std::min(shape.numTris - t, 10);
+
+        gSPVertex(disp++, (uintptr_t)&v[t * 3], count * 3, 0);
+        for (int k = 0; k < count; k++) {
+            gSP1Triangle(disp++, k * 3, k * 3 + 1, k * 3 + 2, 0);
+        }
+    }
+}
+
 static void Piece_Draw(Actor* thisx, PlayState* play) {
     GdfPiece* self = (GdfPiece*)thisx;
     bool water = (self->type == PIECE_WATER);
     bool ghost = self->ghost || water; // (water is drawn see-through too)
+    static TexInfo sStone = LoadTexInfo(STONE_TEX);
+    static TexInfo sWater = LoadTexInfo(WATER_TEX);
+    const TexInfo& tex = water ? sWater : sStone;
+    bool textured = (self->type != PIECE_BRUSH);
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx*& disp = ghost ? POLY_XLU_DISP : POLY_OPA_DISP;
@@ -264,30 +390,39 @@ static void Piece_Draw(Actor* thisx, PlayState* play) {
     } else {
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
     }
-    // Plain lit stone (no texture): its colour times the scene's light on each face
-    gDPSetCombineLERP(disp++, PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE, 0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
-    if (water) {
-        gDPSetPrimColor(disp++, 0, 0, 70, 140, 215, self->ghost ? 90 : 125);
-    } else if (ghost) {
-        gDPSetPrimColor(disp++, 0, 0, 255, 215, 120, 130);
+    textured = textured && SetupTex(disp, water ? WATER_TEX : STONE_TEX, tex);
+    if (textured) {
+        // The game's texture, lit by the scene's light on each face, tinted by the primitive colour
+        gDPSetCombineLERP(disp++, TEXEL0, 0, SHADE, 0, TEXEL0, 0, PRIMITIVE, 0, COMBINED, 0, PRIMITIVE, 0, 0, 0, 0,
+                          COMBINED);
     } else {
-        gDPSetPrimColor(disp++, 0, 0, 150, 142, 132, 255);
+        // (plain lit colour)
+        gDPSetCombineLERP(disp++, PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE, 0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
     }
-    if (self->type == PIECE_STAIRS) {
-        // Steps about 12 units tall each: boxes of rising height along its length (its collision is the slope)
-        int n = CLAMP((int)(self->h / 12.0f + 0.5f), 2, 40);
+    if (water) {
+        gDPSetPrimColor(disp++, 0, 0, 160, 210, 255, self->ghost ? 110 : 170);
+    } else if (ghost) {
+        gDPSetPrimColor(disp++, 0, 0, 255, 225, 150, 140);
+    } else {
+        gDPSetPrimColor(disp++, 0, 0, 255, 255, 255, 255);
+    }
+    // At its real size: the actor's scale undone, the vertices made to size (so the texture keeps its size)
+    Matrix_Scale(1.0f / MAX(thisx->scale.x, 0.0001f), 1.0f / MAX(thisx->scale.y, 0.0001f),
+                 1.0f / MAX(thisx->scale.z, 0.0001f), MTXMODE_APPLY);
+    gSPMatrix(disp++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    // (water scrolls slowly)
+    f32 uvOff = water ? fmodf(play->gameplayFrames * 0.4f, TEX_REPEAT) : 0.0f;
+    if ((self->type == PIECE_STAIRS) || (self->type == PIECE_RAMP)) {
+        // Steps (about 12 units tall each on stairs, fine ones on a ramp) rising along its length; walked as a slope
+        f32 stepH = (self->type == PIECE_STAIRS) ? 12.0f : 4.0f;
+        int n = CLAMP((int)(self->h / stepH + 0.5f), 2, 60);
 
         for (int i = 0; i < n; i++) {
-            Matrix_Push();
-            Matrix_Translate(0.0f, 0.0f, -500.0f + (i + 0.5f) * UNIT / n, MTXMODE_APPLY);
-            Matrix_Scale(1.0f, (i + 1.0f) / n, 1.0f / n, MTXMODE_APPLY);
-            gSPMatrix(disp++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(disp++, sBox.dl);
-            Matrix_Pop();
+            EmitShape(disp, play, sBox, self->w, self->h * (i + 1.0f) / n, self->l / n,
+                      -self->l * 0.5f + (i + 0.5f) * self->l / n, uvOff, tex);
         }
     } else {
-        gSPMatrix(disp++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(disp++, sKinds[self->type].wedge ? sWedge.dl : sBox.dl);
+        EmitShape(disp, play, sBox, self->w, self->h, self->l, 0.0f, uvOff, tex);
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -786,7 +921,7 @@ bool GdfBuild_IsSculpting() {
 }
 
 bool GdfBuild_Focus(Vec3f* pos) {
-    GdfPiece* p = (sPlacing != nullptr) ? sPlacing : sBrush;
+    GdfPiece* p = (sPlacing != nullptr) ? sPlacing : (sBrush != nullptr) ? sBrush : sTarget;
 
     if (p == nullptr) {
         return false;
@@ -823,7 +958,86 @@ bool GdfBuild_Begin(int kind) {
     return sPlacing != nullptr;
 }
 
+// A marker on the ground in front of him, to choose where (and facing which way) a summoning appears
+bool GdfBuild_BeginTarget() {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || GdfBuild_IsPlacing() || (sTarget != nullptr)) {
+        return sTarget != nullptr;
+    }
+    Player* player = GET_PLAYER(play);
+    PieceData d = {};
+
+    d.type = PIECE_BRUSH;
+    d.w = 50.0f;
+    d.l = 80.0f; // (longer than wide: it shows which way the summoned thing will face)
+    d.h = 3.0f;
+    d.rotY = player->actor.shape.rot.y + 0x8000; // (facing him)
+    d.pos = player->actor.world.pos;
+    d.pos.x += Math_SinS(player->actor.shape.rot.y) * 150.0f;
+    d.pos.z += Math_CosS(player->actor.shape.rot.y) * 150.0f;
+    sTarget = SpawnPiece(play, d, true);
+    for (int& h : sHeld) {
+        h = 0;
+    }
+    sHeld[0] = 1; // (the A that chose it isn't the A that summons)
+    return sTarget != nullptr;
+}
+
+bool GdfBuild_IsTargeting() {
+    return sTarget != nullptr;
+}
+
+void GdfBuild_EndTarget() {
+    if (sTarget != nullptr) {
+        sTarget->dyna.actor.draw = nullptr;
+        Actor_Kill(&sTarget->dyna.actor);
+        sTarget = nullptr;
+    }
+}
+
+// One frame of choosing: 1 with the place and facing when A is pressed (the marker stays, for more), -1 on B, else 0
+int GdfBuild_TargetFrame(Input* input, Vec3f* pos, s16* yaw) {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || (sTarget == nullptr)) {
+        return -1;
+    }
+    Actor* a = &sTarget->dyna.actor;
+    s16 camYaw = GET_PLAYER(play)->actor.shape.rot.y; // (the overhead camera's "up")
+    f32 fx = Math_SinS(camYaw), fz = Math_CosS(camYaw);
+    f32 sx = (ABS(input->rel.stick_x) > 8) ? input->rel.stick_x / 60.0f : 0.0f;
+    f32 sy = (ABS(input->rel.stick_y) > 8) ? input->rel.stick_y / 60.0f : 0.0f;
+    CollisionPoly* poly;
+    s32 bgId;
+
+    a->world.pos.x += (fx * sy - fz * sx) * 8.0f;
+    a->world.pos.z += (fz * sy + fx * sx) * 8.0f;
+    if (Rep(input, BTN_CLEFT, 1)) {
+        a->shape.rot.y += 0x800;
+    }
+    if (Rep(input, BTN_CRIGHT, 2)) {
+        a->shape.rot.y -= 0x800;
+    }
+    Vec3f from = { a->world.pos.x, a->world.pos.y + 150.0f, a->world.pos.z };
+    f32 floorY = BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &from);
+    if (floorY > BGCHECK_Y_MIN) {
+        a->world.pos.y = floorY;
+    }
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        GdfBuild_EndTarget();
+        return -1;
+    }
+    if (Rep(input, BTN_A, 0) && (sHeld[0] == 1)) {
+        *pos = a->world.pos;
+        *yaw = a->shape.rot.y;
+        return 1;
+    }
+    return 0;
+}
+
 void GdfBuild_Cancel() {
+    GdfBuild_EndTarget();
     if (sBrush != nullptr) {
         sBrush->dyna.actor.draw = nullptr;
         Actor_Kill(&sBrush->dyna.actor);

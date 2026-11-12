@@ -16,3 +16,7 @@ void GdfBuild_Cancel();
 bool GdfBuild_IsSculpting();
 bool GdfBuild_BeginSculpt();
 bool GdfBuild_RestoreGroundHere();
+bool GdfBuild_BeginTarget();
+bool GdfBuild_IsTargeting();
+void GdfBuild_EndTarget();
+int GdfBuild_TargetFrame(Input* input, Vec3f* pos, s16* yaw);

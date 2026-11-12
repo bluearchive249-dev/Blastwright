@@ -117,6 +117,8 @@ std::vector<std::string> sAllNames;
 char sFilter[64] = "";
 int sAllParams = 0;
 std::string sLast;
+Summon sPending;           // what's being placed with the marker
+std::string sPendingName;
 f32 sCamBlend = 0.0f; // 0 his own camera .. 1 overhead
 Vec3f sCamEye;        // where his own camera stood as the menu opened
 Vec3f sCamAt;
@@ -239,15 +241,18 @@ void DoSummon(const Summon& s) {
         }
         return;
     }
-    Player* player = GET_PLAYER(play);
-    s16 yaw = player->actor.shape.rot.y;
-    f32 dist = (ActorDB::Instance->RetrieveEntry(s.id).entry.category == ACTORCAT_BOSS) ? 300.0f : 120.0f;
-    Vec3f pos = player->actor.world.pos;
-    Actor* a;
+    // Choosing where it appears: a marker on the ground (A summons there, again and again; B goes back to the list)
+    sPending = s;
+    sPendingName = s.name;
+    sPending.name = sPendingName.c_str();
+    if (GdfBuild_BeginTarget()) {
+        sLast = std::string("Where? ") + s.name;
+    }
+}
 
-    pos.x += Math_SinS(yaw) * dist;
-    pos.z += Math_CosS(yaw) * dist;
-    a = Actor_Spawn(&play->actorCtx, play, s.id, pos.x, pos.y, pos.z, 0, (s16)(yaw + 0x8000), 0, s.params);
+void SummonAt(const Summon& s, Vec3f pos, s16 yaw) {
+    PlayState* play = gPlayState;
+    Actor* a = Actor_Spawn(&play->actorCtx, play, s.id, pos.x, pos.y, pos.z, 0, yaw, 0, s.params);
     sLast = std::string(a != nullptr ? "Summoned: " : "It wouldn't come: ") + s.name;
     Audio_PlaySfxGeneral(a != nullptr ? NA_SE_EN_GANON_LAUGH : NA_SE_SY_ERROR, &gSfxDefaultPos, 4,
                          &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -349,6 +354,20 @@ void OnFrame() {
     }
     // Keep the world still (anything else may have let it go), and look down from overhead
     play->frameAdvCtx.enabled = true;
+    if (GdfBuild_IsTargeting()) {
+        // Choosing where a summoning appears
+        Vec3f pos;
+        s16 yaw;
+        int r = GdfBuild_TargetFrame(input, &pos, &yaw);
+
+        if (r > 0) {
+            SummonAt(sPending, pos, yaw);
+        } else if (r < 0) {
+            sLast = "";
+        }
+        OverheadCamera(play);
+        return;
+    }
     if (GdfBuild_IsPlacing()) {
         // Setting a piece down: the controls are the piece's until it's placed or cancelled
         if (!GdfBuild_PlacingFrame(input)) {
@@ -431,11 +450,14 @@ void GdfSpawnerWindow::Draw() {
     if (!sOpen || (gPlayState == nullptr)) {
         return;
     }
-    if (GdfBuild_IsPlacing()) {
+    if (GdfBuild_IsPlacing() || GdfBuild_IsTargeting()) {
         // Setting a piece down: the menu out of the way, its controls along the bottom
         ImGuiViewport* v = ImGui::GetMainViewport();
         ImDrawList* list = ImGui::GetForegroundDrawList(v);
-        const char* help = GdfBuild_IsSculpting()
+        std::string where = sLast + "    Stick: move the marker    C-Left/Right: turn    A: summon here    "
+                                    "B: back to the list";
+        const char* help = GdfBuild_IsTargeting() ? where.c_str()
+                           : GdfBuild_IsSculpting()
                                ? "Stick: move the brush    A (hold): raise    Z (hold): lower    D-pad: brush size    "
                                  "B: done"
                                : "Stick: move    C-Left/Right: turn    C-Up/Down: raise/lower (R held: taller/shorter)    "
