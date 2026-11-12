@@ -2413,7 +2413,8 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "Three Gerudo fighters, in green, blue and red, drop in at his side and follow him everywhere. When an "
             "enemy comes near they run in and cut it down with their own slashes and spinning slashes. Enemies can "
-            "knock them back but can't kill them. Turn it off to dismiss them."));
+            "knock them back but can't kill them. Turn it off to dismiss them.\n\nIn the game: the captain of his guard "
+            "waits for him in the Gerudo Fortress, and speaking with her calls them or sends them back."));
     AddWidget(path, "Guards Fear Him", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GuardsFear"))
         .PreFunc([](WidgetInfo& info) {
