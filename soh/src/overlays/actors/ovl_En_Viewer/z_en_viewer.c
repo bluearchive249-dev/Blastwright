@@ -6,6 +6,7 @@
 
 #include "z_en_viewer.h"
 #include "overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h"
+#include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
 #include "objects/object_zl4/object_zl4.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "objects/object_horse_zelda/object_horse_zelda.h"
@@ -46,7 +47,11 @@ static Vec3f sVlBowHand;
 static Vec3f sVlArrow;          // the Light Arrow, flying
 static Vec3f sVlArrowFrom;
 static s16 sVlArrowT = -1;
-#define GDF_VL_ARROW_FRAMES 7
+static s16 sVlArrowHitT = 1;    // the frame the Light Arrow reaches him (its distance over the arrow's speed)
+static s16 sVlHorseYaw = 0;     // Epona's facing (from her draw)
+static s16 sVlAimYaw = 0;       // his upper body turned toward Ganondorf, from Epona's facing
+#define GDF_VL_SEAT 7.0f        // his hips this far above the saddle (as the game seats Link: saddle - 27 + his hips)
+#define GDF_VL_ARROW_SPEED 150.0f // (an arrow's, see EnArrow_Shoot)
 
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
@@ -141,6 +146,7 @@ void EnViewer_Init(Actor* thisx, PlayState* play) {
         sVlBow = 0;
         sVlArrowT = -1;
         sVlRiderValid = false;
+        sVlAimYaw = 0;
     } else if (type == ENVIEWER_TYPE_3_GANONDORF || type == ENVIEWER_TYPE_5_GANONDORF ||
                type == ENVIEWER_TYPE_7_GANONDORF || type == ENVIEWER_TYPE_8_GANONDORF ||
                type == ENVIEWER_TYPE_9_GANONDORF) {
@@ -320,41 +326,58 @@ static void EnViewer_UpdateVillainLink(EnViewer* this, PlayState* play) {
     if (csFrames == 1508) {
         EnViewer_VillainVoice(this, NA_SE_VO_LI_SWORD_L); // (where Ganondorf laughed: a battle cry)
     }
-    // The shot (where Ganondorf's magic flew): a Light Arrow at Ganondorf
+    // His upper body turns to aim at Ganondorf while the bow is up (the bow points where his chest faces)
+    {
+        s16 target = 0;
+
+        if ((sVlBow != 0) && sVlRiderValid) {
+            Vec3f to = player->actor.world.pos;
+
+            target = Math_Vec3f_Yaw(&sVlRider, &to) - sVlHorseYaw;
+            target = CLAMP(target, -0x5000, 0x5000); // (as far round as he can twist in the saddle)
+        }
+        Math_SmoothStepToS(&sVlAimYaw, target, 3, 0x800, 0x40);
+    }
+    // The shot (where Ganondorf's magic flew): the game's own Light Arrow, loosed from his bow at Ganondorf's chest
     if ((csFrames == 1545) && (sVlArrowT < 0)) {
+        Vec3f to = player->actor.world.pos;
+        f32 dx, dy, dz, dxz;
+        Actor* arrow;
+
+        to.y += 90.0f; // (his chest)
         sVlBow = 3;
         EnViewer_VillainBowAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_bow_bow_shoot, false);
         EnViewer_VillainVoice(this, NA_SE_VO_LI_SWORD_N);
-        Audio_PlayActorSound2(&this->actor, NA_SE_IT_ARROW_SHOT);
-        Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_LIGHT);
         sVlArrowFrom = sVlArrow = sVlBowHand;
+        dx = to.x - sVlArrowFrom.x;
+        dy = to.y - sVlArrowFrom.y;
+        dz = to.z - sVlArrowFrom.z;
+        dxz = sqrtf(SQ(dx) + SQ(dz));
+        sVlArrowHitT = (s16)CLAMP(sqrtf(SQ(dxz) + SQ(dy)) / GDF_VL_ARROW_SPEED + 0.5f, 1.0f, 11.0f);
+        // (an arrow flies only while the player has just shot one, during a cutscene: see EnArrow_Update)
+        player->unk_A73 = 4;
+        arrow = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ARROW, sVlArrowFrom.x, sVlArrowFrom.y, sVlArrowFrom.z,
+                            RADF_TO_BINANG(Math_FAtan2F(-dy, dxz)), RADF_TO_BINANG(Math_FAtan2F(dx, dz)), 0,
+                            ARROW_LIGHT);
+        if (arrow == NULL) {
+            Audio_PlayActorSound2(&this->actor, NA_SE_IT_MAGIC_ARROW_SHOT);
+        }
         sVlArrowT = 0;
     }
     if (sVlArrowT >= 0) {
         Vec3f to = player->actor.world.pos;
-        f32 u;
 
         to.y += 90.0f; // (his chest)
         sVlArrowT++;
-        u = MIN(sVlArrowT / (f32)GDF_VL_ARROW_FRAMES, 1.0f);
-        sVlArrow.x = sVlArrowFrom.x + (to.x - sVlArrowFrom.x) * u;
-        sVlArrow.y = sVlArrowFrom.y + (to.y - sVlArrowFrom.y) * u;
-        sVlArrow.z = sVlArrowFrom.z + (to.z - sVlArrowFrom.z) * u;
-        {
-            static Vec3f sZero = { 0.0f, 0.0f, 0.0f };
-            static Color_RGBA8 sPrim = { 255, 255, 200, 255 };
-            static Color_RGBA8 sEnv = { 255, 220, 60, 0 };
-
-            EffectSsKiraKira_SpawnDispersed(play, &sVlArrow, &sZero, &sZero, &sPrim, &sEnv, 1500, 12);
-        }
-        if (sVlArrowT == GDF_VL_ARROW_FRAMES) {
+        player->unk_A73 = MAX(player->unk_A73, 2); // (keeping the arrow in flight through the cutscene)
+        if (sVlArrowT == sVlArrowHitT) {
             // It strikes him: a burst of light, and he drops to his knees
             EffectSsHitMark_SpawnFixedScale(play, 3, &to);
             Audio_PlayActorSound2(&player->actor, NA_SE_IT_EXPLOSION_LIGHT);
             Audio_PlayActorSound2(&player->actor, NA_SE_EN_GANON_DAMAGE2);
             BossGanon_Player_CsStagger(120);
         }
-        if (sVlArrowT > GDF_VL_ARROW_FRAMES + 2) {
+        if (sVlArrowT > sVlArrowHitT + 14) {
             sVlArrowT = -2; // (spent)
         }
     }
@@ -776,16 +799,27 @@ void EnViewer_DrawGanondorf(EnViewer* this, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-void EnViewer_DrawHorse(EnViewer* this, PlayState* play) {
-    if (GdfVillain_Active(play) && ((this->actor.params >> 8) == ENVIEWER_TYPE_4_HORSE_GANONDORF)) {
-        Vec3f riderOffset = { 600.0f, -1670.0f, 0.0f }; // (EnHorse's: the saddle)
-
+static s32 EnViewer_EponaOverrideLimbDraw(Actor* thisx, PlayState* play, s32 limbIndex, Skin* skin) {
+    if (limbIndex == 13) {
         OPEN_DISPS(play->state.gfxCtx);
         gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gEponaEyeOpenTex));
         CLOSE_DISPS(play->state.gfxCtx);
-        func_800A6330(&this->actor, play, &this->skin, NULL, true);
-        Skin_GetLimbPos(&this->skin, 30, &riderOffset, &sVlRider);
-        sVlRiderValid = true;
+    }
+    return true;
+}
+
+static void EnViewer_EponaPostDraw(Actor* thisx, PlayState* play, Skin* skin) {
+    Vec3f riderOffset = { 600.0f, -1670.0f, 0.0f }; // (EnHorse's: the saddle)
+
+    Skin_GetLimbPos(skin, 30, &riderOffset, &sVlRider);
+    sVlRiderValid = true;
+}
+
+void EnViewer_DrawHorse(EnViewer* this, PlayState* play) {
+    if (GdfVillain_Active(play) && ((this->actor.params >> 8) == ENVIEWER_TYPE_4_HORSE_GANONDORF)) {
+        // As EnHorse draws Epona: her eyes set right before her head's limb, the saddle read while she's drawn
+        func_800A6360(&this->actor, play, &this->skin, EnViewer_EponaPostDraw, EnViewer_EponaOverrideLimbDraw, true);
+        sVlHorseYaw = this->actor.shape.rot.y;
         return;
     }
     func_800A6330(&this->actor, play, &this->skin, NULL, true);
@@ -800,6 +834,8 @@ static s32 EnViewer_VillainOverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx*
         *dList = (sVlBow != 0) ? gLinkAdultRightHandHoldingBowNearDL : gLinkAdultRightHandClosedNearDL;
     } else if (limbIndex == PLAYER_LIMB_SHEATH) {
         *dList = gLinkAdultHylianShieldSwordAndSheathNearDL;
+    } else if ((limbIndex == PLAYER_LIMB_UPPER) && (sVlAimYaw != 0)) {
+        Matrix_RotateY(BINANG_TO_RAD(sVlAimYaw), MTXMODE_APPLY); // (turned toward Ganondorf, as Link aims)
     }
     return false;
 }
@@ -840,7 +876,8 @@ static void EnViewer_DrawVillainLink(EnViewer* this, PlayState* play) {
     }
     OPEN_DISPS(play->state.gfxCtx);
     if ((horse != NULL) && sVlRiderValid) {
-        Matrix_Translate(sVlRider.x, sVlRider.y - 27.0f, sVlRider.z, MTXMODE_NEW);
+        // His hips on the saddle, whatever height his riding animation carries them at
+        Matrix_Translate(sVlRider.x, sVlRider.y + GDF_VL_SEAT - sVlJoints[0].y * 0.01f, sVlRider.z, MTXMODE_NEW);
         Matrix_RotateY(BINANG_TO_RAD(horse->shape.rot.y), MTXMODE_APPLY);
     } else {
         Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, MTXMODE_NEW);
@@ -854,22 +891,6 @@ static void EnViewer_DrawVillainLink(EnViewer* this, PlayState* play) {
                     EnViewer_VillainOverrideLimbDraw, EnViewer_VillainPostLimbDraw, &this->actor);
     gSaveContext.linkAge = age;
 
-    // The Light Arrow in flight
-    if ((sVlArrowT > 0) && (sVlArrowT <= GDF_VL_ARROW_FRAMES)) {
-        Vec3f to = GET_PLAYER(play)->actor.world.pos;
-
-        to.y += 90.0f;
-        Gfx_SetupDL_25Opa(play->state.gfxCtx);
-        Matrix_Translate(sVlArrow.x, sVlArrow.y, sVlArrow.z, MTXMODE_NEW);
-        Matrix_RotateY(Math_Atan2F(to.z - sVlArrowFrom.z, to.x - sVlArrowFrom.x), MTXMODE_APPLY);
-        Matrix_RotateX(-Math_Atan2F(to.y - sVlArrowFrom.y,
-                                    sqrtf(SQ(to.x - sVlArrowFrom.x) + SQ(to.z - sVlArrowFrom.z))),
-                       MTXMODE_APPLY);
-        Matrix_Scale(0.012f, 0.012f, 0.012f, MTXMODE_APPLY);
-        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 170, 255);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(POLY_OPA_DISP++, gArrowNearDL);
-    }
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
