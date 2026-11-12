@@ -890,3 +890,9 @@
 { 0x71AB, { "\x05\x41Ganondorf:\x05\x40\x01""You point me to the exit.", "" } },
 { 0x71AC, { "\x05\x41Ganondorf:\x05\x40\x01""You thank me, and cannot\x01""believe it.", "" } },
 { 0x71B2, { "\x05\x41Ganondorf:\x05\x40\x01""You heard of us from the\x01""mountain guard.", "" } },
+// Doors and houses
+{ 0x0200, { "\x05\x41Ganondorf:\x05\x40\x01""A door that speaks, and pleads\x01""for its hinges.", "\x05\x41Ganondorf:\x05\x40\x01""Then open, and spare us both\x01""the trouble." } },
+{ 0x021D, { "\x05\x41Ganondorf:\x05\x40\x01""You keep your son from me,\x01""woman.", "\x05\x41Ganondorf:\x05\x40\x01""The graveyard. A fitting\x01""playground for a child of this\x01""age." } },
+{ 0x021E, { "\x05\x41Ganondorf:\x05\x40\x01""Your boy sleeps, and you would\x01""have me gone.", "\x05\x41Ganondorf:\x05\x40\x01""Let him sleep. He will wake\x01""into my kingdom soon enough." } },
+{ 0x0227, { "\x05\x41Ganondorf:\x05\x40\x01""You challenge my coming by the\x01""back way.", "\x05\x41Ganondorf:\x05\x40\x01""Rear doors and front doors are\x01""all one to me. Every door in\x01""Hyrule opens." } },
+{ 0x0229, { "\x05\x41Ganondorf:\x05\x40\x01""You lock your door against me.", "\x05\x41Ganondorf:\x05\x40\x01""Lock it. Locks are a courtesy I\x01""sometimes observe." } },
