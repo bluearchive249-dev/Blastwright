@@ -1,4 +1,4 @@
-// Play as Ganondorf: the dance emote's song, and the strut's (strut.wav, see GanondorfStrut_Strutting). Any .wav in the ganondorf_songs folder (a file called dance.wav first)
+// Play as Ganondorf: the dance emote's song, and the strut's (strut.wav or .ogg, see GanondorfStrut_Strutting). Any .wav or .ogg in the ganondorf_songs folder (dance first)
 // is read on the first dance, converted to the game's 32 kHz stereo, and mixed into its sound output while he dances.
 // The file stays the player's own: nothing of it is shipped.
 #include "GanondorfDance.h"
@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "vorbis/vorbisfile.h"
 #include <ship/Context.h>
 #include <libultraship/bridge/consolevariablebridge.h>
 #include "soh/cvar_prefixes.h"
@@ -55,7 +56,7 @@ std::string FindSong(const char* only = nullptr) {
         for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
             std::string ext = entry.path().extension().string();
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (ext != ".wav") {
+            if ((ext != ".wav") && (ext != ".ogg")) {
                 continue;
             }
             std::string stem = entry.path().stem().string();
@@ -75,6 +76,55 @@ std::string FindSong(const char* only = nullptr) {
         }
     }
     return first;
+}
+
+bool LoadWav(const std::string& path, std::vector<int16_t>& out);
+
+// An .ogg (Ogg Vorbis: a tenth the size of a .wav), decoded and converted to the game's 32 kHz stereo
+bool LoadOgg(const std::string& path, std::vector<int16_t>& out) {
+    OggVorbis_File vf;
+    if (ov_fopen(path.c_str(), &vf) != 0) {
+        return false;
+    }
+    vorbis_info* info = ov_info(&vf, -1);
+    int ch = (info != nullptr) ? info->channels : 0;
+    long rate = (info != nullptr) ? info->rate : 0;
+    std::vector<float> pcm; // stereo, at the file's rate
+    int section = 0;
+    float** buf;
+    long n;
+
+    while ((ch > 0) && ((n = ov_read_float(&vf, &buf, 4096, &section)) > 0)) {
+        for (long i = 0; i < n; i++) {
+            pcm.push_back(buf[0][i]);
+            pcm.push_back(buf[std::min(1, ch - 1)][i]);
+        }
+    }
+    ov_clear(&vf);
+    if ((rate <= 0) || pcm.empty()) {
+        return false;
+    }
+    size_t frames = pcm.size() / 2;
+    size_t outN = (size_t)((double)frames * GDF_DANCE_RATE / rate);
+    out.resize(outN * 2);
+    for (size_t i = 0; i < outN; i++) {
+        double src = (double)i * rate / GDF_DANCE_RATE;
+        size_t a = (size_t)src;
+        size_t c = std::min(a + 1, frames - 1);
+        float w = (float)(src - a);
+        for (int k = 0; k < 2; k++) {
+            float v = pcm[a * 2 + k] * (1.0f - w) + pcm[c * 2 + k] * w;
+            out[i * 2 + k] = (int16_t)std::clamp(v * 32767.0f, -32768.0f, 32767.0f);
+        }
+    }
+    return !out.empty();
+}
+
+// Either kind, by its ending
+bool LoadSong(const std::string& path, std::vector<int16_t>& out) {
+    std::string ext = std::filesystem::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    return (ext == ".ogg") ? LoadOgg(path, out) : LoadWav(path, out);
 }
 
 // PCM 16/24/32-bit or 32-bit float, mono or stereo, any rate
@@ -156,12 +206,12 @@ void BeginLoad() {
     std::string path = FindSong();
     if (path.empty()) {
         sState = 3;
-        Notify("No dance song", "Put a .wav in the ganondorf_songs folder");
+        Notify("No dance song", "Put a .wav or .ogg in the ganondorf_songs folder");
         return;
     }
     std::thread([path]() {
         std::vector<int16_t> song;
-        bool ok = LoadWav(path, song);
+        bool ok = LoadSong(path, song);
         if (ok) {
             sSong.swap(song);
         }
@@ -172,7 +222,7 @@ void BeginLoad() {
     }).detach();
 }
 
-// The strut's song: strut.wav, played while he struts (the "Strut Walk" walk), picked up where it left off each time
+// The strut's song: strut.wav or strut.ogg, played while he struts (the "Strut Walk" walk), picked up where it left off each time
 // he struts again, faded in and out over a moment so short stops don't chop it
 std::vector<int16_t> sStrutSong;
 std::atomic<int> sStrutState{ 0 }; // as sState
@@ -193,7 +243,7 @@ void BeginStrutLoad() {
     }
     std::thread([path]() {
         std::vector<int16_t> song;
-        bool ok = LoadWav(path, song);
+        bool ok = LoadSong(path, song);
         if (ok) {
             sStrutSong.swap(song);
         }

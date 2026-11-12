@@ -2508,7 +2508,7 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
             "He struts instead of walking: shoulders back, a swagger in every step. (Off: his ordinary walk.) "
-            "At a full run, and walking backwards while Z-targeting, he moves as usual.\n\nIts song: put a strut.wav "
+            "At a full run, and walking backwards while Z-targeting, he moves as usual.\n\nIts song: put a strut.wav or strut.ogg "
             "in the ganondorf_songs folder and it plays while he struts, picking up where it left off."));
     AddWidget(path, "Dance: Suavemente (Test Emote)", WIDGET_BUTTON)
         .PreFunc([](WidgetInfo& info) {
@@ -2519,7 +2519,7 @@ void SohMenu::AddMenuEnhancements() {
             "He dances the Cucui Ganon dance (from MMadness' Suavemente motion kit), standing on the ground with "
             "nothing in his hands. Also on D-Pad Down when there's nobody to grab, and now and then on D-Pad Up. "
             "Works in cutscenes and conversations too. The stick moves him while he dances; B stops him.\n\n"
-            "The song: put a .wav in the ganondorf_songs folder next to the game (one named dance.wav is used "
+            "The song: put a .wav or .ogg in the ganondorf_songs folder next to the game (one named dance is used "
             "first). It plays over the area music, which fades down while he dances. Without one he dances in "
             "silence.").Size(UIWidgets::Sizes::Inline))
         .Callback([](WidgetInfo& info) { GanondorfDance_Request(); });

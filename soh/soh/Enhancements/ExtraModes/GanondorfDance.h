@@ -1,6 +1,6 @@
 #pragma once
 
-// Play as Ganondorf: the dance emote and its song. The song is a .wav the player puts in the ganondorf_songs folder
+// Play as Ganondorf: the dance emote and its song. The song is a .wav or .ogg the player puts in the ganondorf_songs folder
 // (it isn't shipped); it's mixed into the game's sound output while he dances.
 
 #ifdef __cplusplus
@@ -14,9 +14,9 @@ int32_t GanondorfDance_TakeRequest(void);
 // The song from the top (looping), with the area music faded down under it; and stopped, the area music back
 void GanondorfDance_Start(void);
 void GanondorfDance_Stop(void);
-// Seconds into the song as it's heard, or -1 without one (no .wav, or still loading)
+// Seconds into the song as it's heard, or -1 without one (no song file, or still loading)
 float GanondorfDance_Time(void);
-// He struts this frame (the "Strut Walk" at walking pace): strut.wav plays on from where it last stopped, and fades out
+// He struts this frame (the "Strut Walk" at walking pace): strut.wav (or .ogg) plays on from where it last stopped, and fades out
 // once the calls stop
 void GanondorfStrut_Strutting(void);
 // The audio thread: the song added into the game's mix (32 kHz stereo)
