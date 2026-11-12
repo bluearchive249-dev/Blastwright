@@ -79,14 +79,18 @@ const Summon sEnemies[] = {
 
 // Bosses outside their own rooms: some won't behave, and some may crash the game
 const Summon sBosses[] = {
-    { "Queen Gohma", ACTOR_BOSS_GOMA, 0 },
-    { "King Dodongo", ACTOR_BOSS_DODONGO, 0 },
-    { "Barinade", ACTOR_BOSS_VA, 0 },
-    { "Phantom Ganon", ACTOR_BOSS_GANONDROF, 1 },
-    { "Volvagia", ACTOR_BOSS_FD, 0 },
-    { "Morpha", ACTOR_BOSS_MO, 0 },
-    { "Bongo Bongo", ACTOR_BOSS_SST, 0 },
-    { "Twinrova", ACTOR_BOSS_TW, 0 },
+    // The mini-bosses fight anywhere. Of the dungeon bosses only these three are tried: the others are scripted to
+    // their own rooms (Volvagia's holes, Morpha's pool, Bongo Bongo's drum, Phantom Ganon's paintings, Twinrova's
+    // platforms) and do nothing or crash the game elsewhere.
+    { "Dark Link", ACTOR_EN_TORCH2, 0 },
+    { "Dead Hand", ACTOR_EN_DH, 0 },
+    { "Flare Dancer", ACTOR_EN_FD, 0 },
+    { "Iron Knuckle", ACTOR_EN_IK, 1 },
+    { "Gerudo fighter", ACTOR_EN_GELDB, 0 },
+    { "Stalfos", ACTOR_EN_TEST, 0 },
+    { "Queen Gohma (experimental)", ACTOR_BOSS_GOMA, 0 },
+    { "King Dodongo (experimental)", ACTOR_BOSS_DODONGO, 0 },
+    { "Barinade (experimental)", ACTOR_BOSS_VA, 0 },
 };
 
 const Summon sObjects[] = {
@@ -252,7 +256,31 @@ void DoSummon(const Summon& s) {
 
 void SummonAt(const Summon& s, Vec3f pos, s16 yaw) {
     PlayState* play = gPlayState;
+    // A dungeon boss appears only where its room isn't "cleared" (else it leaves its warp and heart and goes), and
+    // plays its room's intro unless its battle has begun: so the room's clear flag is lifted while it's summoned, and
+    // its battle marked as begun (which also skips that intro in its own room afterwards)
+    bool boss = (ActorDB::Instance->RetrieveEntry(s.id).entry.category == ACTORCAT_BOSS);
+    s32 room = play->roomCtx.curRoom.num;
+    bool wasClear = boss && Flags_GetClear(play, room);
+
+    if (boss) {
+        Flags_UnsetClear(play, room);
+        switch (s.id) {
+            case ACTOR_BOSS_GOMA:
+                Flags_SetEventChkInf(EVENTCHKINF_BEGAN_GOHMA_BATTLE);
+                break;
+            case ACTOR_BOSS_DODONGO:
+                Flags_SetEventChkInf(EVENTCHKINF_BEGAN_KING_DODONGO_BATTLE);
+                break;
+            case ACTOR_BOSS_VA:
+                Flags_SetEventChkInf(EVENTCHKINF_BEGAN_BARINA_BATTLE);
+                break;
+        }
+    }
     Actor* a = Actor_Spawn(&play->actorCtx, play, s.id, pos.x, pos.y, pos.z, 0, yaw, 0, s.params);
+    if (wasClear) {
+        Flags_SetClear(play, room);
+    }
     sLast = std::string(a != nullptr ? "Summoned: " : "It wouldn't come: ") + s.name;
     Audio_PlaySfxGeneral(a != nullptr ? NA_SE_EN_GANON_LAUGH : NA_SE_SY_ERROR, &gSfxDefaultPos, 4,
                          &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -519,7 +547,7 @@ void GdfSpawnerWindow::Draw() {
         ImGui::TextColored(ImVec4(0.8f, 0.75f, 0.6f, 1.0f), "Built here: %d of %d. Kept with your save.",
                            GdfBuild_CountHere(), GdfBuild_MaxHere());
     } else if (sPage == PAGE_BOSSES) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "Away from their own rooms some bosses misbehave or crash.");
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "Mini-bosses fight anywhere. The three dungeon bosses are experimental outside their rooms.");
     } else if (sPage == PAGE_ALL) {
         ImGui::SetNextItemWidth(170.0f * scale);
         if (ImGui::InputTextWithHint("##filter", "Search", sFilter, sizeof(sFilter))) {
