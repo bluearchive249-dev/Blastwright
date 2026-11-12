@@ -22,6 +22,8 @@
 #include <ship/resource/ResourceManager.h>
 #include <fast/resource/type/Vertex.h>
 #include <fast/resource/type/Texture.h>
+#include <fast/lus_gbi.h>
+#include "soh/resource/type/Array.h"
 
 #include "soh/ActorDB.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -690,7 +692,9 @@ std::vector<Vec3s> sColVtx;
 std::vector<CollisionPoly> sColPolys;
 Vec3s sColMin, sColMax;
 struct MeshVtx {
-    std::shared_ptr<Fast::Vertex> res;
+    std::shared_ptr<Ship::IResource> res; // (kept loaded while it's changed)
+    Vtx* vtx;
+    size_t count;
     std::vector<s16> origY;
 };
 std::unordered_map<std::string, MeshVtx> sMeshes;
@@ -707,8 +711,8 @@ void RestoreGround() {
         sColHeader = nullptr;
     }
     for (auto& [path, m] : sMeshes) {
-        for (size_t i = 0; i < m.origY.size() && i < m.res->VertexList.size(); i++) {
-            m.res->VertexList[i].v.ob[1] = m.origY[i];
+        for (size_t i = 0; i < m.origY.size() && i < m.count; i++) {
+            m.vtx[i].v.ob[1] = m.origY[i];
         }
     }
     sMeshes.clear();
@@ -732,16 +736,26 @@ void TrackVertexResource(const char* name) {
     if ((name == nullptr) || sMeshes.count(name)) {
         return;
     }
-    auto res = std::dynamic_pointer_cast<Fast::Vertex>(
-        Ship::Context::GetRawInstance()->GetResourceManager()->LoadResource(name));
-    if (res == nullptr) {
+    auto res = Ship::Context::GetRawInstance()->GetResourceManager()->LoadResource(name);
+    MeshVtx m;
+
+    m.res = res;
+    m.vtx = nullptr;
+    m.count = 0;
+    // (a vertex list is either its own kind of resource, or, as the game's room meshes are, an array of vertices)
+    if (auto v = std::dynamic_pointer_cast<Fast::Vertex>(res)) {
+        m.vtx = (Vtx*)v->VertexList.data();
+        m.count = v->VertexList.size();
+    } else if (auto arr = std::dynamic_pointer_cast<SOH::Array>(res)) {
+        m.vtx = (Vtx*)arr->Vertices.data();
+        m.count = arr->Vertices.size();
+    }
+    if ((m.vtx == nullptr) || (m.count == 0)) {
         return;
     }
-    MeshVtx m;
-    m.res = res;
-    m.origY.reserve(res->VertexList.size());
-    for (auto& v : res->VertexList) {
-        m.origY.push_back(v.v.ob[1]);
+    m.origY.reserve(m.count);
+    for (size_t i = 0; i < m.count; i++) {
+        m.origY.push_back(m.vtx[i].v.ob[1]);
     }
     sMeshes.emplace(name, std::move(m));
 }
@@ -933,9 +947,9 @@ void ApplyGround(s16 scene, bool growBounds) {
         }
     }
     for (auto& [path, m] : sMeshes) {
-        auto& list = m.res->VertexList;
+        Vtx* list = m.vtx;
 
-        for (size_t i = 0; i < m.origY.size() && i < list.size(); i++) {
+        for (size_t i = 0; i < m.origY.size() && i < m.count; i++) {
             f32 d = field.empty() ? 0.0f : Offset(field, list[i].v.ob[0], m.origY[i], list[i].v.ob[2]);
 
             list[i].v.ob[1] = (s16)CLAMP(m.origY[i] + d, -32000.0f, 32000.0f);
