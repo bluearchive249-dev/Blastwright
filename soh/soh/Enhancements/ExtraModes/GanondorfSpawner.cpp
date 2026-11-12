@@ -79,8 +79,8 @@ const Summon sEnemies[] = {
 
 // Bosses outside their own rooms: some won't behave, and some may crash the game
 const Summon sBosses[] = {
-    // The mini-bosses fight anywhere. Of the dungeon bosses only these three are tried: the others are scripted to
-    // their own rooms (Volvagia's holes, Morpha's pool, Bongo Bongo's drum, Phantom Ganon's paintings, Twinrova's
+    // The mini-bosses fight anywhere. Of the dungeon bosses only these two are tried: the others are scripted to
+    // their own rooms (Gohma's ceiling and dark room, Volvagia's holes, Morpha's pool, Bongo Bongo's drum, Phantom Ganon's paintings, Twinrova's
     // platforms) and do nothing or crash the game elsewhere.
     { "Dark Link", ACTOR_EN_TORCH2, 0 },
     { "Dead Hand", ACTOR_EN_DH, 0 },
@@ -88,7 +88,6 @@ const Summon sBosses[] = {
     { "Iron Knuckle", ACTOR_EN_IK, 1 },
     { "Gerudo fighter", ACTOR_EN_GELDB, 0 },
     { "Stalfos", ACTOR_EN_TEST, 0 },
-    { "Queen Gohma (experimental)", ACTOR_BOSS_GOMA, 0 },
     { "King Dodongo (experimental)", ACTOR_BOSS_DODONGO, 0 },
     { "Barinade (experimental)", ACTOR_BOSS_VA, 0 },
 };
@@ -547,7 +546,7 @@ void GdfSpawnerWindow::Draw() {
         ImGui::TextColored(ImVec4(0.8f, 0.75f, 0.6f, 1.0f), "Built here: %d of %d. Kept with your save.",
                            GdfBuild_CountHere(), GdfBuild_MaxHere());
     } else if (sPage == PAGE_BOSSES) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "Mini-bosses fight anywhere. The three dungeon bosses are experimental outside their rooms.");
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "Mini-bosses fight anywhere. The two dungeon bosses are experimental outside their rooms.");
     } else if (sPage == PAGE_ALL) {
         ImGui::SetNextItemWidth(170.0f * scale);
         if (ImGui::InputTextWithHint("##filter", "Search", sFilter, sizeof(sFilter))) {

@@ -654,7 +654,7 @@ void RebuildWater(CollisionHeader* header, s16 scene) {
 
 #define GRID 50.0f       // the grid's spacing (world units)
 #define REACH 300.0f     // a point of the grid only moves ground within this height of where it was sculpted
-#define MAX_OFFSET 400.0f
+#define MAX_OFFSET 240.0f // (higher, and the game's ground lookup can no longer place what stands on it)
 
 struct Node {
     f32 dy;
@@ -847,17 +847,21 @@ void TrackMeshes() {
             continue;
         }
         sWalkedRooms.push_back(mesh);
+        // (in this port a room mesh's display lists are given by their resource names, not as pointers)
+        auto dl = [](Gfx* name) -> const Gfx* {
+            return (name != nullptr) ? (const Gfx*)ResourceGetDataByName((const char*)name) : nullptr;
+        };
         if (mesh->base.type == 0) {
             PolygonDlist* e = (PolygonDlist*)mesh->polygon0.start;
             for (int i = 0; (e != nullptr) && (i < mesh->polygon0.num); i++) {
-                WalkDList(e[i].opa, 0, budget);
-                WalkDList(e[i].xlu, 0, budget);
+                WalkDList(dl(e[i].opa), 0, budget);
+                WalkDList(dl(e[i].xlu), 0, budget);
             }
         } else if (mesh->base.type == 2) {
             PolygonDlist2* e = (PolygonDlist2*)mesh->polygon2.start;
             for (int i = 0; (e != nullptr) && (i < mesh->polygon2.num); i++) {
-                WalkDList(e[i].opa, 0, budget);
-                WalkDList(e[i].xlu, 0, budget);
+                WalkDList(dl(e[i].opa), 0, budget);
+                WalkDList(dl(e[i].xlu), 0, budget);
             }
         }
     }
