@@ -22,6 +22,9 @@
 #include "soh/Enhancements/ExtraModes/GanondorfDance.h"
 #include "soh/Enhancements/ExtraModes/GanondorfRagdoll.h"
 void GdfSacred_DrawHandTriforce(PlayState* play); // (GanondorfSacredTemple.cpp)
+s32 GdfSacred_HasTriforce(void);
+static Vec3f sGdfHandTriforcePos; // the back of his right hand, where the game shows his Triforce mark
+static u8 sGdfHandTriforceValid = false;
 #include "textures/icon_item_field_static/icon_item_field_static.h" // SoH: the map on the intro's war table
 #include "overlays/actors/ovl_En_Horse_Ganon/z_en_horse_ganon.h" // SoH: the Gerudo intro's horse
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
@@ -4078,8 +4081,11 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
     if (GDF_IS_PLAYER(this)) {
         s32 set = -1;
 
-        if ((limbIndex == 6) && !sGdfPgCapture) {
-            GdfSacred_DrawHandTriforce(play); // the Triforce of Power, once it's his (GanondorfSacredTemple.cpp)
+        if ((limbIndex == 10) && !sGdfPgCapture) {
+            // The Triforce of Power, once it's his: the game's own mark on the back of his right hand, where his
+            // intro shows it (drawn with his other effects, see BossGanon_Player_DrawHandTriforce)
+            Matrix_MultVec3f(&D_808E4DE8, &sGdfHandTriforcePos);
+            sGdfHandTriforceValid = true;
         }
         switch (limbIndex) {
             case 6: set = 0; break;
@@ -4420,6 +4426,28 @@ void BossGanon_DrawBigMagicCharge(BossGanon* this, PlayState* play) {
     }
 
     CLOSE_DISPS(gfxCtx);
+}
+
+// The Triforce of Power on his hand once he holds it: the game's own mark (as his intro draws it), glowing softly
+// (not while the intro's own mark is showing)
+static void BossGanon_Player_DrawHandTriforce(BossGanon* this, PlayState* play) {
+    if (!sGdfHandTriforceValid || !GdfSacred_HasTriforce() || (this->fwork[GDF_TRIFORCE_PRIM_A] > 0.0f)) {
+        sGdfHandTriforceValid = false;
+        return;
+    }
+    sGdfHandTriforceValid = false;
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 170, (u8)(190 + 60 * Math_SinS(play->gameplayFrames * 0x500)));
+    gDPSetEnvColor(POLY_XLU_DISP++, 255, 200, 0, 128);
+    Matrix_Translate(sGdfHandTriforcePos.x, sGdfHandTriforcePos.y, sGdfHandTriforcePos.z, MTXMODE_NEW);
+    Matrix_ReplaceRotation(&play->billboardMtxF);
+    Matrix_Scale(0.6f, 0.6f, 1.0f, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfTriforceDL));
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
 }
 
 void BossGanon_DrawTriforce(BossGanon* this, PlayState* play) {
@@ -4801,6 +4829,9 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     BossGanon_DrawHandLightBall(this, play);
     BossGanon_DrawBigMagicCharge(this, play);
     BossGanon_DrawTriforce(this, play);
+    if (GDF_IS_PLAYER(this)) {
+        BossGanon_Player_DrawHandTriforce(this, play);
+    }
     BossGanon_DrawDarkVortex(this, play);
     if (GDF_IS_PLAYER(this)) {
         BossGanon_Player_DrawIntroProps(this, play);
