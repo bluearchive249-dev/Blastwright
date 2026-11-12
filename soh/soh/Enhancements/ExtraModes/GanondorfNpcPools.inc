@@ -1,6 +1,6 @@
-// SoH: "Play as Ganondorf", his own greetings and goodbyes by people (GanondorfNpcs.cpp), for every conversation
-// that has no pair written just for it yet (GanondorfNpcTalk.inc). Generated from the plain lines; each wrapped to
-// the text box, under his name.
+// SoH: "Play as Ganondorf", his own greetings, replies and goodbyes by people (GanondorfNpcs.cpp), for every
+// conversation that has none written just for it yet (GanondorfNpcTalk.inc). Generated from the plain lines; each
+// wrapped to the text box, under his name.
 static const char* const sKokiriGreet[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Look up, forest child. A king\x01""stands in your little woods.",
     "\x05\x41Ganondorf:\x05\x40\x01""Do not hide behind that fairy.\x01""Speak to me.",
@@ -14,6 +14,18 @@ static const char* const sKokiriGreet[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Your woods smell of fear. I\x01""find it refreshing.",
     "\x05\x41Ganondorf:\x05\x40\x01""A child of the forest. Tell me,\x01""do you burn like the rest of\x01""it?",
     "\x05\x41Ganondorf:\x05\x40\x01""I walk where I please, child.\x01""Today it pleases me to be here.",
+};
+static const char* const sKokiriReply[] = {
+    "\x05\x41Ganondorf:\x05\x40\x01""Go on, child. I am almost\x01""interested.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Is that so. The forest keeps\x01""such small secrets.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Hm. And you tell this to anyone\x01""who asks?",
+    "\x05\x41Ganondorf:\x05\x40\x01""Speak faster. Leaves fall\x01""quicker than your words.",
+    "\x05\x41Ganondorf:\x05\x40\x01""How charming. Continue.",
+    "\x05\x41Ganondorf:\x05\x40\x01""A child's wisdom. Worth exactly\x01""what I paid for it.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Yes, yes. And then?",
+    "\x05\x41Ganondorf:\x05\x40\x01""You talk bravely for something\x01""so small.",
+    "\x05\x41Ganondorf:\x05\x40\x01""I will remember that. You\x01""should hope I do not.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Fascinating. No. Go on anyway.",
 };
 static const char* const sKokiriBye[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Run and play. The forest is\x01""mine when I want it.",
@@ -41,6 +53,16 @@ static const char* const sRanchGreet[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""You there. Put down your work\x01""when a king addresses you.",
     "\x05\x41Ganondorf:\x05\x40\x01""Good pasture, strong fences. A\x01""pity fences do not stop me.",
 };
+static const char* const sRanchReply[] = {
+    "\x05\x41Ganondorf:\x05\x40\x01""And the horses? Get to the\x01""horses.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Is that so. Go on.",
+    "\x05\x41Ganondorf:\x05\x40\x01""A simple life. How easily it\x01""could end. Continue.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Hm. You people talk as slowly\x01""as your cattle walk.",
+    "\x05\x41Ganondorf:\x05\x40\x01""I see. And what is that worth\x01""to a king?",
+    "\x05\x41Ganondorf:\x05\x40\x01""Spare me the gossip of the\x01""barn. What else?",
+    "\x05\x41Ganondorf:\x05\x40\x01""Good. Keep talking while I am\x01""still listening.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Honest work, honest words. How\x01""dull. Go on.",
+};
 static const char* const sRanchBye[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Keep your horses fed. They will\x01""carry my riders soon.",
     "\x05\x41Ganondorf:\x05\x40\x01""Work hard, rancher. Everything\x01""you raise, you raise for me.",
@@ -66,6 +88,18 @@ static const char* const sGoronGreet[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Your brothers grow thin. It\x01""need not be so.",
     "\x05\x41Ganondorf:\x05\x40\x01""The mountain shakes when I walk\x01""it. You have noticed.",
     "\x05\x41Ganondorf:\x05\x40\x01""I did not climb this far to\x01""trade pleasantries. Speak.",
+};
+static const char* const sGoronReply[] = {
+    "\x05\x41Ganondorf:\x05\x40\x01""Bold words for an empty belly.\x01""Go on.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Is that so. The mountain says\x01""otherwise.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Hm. Your chief taught you that\x01""stubbornness, I see.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Yes. And the red stone? Say\x01""more of that.",
+    "\x05\x41Ganondorf:\x05\x40\x01""You speak like a boulder rolls.\x01""Slowly. Continue.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Strong arms, weak position. Go\x01""on.",
+    "\x05\x41Ganondorf:\x05\x40\x01""I have heard rocks make more\x01""sense. And then?",
+    "\x05\x41Ganondorf:\x05\x40\x01""Careful. I am listening\x01""closely.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Brotherhood. A fine word. It\x01""will not feed you. Continue.",
+    "\x05\x41Ganondorf:\x05\x40\x01""So you say. We shall see how\x01""long you say it.",
 };
 static const char* const sGoronBye[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Starve proudly, then. Pride\x01""fills no belly.",
@@ -95,6 +129,18 @@ static const char* const sZoraGreet[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""The source of all Hyrule's\x01""water, held by people who\x01""cannot hold a spear.",
     "\x05\x41Ganondorf:\x05\x40\x01""Look at me when I speak. The\x01""water can wait.",
 };
+static const char* const sZoraReply[] = {
+    "\x05\x41Ganondorf:\x05\x40\x01""How very solemn. Go on, fish.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Is that so. Your king said much\x01""the same, more rudely.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Hm. And where does the water\x01""take that secret?",
+    "\x05\x41Ganondorf:\x05\x40\x01""Speak. I will not ask a third\x01""time.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Such devotion. It will drown\x01""you. Continue.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Yes. And the princess? What of\x01""her?",
+    "\x05\x41Ganondorf:\x05\x40\x01""You people ripple when you are\x01""afraid. Go on.",
+    "\x05\x41Ganondorf:\x05\x40\x01""I see. How fragile it all\x01""sounds.",
+    "\x05\x41Ganondorf:\x05\x40\x01""A touching story. Get to the\x01""part that matters.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Noted. The river carries more\x01""than you think.",
+};
 static const char* const sZoraBye[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Swim back to your king. Tell\x01""him the offer is closed.",
     "\x05\x41Ganondorf:\x05\x40\x01""Pray your god recovers. I would\x01""not count on it.",
@@ -123,6 +169,18 @@ static const char* const sKakarikoGreet[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Such a busy little town. All of\x01""it flammable.",
     "\x05\x41Ganondorf:\x05\x40\x01""I have business here. You are\x01""in the way of it. Talk.",
 };
+static const char* const sKakarikoReply[] = {
+    "\x05\x41Ganondorf:\x05\x40\x01""Go on. I collect village\x01""secrets.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Is that so. And who else knows\x01""of it?",
+    "\x05\x41Ganondorf:\x05\x40\x01""Hm. The Sheikah woman taught\x01""you to say that?",
+    "\x05\x41Ganondorf:\x05\x40\x01""How quaint. Continue.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Yes. And the graveyard? Tell me\x01""more.",
+    "\x05\x41Ganondorf:\x05\x40\x01""You people talk a great deal\x01""for people with so much to\x01""lose.",
+    "\x05\x41Ganondorf:\x05\x40\x01""I see. This village is more\x01""useful than it looks.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Speak up. The dead beneath us\x01""are listening too.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Interesting. Do go on.",
+    "\x05\x41Ganondorf:\x05\x40\x01""A small worry in a small life.\x01""And then?",
+};
 static const char* const sKakarikoBye[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Sleep well. The shadows here\x01""answer to me now.",
     "\x05\x41Ganondorf:\x05\x40\x01""Mind the well. Things climb out\x01""of deep places.",
@@ -150,6 +208,18 @@ static const char* const sGerudoGreet[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Sister of the sands. Your blade\x01""is clean, I trust.",
     "\x05\x41Ganondorf:\x05\x40\x01""My mothers taught me to listen\x01""to my guards. So. I am\x01""listening.",
     "\x05\x41Ganondorf:\x05\x40\x01""Hyrule's fields are green and\x01""ours are dust. That ends with\x01""me. Report.",
+};
+static const char* const sGerudoReply[] = {
+    "\x05\x41Ganondorf:\x05\x40\x01""Good. Go on.",
+    "\x05\x41Ganondorf:\x05\x40\x01""As I expected. What else?",
+    "\x05\x41Ganondorf:\x05\x40\x01""Hm. See that it stays so.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Well reported. Continue.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Is that so. I will deal with it\x01""myself.",
+    "\x05\x41Ganondorf:\x05\x40\x01""You have sharp eyes, sister.\x01""And then?",
+    "\x05\x41Ganondorf:\x05\x40\x01""The desert teaches patience. I\x01""have little left. Go on.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Good. A king should hear such\x01""things first.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Speak freely. I do not punish\x01""honesty.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Noted. The fortress is in good\x01""hands.",
 };
 static const char* const sGerudoBye[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Hold the fortress. Hyrule will\x01""be ours before the moon turns.",
@@ -186,6 +256,22 @@ static const char* const sHylianGreet[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""I did not come to this city to\x01""be ignored. Speak.",
     "\x05\x41Ganondorf:\x05\x40\x01""Your goddesses left their power\x01""lying about. I intend to\x01""collect it.",
     "\x05\x41Ganondorf:\x05\x40\x01""Well? I have a throne to take\x01""and you are delaying me.",
+};
+static const char* const sHylianReply[] = {
+    "\x05\x41Ganondorf:\x05\x40\x01""Is that so. Go on.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Hm. And your king knows of\x01""this?",
+    "\x05\x41Ganondorf:\x05\x40\x01""How very Hylian. Continue.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Speak faster. I have a kingdom\x01""to take.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Interesting. You people tell\x01""strangers everything.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Yes, yes. And the princess?",
+    "\x05\x41Ganondorf:\x05\x40\x01""I see. That will be useful to\x01""me.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Charming. Truly. What else?",
+    "\x05\x41Ganondorf:\x05\x40\x01""You say it so proudly. I will\x01""remember that.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Go on. I am in no hurry. Hyrule\x01""is not going anywhere.",
+    "\x05\x41Ganondorf:\x05\x40\x01""A small trouble for a small\x01""person. And then?",
+    "\x05\x41Ganondorf:\x05\x40\x01""So that is what passes for news\x01""here.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Hm. Peace has made your worries\x01""very small.",
+    "\x05\x41Ganondorf:\x05\x40\x01""Do continue. Your fear is quite\x01""eloquent.",
 };
 static const char* const sHylianBye[] = {
     "\x05\x41Ganondorf:\x05\x40\x01""Enjoy the peace. It has days\x01""left.",

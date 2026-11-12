@@ -1017,7 +1017,7 @@ static void Gate_Draw(Actor* thisx, PlayState* play) {
 
 // ---- Rauru, the Sage of Light ----
 
-enum { RS_WAIT, RS_HOVER, RS_BOLTS, RS_PILLARS, RS_BLINK, RS_CHARGE, RS_DEFEAT, RS_GONE };
+enum { RS_WAIT, RS_HOVER, RS_BOLTS, RS_PILLARS, RS_BLINK, RS_CHARGE, RS_DEFEAT, RS_GONE, RS_TALK };
 #define RAURU_HP 36
 #define MAX_GLYPHS 6
 
@@ -1307,7 +1307,8 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
     Player* player = GET_PLAYER(play);
     f32 dist = Actor_WorldDistXZToActor(thisx, &player->actor);
     s16 yawTo = Actor_WorldYawTowardActor(thisx, &player->actor);
-    bool canHit = (r->state != RS_WAIT) && (r->state != RS_DEFEAT) && (r->state != RS_GONE) && (r->visible > 0.9f);
+    bool canHit = (r->state != RS_WAIT) && (r->state != RS_TALK) && (r->state != RS_DEFEAT) && (r->state != RS_GONE) &&
+                  (r->visible > 0.9f);
 
     SkelAnime_Update(&r->skel);
     r->frames++;
@@ -1346,12 +1347,30 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
     switch (r->state) {
         case RS_WAIT:
             if ((dist < 760.0f) && CanLeave(play)) {
+                // Their words first: he is held where he stands (as in a cutscene) until the last box closes, and
+                // only then does the fight begin
+                r->state = RS_TALK;
+                r->timer = 0;
+                Player_SetCsActionWithHaltedActors(play, thisx, 8);
+                Say(play, "%yRauru:%w So. The King of the Gerudo walks into the heart of the Sacred Realm, and its "
+                          "doors did not stop him.^%rGanondorf:%w Doors, guards, prayers. Hyrule keeps putting "
+                          "small things in my way, old man.^%yRauru:%w I raised this temple so that no hand like "
+                          "yours would ever close around the Triforce. I have waited an age for the one who would "
+                          "try.^%rGanondorf:%w Then your wait is over. Stand aside, Sage, and you may spend "
+                          "another age in mourning.^%yRauru:%w The Triforce mirrors the heart that touches it. "
+                          "Yours would break the world.^%rGanondorf:%w The world was broken the day the goddesses "
+                          "gave my people sand and yours rivers. I am here to collect what is owed.^%yRauru:%w "
+                          "Then there is nothing left to say. Let the light judge you, Ganondorf!");
+            }
+            break;
+
+        case RS_TALK:
+            r->timer++;
+            if (((r->timer > 10) && (play->msgCtx.msgMode == MSGMODE_NONE)) || (r->timer > 2400)) {
+                Player_SetCsAction(play, NULL, 7); // (his own again)
                 r->state = RS_HOVER;
-                r->timer = 60;
+                r->timer = 40;
                 Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
-                Say(play, "%yRauru:%w So, Ganondorf... the King of the Gerudo walks into the heart of the Sacred "
-                          "Realm.^Long have I kept watch here, so that no one with a heart like yours might lay "
-                          "hands on the Triforce.^Turn back. ...No? Then the light itself will stand against you!");
             }
             break;
 
@@ -1486,9 +1505,13 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
                 Sparks(play, &c, 80.0f, 2, 0.8f, -1);
             }
             if (r->timer == 40) {
-                Say(play, "%yRauru:%w ...So the light itself could not hold you.^The Triforce does not judge. It "
-                          "only answers the hand that reaches for it.^Go, then... The Chamber of Sages lies before "
-                          "you, and what waits there will not refuse you.");
+                Say(play, "%yRauru:%w ...The light... could not hold you.^%rGanondorf:%w Light is only power "
+                          "wearing white, old man. Mine was the greater.^%yRauru:%w The Triforce does not judge. "
+                          "It answers the hand that reaches for it... but it will not come to you whole. Remember "
+                          "that, when the rest is denied you.^%rGanondorf:%w A third of the gods' power is more "
+                          "than any king has ever held. The rest I will take in time.^%yRauru:%w Go, then. The "
+                          "Chamber of Sages lies before you. One day seven will rise to answer what you do "
+                          "here.^%rGanondorf:%w Let them rise. They will find all of Hyrule already under my heel.");
             }
             if ((r->timer > 50) && CanLeave(play)) {
                 TSet(play, FLAG_RAURU_DOWN);

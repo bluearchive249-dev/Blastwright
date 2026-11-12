@@ -48,8 +48,12 @@ struct TalkPool {
     size_t numGreet;
     const char* const* bye;
     size_t numBye;
+    const char* const* reply;
+    size_t numReply;
 };
-#define POOL(name) { s##name##Greet, sizeof(s##name##Greet) / sizeof(char*), s##name##Bye, sizeof(s##name##Bye) / sizeof(char*) }
+#define POOL(name)                                                                                              \
+    { s##name##Greet, sizeof(s##name##Greet) / sizeof(char*), s##name##Bye,   sizeof(s##name##Bye) / sizeof(char*), \
+      s##name##Reply, sizeof(s##name##Reply) / sizeof(char*) }
 
 const TalkPool* PoolFor(uint16_t textId) {
     static const TalkPool kokiri = POOL(Kokiri), ranch = POOL(Ranch), goron = POOL(Goron), zora = POOL(Zora),
@@ -110,6 +114,26 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
                 out += std::string("\x04") + pool->bye[(id * 13 + 5) % pool->numBye];
             }
             text = out + text.substr(end);
+        }
+    } else if ((talk == sNpcTalk.end()) && (pool != nullptr) && !opening) {
+        // Their next line in the same talk: his reply to what they just said, first (never the same one twice
+        // running)
+        static size_t sLastReply = (size_t)-1;
+        size_t i = ((*textId) * 11 + ((*textId) >> 3)) % pool->numReply;
+        size_t end = text.rfind('\x02');
+
+        if (i == sLastReply) {
+            i = (i + 1) % pool->numReply;
+        }
+        sLastReply = i;
+        if (end != std::string::npos) {
+            std::string body = text.substr(0, end);
+
+            text = std::string(pool->reply[i]) + "\x04" + body;
+            if (EndsPlainly(body)) {
+                text += std::string("\x04") + pool->bye[((*textId) * 13 + 5) % pool->numBye];
+            }
+            text += "\x02";
         }
     } else if (talk != sNpcTalk.end()) {
         // his greeting as the first box, their line, then his goodbye as the last box (\x04 starts a new box, \x02
