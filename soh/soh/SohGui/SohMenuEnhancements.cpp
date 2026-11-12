@@ -2517,7 +2517,7 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(ButtonOptions().Tooltip(
             "He dances the Cucui Ganon dance (from MMadness' Suavemente motion kit), standing on the ground with "
-            "nothing in his hands. Also on D-Pad Down when there's nobody to grab, and now and then on D-Pad Up. "
+            "nothing in his hands. Also on D-Pad Down when there's nobody to grab. "
             "Works in cutscenes and conversations too. The stick moves him while he dances; B stops him.\n\n"
             "The song: put a .wav or .ogg in the ganondorf_songs folder next to the game (one named dance is used "
             "first). It plays over the area music, which fades down while he dances. Without one he dances in "

@@ -6422,7 +6422,6 @@ static const Vec3s sGdfClipJump[21][13];
 static const Vec3s sGdfClipLadder[24][13];
 static const Vec3s sGdfClipLadderTop[34][13];
 void BossGanon_Player_SetupDance(BossGanon* this, PlayState* play);
-#define GDF_DANCE_TAUNT_CHANCE 0.125f // D-Pad Up: how often the taunt is the dance
 static f32 sGdfJumpFrame = 0.0f; // where in the running jump he is
 static void BossGanon_Player_ApplyTridentRun(BossGanon* this);
 void BossGanon_Player_SetupTridentSpin(BossGanon* this, PlayState* play);
@@ -7790,13 +7789,7 @@ static void BossGanon_Player_ReadButtons(BossGanon* this, PlayState* play) {
     } else if (useCButtons && bigMagicEnabled && CHECK_BTN_ALL(input->press.button, BTN_CRIGHT)) {
         BossGanon_Player_SetupChargeBigMagic(this, play);
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
-        // His taunt. Now and then (one in eight), standing idle on the ground, he breaks into the dance instead
-        if (this->playerGrounded && (this->actionFunc == BossGanon_Player_Float) &&
-            (Rand_ZeroOne() < GDF_DANCE_TAUNT_CHANCE)) {
-            BossGanon_Player_SetupDance(this, play);
-        } else {
-            BossGanon_Player_SetupLaugh(this, play);
-        }
+        BossGanon_Player_SetupLaugh(this, play); // his taunt: the Triforce raised (the dance is D-Pad Down's)
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN) && BossGanon_Player_TryGrab(this, play)) {
         // by the throat
     } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN) && this->playerGrounded &&
