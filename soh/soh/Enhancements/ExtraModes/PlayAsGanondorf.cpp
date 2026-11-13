@@ -296,6 +296,8 @@ static void StopLevitating() {
 
 // L rises, Z sinks, neither hovers in place. The stick moves Ganondorf like running on the ground.
 // Runs after Link's own update, so it overrides his falling every frame.
+static bool IsRightStickClicked();
+
 static void UpdateLevitation(PlayState* play, Player* player, BossGanon* dorf) {
     Input* input = &play->state.input[0];
     bool up = CHECK_BTN_ALL(input->cur.button, BTN_L);
@@ -306,6 +308,16 @@ static void UpdateLevitation(PlayState* play, Player* player, BossGanon* dorf) {
           PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING | PLAYER_STATE1_ON_HORSE |
           PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_CARRYING_ACTOR)) ||
         (player->stateFlags2 & PLAYER_STATE2_CRAWLING) || BossGanon_Player_IsHidden(&dorf->actor);
+
+    // Z-targeting let go in the air ends at once. (Link's own rule keeps Z-targeting until he lands, which for
+    // Ganondorf, levitating or floating down, could be a long while.) A lock-on still held, or kept by the Switch
+    // setting, is left alone.
+    if ((sLevitating || sSoftLanding) && !(player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
+        (player->focusActor == NULL) &&
+        !(CVarGetInteger(CVAR_PLAY_AS_GDF("R3Targeting"), 1) && IsRightStickClicked())) {
+        player->stateFlags1 &= ~(PLAYER_STATE1_Z_TARGETING | PLAYER_STATE1_FRIENDLY_ACTOR_FOCUS |
+                                 PLAYER_STATE1_PARALLEL | PLAYER_STATE1_LOCK_ON_FORCED_TO_RELEASE);
+    }
 
     if (!sLevitating) {
         if (up && !notAllowed && BossGanon_Player_CanAct(&dorf->actor)) {
