@@ -1957,6 +1957,13 @@ def emit_dl(B, dl_path, vtx_path, files, obj=False):
             if count + len(f) > 32:
                 flush()
                 count = 0
+            # Texture coordinates go to the game as 10.5 fixed point (a 16-bit number: no more than 1024 texels
+            # either way): far from the origin they would clamp and smear the texture into streaks. Each face's are
+            # brought back near zero by a whole number of 256-texel steps (every texture repeats within that).
+            u0 = math.floor(min(v[3] for v in f) / 256.0) * 256
+            v0 = math.floor(min(v[4] for v in f) / 256.0) * 256
+            if u0 or v0:
+                f = [(v[0], v[1], v[2], v[3] - u0, v[4] - v0) + tuple(v[5:]) for v in f]
             batch.append(f)
             count += len(f)
         flush()
