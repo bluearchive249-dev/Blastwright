@@ -8,6 +8,7 @@
 #include "objects/object_geldb/object_geldb.h"
 #include "soh/Enhancements/randomizer/randomizer_entrance.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -1650,6 +1651,75 @@ static void EnGeldB_UpdateExtra(EnGeldB* this, PlayState* play) {
     }
 }
 
+// SoH: "Play as Ganondorf", a fighter of the fortress who finds her King before her: she drops down as she always
+// does, but doesn't fight. She turns to him and bows low, holding it while he's near, and stands at ease once he's
+// gone by. (Her cell keys aren't needed: he kicks the locked doors in.)
+#define GELDB_LOYAL_BOW_RANGE 350.0f
+
+static void EnGeldB_UpdateLoyal(EnGeldB* this, PlayState* play) {
+    AnimationHeader* want;
+    u8 bowing;
+
+    this->actor.flags &= ~ACTOR_FLAG_HOSTILE;
+    this->actor.flags |= ACTOR_FLAG_FRIENDLY;
+    this->meleeWeaponState = 0;
+    if (this->action == GELDB_WAIT) {
+        // Still above, unseen: down she comes as he nears (no mini-boss music for her own King)
+        if (this->invisible && (this->actor.xzDistToPlayer > 300.0f)) {
+            this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+            this->actor.world.pos.y = this->actor.floorHeight + 120.0f;
+        } else {
+            this->invisible = false;
+            this->actor.shape.shadowScale = 90.0f;
+        }
+        Actor_MoveXZGravity(&this->actor);
+        Actor_UpdateBgCheckInfo(play, &this->actor, 15.0f, 30.0f, 60.0f, 0x1D);
+        SkelAnime_Update(&this->skelAnime);
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND_TOUCH) {
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_RIZA_DOWN);
+            this->actor.world.pos.y = this->actor.floorHeight;
+            this->actor.velocity.y = 0.0f;
+            this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
+            Actor_SpawnFloorDustRing(play, &this->actor, &this->leftFootPos, 3.0f, 2, 2.0f, 0, 0, false);
+            Actor_SpawnFloorDustRing(play, &this->actor, &this->rightFootPos, 3.0f, 2, 2.0f, 0, 0, false);
+            this->action = GELDB_READY; // (now on the ground: standing for her King)
+            this->timer = 0;
+        }
+        this->actor.focus.pos = this->actor.world.pos;
+        this->actor.focus.pos.y += 40.0f;
+        return;
+    }
+
+    // On the ground: she faces him, and bows while he's near
+    bowing = this->actor.xzDistToPlayer < GELDB_LOYAL_BOW_RANGE;
+    Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 4, 0x800, 0x80);
+    this->actor.world.rot.y = this->actor.shape.rot.y;
+    want = bowing ? &gGerudoRedBlockAnim : &gGerudoRedNeutralAnim;
+    if (this->skelAnime.animation != (void*)want) {
+        if (bowing) {
+            Animation_MorphToPlayOnce(&this->skelAnime, want, -6.0f);
+            Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PUTAWAY); // (her blades lowered)
+        } else {
+            Animation_MorphToLoop(&this->skelAnime, want, -8.0f);
+        }
+    }
+    SkelAnime_Update(&this->skelAnime);
+    this->actor.speedXZ = 0.0f;
+    Actor_MoveXZGravity(&this->actor);
+    Actor_UpdateBgCheckInfo(play, &this->actor, 15.0f, 30.0f, 60.0f, 0x1D);
+    this->actor.focus.pos = this->actor.world.pos;
+    this->actor.focus.pos.y += 40.0f;
+    Collider_UpdateCylinder(&this->actor, &this->bodyCollider);
+    CollisionCheck_SetOC(play, &play->colChkCtx, &this->bodyCollider.base);
+    if (this->blinkState == 0) {
+        if ((Rand_ZeroOne() < 0.1f) && ((play->gameplayFrames % 4) == 0)) {
+            this->blinkState++;
+        }
+    } else {
+        this->blinkState = (this->blinkState + 1) & 3;
+    }
+}
+
 void EnGeldB_Update(Actor* thisx, PlayState* play) {
     s32 pad;
     EnGeldB* this = (EnGeldB*)thisx;
@@ -1660,6 +1730,12 @@ void EnGeldB_Update(Actor* thisx, PlayState* play) {
     }
     if (EN_GELDB_IS_ALLY(thisx->params)) {
         EnGeldB_UpdateAlly(this, play);
+        return;
+    }
+    // SoH: "Play as Ganondorf", a fortress fighter before her King (unless she's already been fought)
+    if ((this->action == GELDB_WAIT || this->action == GELDB_READY) &&
+        PlayAsGanondorf_ShouldHideLink(play, GET_PLAYER(play))) {
+        EnGeldB_UpdateLoyal(this, play);
         return;
     }
 
