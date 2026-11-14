@@ -24,6 +24,7 @@
 void GdfSacred_DrawHandTriforce(PlayState* play); // (GanondorfSacredTemple.cpp)
 s32 GdfSacred_HasTriforce(void);
 static Vec3f sGdfHandTriforcePos; // the back of his right hand, where the game shows his Triforce mark
+static MtxF sGdfHandTriforceMtx;   // his right hand's matrix, to lay the mark flat on it
 static u8 sGdfHandTriforceValid = false;
 #include "textures/icon_item_field_static/icon_item_field_static.h" // SoH: the map on the intro's war table
 #include "overlays/actors/ovl_En_Horse_Ganon/z_en_horse_ganon.h" // SoH: the Gerudo intro's horse
@@ -4091,6 +4092,7 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
             // The Triforce of Power, once it's his: the game's own mark on the back of his right hand, where his
             // intro shows it (drawn with his other effects, see BossGanon_Player_DrawHandTriforce)
             Matrix_MultVec3f(&D_808E4DE8, &sGdfHandTriforcePos);
+            Matrix_Get(&sGdfHandTriforceMtx);
             sGdfHandTriforceValid = true;
         }
         switch (limbIndex) {
@@ -4436,6 +4438,8 @@ void BossGanon_DrawBigMagicCharge(BossGanon* this, PlayState* play) {
 
 // The Triforce of Power on his hand once he holds it: the game's own mark (as his intro draws it), glowing softly
 // (not while the intro's own mark is showing)
+#define GDF_HAND_TRIFORCE_SIZE 0.6f
+
 static void BossGanon_Player_DrawHandTriforce(BossGanon* this, PlayState* play) {
     if (!sGdfHandTriforceValid || !GdfSacred_HasTriforce() || (this->fwork[GDF_TRIFORCE_PRIM_A] > 0.0f)) {
         sGdfHandTriforceValid = false;
@@ -4447,9 +4451,39 @@ static void BossGanon_Player_DrawHandTriforce(BossGanon* this, PlayState* play) 
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
     gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 170, (u8)(190 + 60 * Math_SinS(play->gameplayFrames * 0x500)));
     gDPSetEnvColor(POLY_XLU_DISP++, 255, 200, 0, 128);
-    Matrix_Translate(sGdfHandTriforcePos.x, sGdfHandTriforcePos.y, sGdfHandTriforcePos.z, MTXMODE_NEW);
-    Matrix_ReplaceRotation(&play->billboardMtxF);
-    Matrix_Scale(0.6f, 0.6f, 1.0f, MTXMODE_APPLY);
+    {
+        // Laid flat on the back of his hand, turning with it: its face along the back of the hand (the hand's own
+        // +y, where the mark sits), its point toward his knuckles (the hand's +x), rather than always facing the
+        // camera upright
+        MtxF* h = &sGdfHandTriforceMtx;
+        MtxF m;
+        Vec3f ax = { h->xx, h->yx, h->zx }; // the hand's x: toward the knuckles
+        Vec3f ay = { h->xy, h->yy, h->zy }; // the hand's y: out of its back
+        Vec3f az = { h->xz, h->yz, h->zz };
+        f32 lx = sqrtf(SQ(ax.x) + SQ(ax.y) + SQ(ax.z));
+        f32 ly = sqrtf(SQ(ay.x) + SQ(ay.y) + SQ(ay.z));
+        f32 lz = sqrtf(SQ(az.x) + SQ(az.y) + SQ(az.z));
+
+        if ((lx < 0.0001f) || (ly < 0.0001f) || (lz < 0.0001f)) {
+            lx = ly = lz = 1.0f; // (never: a hand of no size)
+        }
+        // The mark's own x across the hand, its y (its point) to the knuckles, its face out of the back
+        m.xx = az.x / lz * GDF_HAND_TRIFORCE_SIZE;
+        m.yx = az.y / lz * GDF_HAND_TRIFORCE_SIZE;
+        m.zx = az.z / lz * GDF_HAND_TRIFORCE_SIZE;
+        m.xy = ax.x / lx * GDF_HAND_TRIFORCE_SIZE;
+        m.yy = ax.y / lx * GDF_HAND_TRIFORCE_SIZE;
+        m.zy = ax.z / lx * GDF_HAND_TRIFORCE_SIZE;
+        m.xz = ay.x / ly;
+        m.yz = ay.y / ly;
+        m.zz = ay.z / ly;
+        m.xw = sGdfHandTriforcePos.x;
+        m.yw = sGdfHandTriforcePos.y;
+        m.zw = sGdfHandTriforcePos.z;
+        m.wx = m.wy = m.wz = 0.0f;
+        m.ww = 1.0f;
+        Matrix_Put(&m);
+    }
     gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfTriforceDL));
     Matrix_Pop();
