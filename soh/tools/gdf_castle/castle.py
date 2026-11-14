@@ -133,6 +133,8 @@ class Builder:
         self.col_index = {}
         self.col_polys = []
         self.fades = []
+        self.wall_faces = set()   # (material, index) of every wall face, for prune_buried()
+        self.wall_rects = []      # (axis, facing sign, plane, low corner, high corner) of every piece of wall
 
     def fade_to_black(self, start, end, box):
         """A passage that fades into darkness (the way OoT's corridors look as they lead out of a room): inside
@@ -196,6 +198,12 @@ class Builder:
 
     # A wall along one side of a room, facing into it, with openings (u0, u1, y0, y1) cut out of it
     def wall(self, mat, axis, fixed, a, b, y0, y1, facing, openings=(), collide=True, color=(255, 255, 255)):
+        before = len(self.faces.get(mat, ()))
+        self._wall(mat, axis, fixed, a, b, y0, y1, facing, openings, collide, color)
+        for i in range(before, len(self.faces.get(mat, ()))):
+            self.wall_faces.add((mat, i))
+
+    def _wall(self, mat, axis, fixed, a, b, y0, y1, facing, openings=(), collide=True, color=(255, 255, 255)):
         pieces = []
         ops = sorted(openings)
         u = a
@@ -210,6 +218,10 @@ class Builder:
         if u < b:
             pieces.append((u, b, y0, y1))
         for (u0, u1, v0, v1) in pieces:
+            if axis == 'x':
+                self.wall_rects.append((0, 1 if facing > 0 else -1, fixed, np.array([v0, u0]), np.array([v1, u1])))
+            else:
+                self.wall_rects.append((2, 1 if facing > 0 else -1, fixed, np.array([u0, v0]), np.array([u1, v1])))
             if axis == 'x':  # wall in the plane x = fixed, spanning z
                 p = [(fixed, v0, u0), (fixed, v0, u1), (fixed, v1, u1), (fixed, v1, u0)]
                 if facing > 0:  # faces +x
@@ -221,15 +233,21 @@ class Builder:
             self.quad(mat, p, collide=SURF['wall'] if collide else None, color=color)
 
     # Box (all sides but the bottom), outward faces
-    def box(self, mats, x0, x1, y0, y1, z0, z1, collide=True, color=(255, 255, 255)):
+    def box(self, mats, x0, x1, y0, y1, z0, z1, collide=True, color=(255, 255, 255), back=None):
+        """back: the side standing against a wall ('x0', 'x1', 'z0' or 'z1'), not drawn (it would lie in the wall's
+        plane and show through it into the room behind)."""
         top, side = (mats, mats) if isinstance(mats, str) else mats
         self.quad(top, [(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)], collide=SURF['floor'] if collide else None,
                   color=color)
         c = SURF['wall'] if collide else None
-        self.quad(side, [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)], collide=c, color=color)
-        self.quad(side, [(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)], collide=c, color=color)
-        self.quad(side, [(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)], collide=c, color=color)
-        self.quad(side, [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)], collide=c, color=color)
+        if back != 'z1':
+            self.quad(side, [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)], collide=c, color=color)
+        if back != 'z0':
+            self.quad(side, [(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)], collide=c, color=color)
+        if back != 'x1':
+            self.quad(side, [(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)], collide=c, color=color)
+        if back != 'x0':
+            self.quad(side, [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)], collide=c, color=color)
 
     # An octagonal pillar with a base and a capital
     def pillar(self, x, zc, r, y0, y1, mat='pillar', band='stone_band'):
@@ -385,13 +403,13 @@ def tot_window(B, wall, pos, w, y_lo, y_hi):
     y_mid = y_lo + 0.75 * (y_hi - y_lo)
     glass = (255, 250, 232)
     # pale glass behind the tracery, then the tracery itself
-    face('plaster', [P(-w, y_lo, 2), P(w, y_lo, 2), P(w, y_mid, 2), P(-w, y_mid, 2)], color=glass)
-    face('plaster', [P(-w, y_mid, 2), P(w, y_mid, 2), P(0, y_hi, 2)], color=glass)
-    face('lattice', [P(-w, y_lo, 4), P(w, y_lo, 4), P(w, y_mid, 4), P(-w, y_mid, 4)],
+    face('plaster', [P(-w, y_lo, 3), P(w, y_lo, 3), P(w, y_mid, 3), P(-w, y_mid, 3)], color=glass)
+    face('plaster', [P(-w, y_mid, 3), P(w, y_mid, 3), P(0, y_hi, 3)], color=glass)
+    face('lattice', [P(-w, y_lo, 6), P(w, y_lo, 6), P(w, y_mid, 6), P(-w, y_mid, 6)],
          uv=[(0, 64), (64, 64), (64, 16), (0, 16)])
-    face('lattice', [P(-w, y_mid, 4), P(w, y_mid, 4), P(0, y_hi, 4)], uv=[(0, 16), (64, 16), (32, 0)])
+    face('lattice', [P(-w, y_mid, 6), P(w, y_mid, 6), P(0, y_hi, 6)], uv=[(0, 16), (64, 16), (32, 0)])
     # the surround: jambs, the two sides of the arch and a sill, standing a little out of the wall
-    t, d = 9, 7
+    t, d = 9, 9
     for s in (-1, 1):
         face('marble2', [P(s * w, y_lo - 6, d), P(s * (w + t), y_lo - 6, d), P(s * (w + t), y_mid, d), P(s * w, y_mid, d)],
              light=True)
@@ -444,7 +462,7 @@ def cross(B, mat, x, z, y, w, h, tw, th, color=(255, 255, 255)):
 def potted(B, x, z, y=None, big=False):
     y = FLOOR if y is None else y
     r = 26 if big else 20
-    B.box(('leaves', 'brick_court'), x - r, x + r, y, y + 40, z - r, z + r, color=TERRACOTTA)
+    B.box(('leaves', 'brick_court'), x - r, x + r, y, y + 46, z - r, z + r, color=TERRACOTTA)
     B.box('stone_band', x - r - 3, x + r + 3, y + 34, y + 42, z - r - 3, z + r + 3, collide=False, color=TERRACOTTA)
     cross(B, 'plant', x, z, y + 30, 90 if big else 70, 110 if big else 85, 32, 32)
 
@@ -632,13 +650,13 @@ def _wall_runs(a, b, doors, y0, y1):
 
 def _moulding(B, wall, x0, x1, z0, z1, u0, u1, y0, y1, depth, mat, color):
     if wall == 'N':
-        B.box(mat, u0, u1, y0, y1, z0, z0 + depth, collide=False, color=color)
+        B.box(mat, u0, u1, y0, y1, z0, z0 + depth, collide=False, color=color, back='z0')
     elif wall == 'S':
-        B.box(mat, u0, u1, y0, y1, z1 - depth, z1, collide=False, color=color)
+        B.box(mat, u0, u1, y0, y1, z1 - depth, z1, collide=False, color=color, back='z1')
     elif wall == 'W':
-        B.box(mat, x0, x0 + depth, y0, y1, u0, u1, collide=False, color=color)
+        B.box(mat, x0, x0 + depth, y0, y1, u0, u1, collide=False, color=color, back='x0')
     else:
-        B.box(mat, x1 - depth, x1, y0, y1, u0, u1, collide=False, color=color)
+        B.box(mat, x1 - depth, x1, y0, y1, u0, u1, collide=False, color=color, back='x1')
 
 
 def frieze(B, x0, x1, z0, z1, y0, y1, depth, color, doors=None, mat='stone_band'):
@@ -729,10 +747,10 @@ def banner(B, wall, x, z, top, w=70, h=230, mat='carpet_red', color=(255, 255, 2
     oriented(B, mat, [P(-w / 2, top - h + 40, 3), P(0, top - h, 3), P(w / 2, top - h + 40, 3)], inward,
              uv=[(0, h / 2.2), (tw / 2, h / 2.2 + 18), (tw, h / 2.2)], color=color)
     for s in (-1, 1):  # gold edging
-        oriented(B, 'stone_band', [P(s * w / 2 - 3, top - h + 40, 3.5), P(s * w / 2 + 3, top - h + 40, 3.5),
-                                   P(s * w / 2 + 3, top, 3.5), P(s * w / 2 - 3, top, 3.5)], inward, color=rod)
-    oriented(B, 'stone_band', [P(-w / 2 - 10, top - 4, 6), P(w / 2 + 10, top - 4, 6), P(w / 2 + 10, top + 6, 6),
-                               P(-w / 2 - 10, top + 6, 6)], inward, color=rod)
+        oriented(B, 'stone_band', [P(s * w / 2 - 3, top - h + 40, 5), P(s * w / 2 + 3, top - h + 40, 5),
+                                   P(s * w / 2 + 3, top, 5), P(s * w / 2 - 3, top, 5)], inward, color=rod)
+    oriented(B, 'stone_band', [P(-w / 2 - 10, top - 4, 8), P(w / 2 + 10, top - 4, 8), P(w / 2 + 10, top + 6, 8),
+                               P(-w / 2 - 10, top + 6, 8)], inward, color=rod)
 
 
 def candelabra(B, light, x, z, y, h=150):
@@ -769,9 +787,9 @@ def statue(B, x, z, y, face='S', color=(205, 205, 210)):
 
 
 def rug(B, x0, x1, z0, z1, y, mat='carpet_red', border=GOLD, color=(255, 255, 255)):
-    B.quad('stone_band', [(x0, y + 1, z1), (x1, y + 1, z1), (x1, y + 1, z0), (x0, y + 1, z0)], color=border)
+    B.quad('stone_band', [(x0, y + 2, z1), (x1, y + 2, z1), (x1, y + 2, z0), (x0, y + 2, z0)], color=border)
     k = 10
-    B.quad(mat, [(x0 + k, y + 2, z1 - k), (x1 - k, y + 2, z1 - k), (x1 - k, y + 2, z0 + k), (x0 + k, y + 2, z0 + k)],
+    B.quad(mat, [(x0 + k, y + 4, z1 - k), (x1 - k, y + 4, z1 - k), (x1 - k, y + 4, z0 + k), (x0 + k, y + 4, z0 + k)],
            uv=[(0, (z1 - z0) / 2.2), ((x1 - x0) / 2.2, (z1 - z0) / 2.2), ((x1 - x0) / 2.2, 0), (0, 0)], color=color)
 
 
@@ -851,7 +869,7 @@ def ivy(B, wall, x, z, y0, y1, w):
     inward = {'W': (1, 0, 0), 'E': (-1, 0, 0), 'N': (0, 0, 1), 'S': (0, 0, -1)}[wall]
     along = (-inward[2], 0, inward[0])
     def P(u, y):
-        return (x + along[0] * u + inward[0] * 2, y, z + along[2] * u + inward[2] * 2)
+        return (x + along[0] * u + inward[0] * 4, y, z + along[2] * u + inward[2] * 4)
     oriented(B, 'ivy', [P(-w / 2, y0), P(w / 2, y0), P(w / 2, y1), P(-w / 2, y1)], inward,
              uv=[(0.5, (y1 - y0) / 2.5), (w / 2.5, (y1 - y0) / 2.5), (w / 2.5, 0.5), (0.5, 0.5)])
 
@@ -941,6 +959,7 @@ def barrel_vault(B, axis, x0, x1, z0, z1, spring, mat='ceiling', color=(236, 230
             for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
                 oriented(B, 'brick_white', [(ua, spring, zz), (ub, spring, zz), (ub, yb, zz), (ua, ya, zz)], (0, 0, f),
                          color=color)
+                B.wall_rects.append((2, f, zz, np.array([ua, spring]), np.array([ub, min(ya, yb)])))
     else:
         w = (z1 - z0) / 2
         czm = (z0 + z1) / 2
@@ -959,6 +978,7 @@ def barrel_vault(B, axis, x0, x1, z0, z1, spring, mat='ceiling', color=(236, 230
             for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
                 oriented(B, 'brick_white', [(xx, spring, ua), (xx, spring, ub), (xx, yb, ub), (xx, ya, ua)], (f, 0, 0),
                          color=color)
+                B.wall_rects.append((0, f, xx, np.array([spring, ua]), np.array([min(ya, yb), ub])))
 
 
 def arcade(B, axis, fixed, a, b, y0, h, bays, r=12, facing=1, roof=None, depth=110, mat='marble2', color=(245, 240, 230),
@@ -1016,11 +1036,11 @@ def arch_face(B, axis, plane, u0, u1, spring, top, mat, color, side):
         ca = ((ua - uc) / r, (ya - spring) / r)
         cb = ((ub - uc) / r, (yb - spring) / r)
         if axis == 'x':
-            q = [(plane + side, ya, ua), (plane + side, yb, ub), (plane + side, yb + cb[1] * k, ub + cb[0] * k),
-                 (plane + side, ya + ca[1] * k, ua + ca[0] * k)]
+            q = [(plane + 2 * side, ya, ua), (plane + 2 * side, yb, ub), (plane + 2 * side, yb + cb[1] * k, ub + cb[0] * k),
+                 (plane + 2 * side, ya + ca[1] * k, ua + ca[0] * k)]
         else:
-            q = [(ua, ya, plane + side), (ub, yb, plane + side), (ub + cb[0] * k, yb + cb[1] * k, plane + side),
-                 (ua + ca[0] * k, ya + ca[1] * k, plane + side)]
+            q = [(ua, ya, plane + 2 * side), (ub, yb, plane + 2 * side), (ub + cb[0] * k, yb + cb[1] * k, plane + 2 * side),
+                 (ua + ca[0] * k, ya + ca[1] * k, plane + 2 * side)]
         oriented(B, 'stone_band', q, nrm, color=GOLD)
 
 
@@ -1028,10 +1048,12 @@ def fireplace(B, light, wall, x, z, y, w=180, h=170, hood=True):
     """A great stone fireplace against a wall: hearth, jambs, a carved mantel, a hood up to the ceiling and a fire."""
     inward = {'W': (1, 0), 'E': (-1, 0), 'N': (0, 1), 'S': (0, -1)}[wall]
     along = (-inward[1], inward[0])
+    against = {'W': 'x0', 'E': 'x1', 'N': 'z0', 'S': 'z1'}[wall]
     def bx(u0, u1, d0, d1, ya, yb, mats, color=(235, 228, 216), collide=True):
         xs = [x + along[0] * u0 + inward[0] * d0, x + along[0] * u1 + inward[0] * d1]
         zs = [z + along[1] * u0 + inward[1] * d0, z + along[1] * u1 + inward[1] * d1]
-        B.box(mats, min(xs), max(xs), ya, yb, min(zs), max(zs), collide=collide, color=color)
+        B.box(mats, min(xs), max(xs), ya, yb, min(zs), max(zs), collide=collide, color=color,
+              back=against if d0 == 0 else None)
     bx(-w / 2 - 30, w / 2 + 30, 0, 70, y, y + 6, ('marble2', 'stone_band'))            # hearth stone
     for s in (-1, 1):                                                                 # jambs
         bx(s * w / 2, s * (w / 2 + 28), 0, 46, y, y + h, ('marble2', 'marble2'))
@@ -1102,8 +1124,8 @@ def pew(B, x0, x1, z, y, face='W'):
     B.box(('wood_dark', 'stone_band'), x0, x1, y + 30, y + 38, z - 40, z + 40, color=WOOD)
     bx = x1 - 4 if face == 'W' else x0
     B.box('wood_dark', bx, bx + 6, y + 38, y + 96, z - 40, z + 40, collide=False, color=WOOD)
-    for zz in (z - 40, z + 34):
-        B.box('stone_band', x0, x1, y, y + 38, zz, zz + 6, color=WOOD)
+    for zz in (z - 46, z + 40):
+        B.box('stone_band', x0, x1, y, y + 46, zz, zz + 6, color=WOOD)
 
 
 def truss(B, x0, x1, z, top, rise=120, color=(120, 85, 60)):
@@ -1152,10 +1174,10 @@ def pitched_roof(B, x0, x1, z0, z1, top, rise, mat='wood_light', color=(170, 135
 
 def channel(B, W, x0, x1, z0, z1, y):
     """A narrow marble water channel set in the floor (the Court of the Lions' rills)."""
-    B.box(('marble', 'marble2'), x0 - 8, x1 + 8, y, y + 6, z0 - 8, z1 + 8, collide=False, color=(240, 236, 228))
-    B.quad('tile_court', [(x0, y + 6.5, z1), (x1, y + 6.5, z1), (x1, y + 6.5, z0), (x0, y + 6.5, z0)],
+    B.box(('marble', 'marble2'), x0 - 8, x1 + 8, y, y + 2, z0 - 8, z1 + 8, collide=False, color=(240, 236, 228))
+    B.quad('tile_court', [(x0, y + 6, z1), (x1, y + 6, z1), (x1, y + 6, z0), (x0, y + 6, z0)],
            color=(110, 150, 175))
-    water(W, x0, x1, z0, z1, y + 8)
+    water(W, x0, x1, z0, z1, y + 10)
 
 
 def roundel(B, mat, wall, x, z, yc, r=60, color=(255, 255, 255)):
@@ -1165,15 +1187,15 @@ def roundel(B, mat, wall, x, z, yc, r=60, color=(255, 255, 255)):
     def P(u, y, d):
         return tuple(np.array([x, 0, z]) + along * u + inward * d + np.array([0, y, 0]))
     # the medallion textures are half-discs (64x32): the top half, then the same mirrored for the bottom
-    oriented(B, mat, [P(-r, yc, 3), P(r, yc, 3), P(r, yc + r, 3), P(-r, yc + r, 3)], inward,
+    oriented(B, mat, [P(-r, yc, 4), P(r, yc, 4), P(r, yc + r, 4), P(-r, yc + r, 4)], inward,
              uv=[(0, 32), (64, 32), (64, 0), (0, 0)], color=color, light=False)
-    oriented(B, mat, [P(-r, yc - r, 3), P(r, yc - r, 3), P(r, yc, 3), P(-r, yc, 3)], inward,
+    oriented(B, mat, [P(-r, yc - r, 4), P(r, yc - r, 4), P(r, yc, 4), P(-r, yc, 4)], inward,
              uv=[(0, 0), (64, 0), (64, 32), (0, 32)], color=color, light=False)
     n = 16
     for i in range(n):
         a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
-        q = [P((r + 2) * math.cos(a0), yc + (r + 2) * math.sin(a0), 4), P((r + 2) * math.cos(a1), yc + (r + 2) * math.sin(a1), 4),
-             P((r + 12) * math.cos(a1), yc + (r + 12) * math.sin(a1), 4), P((r + 12) * math.cos(a0), yc + (r + 12) * math.sin(a0), 4)]
+        q = [P((r + 2) * math.cos(a0), yc + (r + 2) * math.sin(a0), 7), P((r + 2) * math.cos(a1), yc + (r + 2) * math.sin(a1), 7),
+             P((r + 12) * math.cos(a1), yc + (r + 12) * math.sin(a1), 7), P((r + 12) * math.cos(a0), yc + (r + 12) * math.sin(a0), 7)]
         oriented(B, 'stone_band', q, inward, color=GOLD)
 
 
@@ -1211,16 +1233,16 @@ def build(fixed_lights=None):
             s = 1 if wall == 'W' else -1
             B.box('stone_band', min(fixed, fixed + s * 6), max(fixed, fixed + s * 6), y - 6, y + h + 6, u - w / 2 - 6,
                   u + w / 2 + 6, collide=False, color=GOLD)
-            q = [(fixed + s * 7, y, u - w / 2), (fixed + s * 7, y, u + w / 2), (fixed + s * 7, y + h, u + w / 2),
-                 (fixed + s * 7, y + h, u - w / 2)]
+            q = [(fixed + s * 9, y, u - w / 2), (fixed + s * 9, y, u + w / 2), (fixed + s * 9, y + h, u + w / 2),
+                 (fixed + s * 9, y + h, u - w / 2)]
             oriented(B, m, q, (s, 0, 0), uv=[(0, 16), (16, 16), (16, 0), (0, 0)] if s < 0 else [(16, 16), (0, 16), (0, 0), (16, 0)],
                      light=False)
         else:
             s = 1 if wall == 'N' else -1
             B.box('stone_band', u - w / 2 - 6, u + w / 2 + 6, y - 6, y + h + 6, min(fixed, fixed + s * 6),
                   max(fixed, fixed + s * 6), collide=False, color=GOLD)
-            q = [(u - w / 2, y, fixed + s * 7), (u + w / 2, y, fixed + s * 7), (u + w / 2, y + h, fixed + s * 7),
-                 (u - w / 2, y + h, fixed + s * 7)]
+            q = [(u - w / 2, y, fixed + s * 9), (u + w / 2, y, fixed + s * 9), (u + w / 2, y + h, fixed + s * 9),
+                 (u - w / 2, y + h, fixed + s * 9)]
             oriented(B, m, q, (0, 0, s), uv=[(0, 16), (16, 16), (16, 0), (0, 0)] if s > 0 else [(16, 16), (0, 16), (0, 0), (16, 0)],
                      light=False)
 
@@ -1232,7 +1254,7 @@ def build(fixed_lights=None):
     for i in range(40):  # gilded stars on the vault
         sx = -1080 + (i * 137) % 440
         sz = -390 + (i * 211) % 780
-        disc(B, 'stone_band', sx, sz, 7, top + 69, 5, color=GOLD, up=False, light=False)
+        disc(B, 'stone_band', sx, sz, 7, top + 66, 5, color=GOLD, up=False, light=False)
     B.wall('brick_white', 'x', x1, z0, z1, T, top, -1, openings=[(-20, 20, 113, 198)])
     B.wall('brick_white', 'x', x0, z0, z1, T, top, +1)
     B.wall('brick_white', 'z', z0, x0, x1, T, top, +1)
@@ -1255,14 +1277,14 @@ def build(fixed_lights=None):
             prism(B, 'marble2', bx, bz, 8, T + 45, T + 330, 8, color=(245, 240, 230), collide=True)
             prism(B, 'stone_band', bx, bz, 11, T + 318, T + 332, 8, color=GOLD)
     B.box('carpet_red', tx - 122, tx + 122, T + 332, T + 356, -462, -318, collide=False, color=(150, 30, 45))
-    B.box('stone_band', tx - 126, tx + 126, T + 352, T + 362, -464, -316, collide=False, color=GOLD)
-    oriented(B, 'cloth_red', [(tx - 105, T + 60, -458), (tx + 105, T + 60, -458), (tx + 105, T + 330, -458),
-                              (tx - 105, T + 330, -458)], (0, 0, 1), uv=[(0, 64), (64, 64), (64, 0), (0, 0)])
-    roundel(B, 'medal_light', 'N', tx, -459, T + 290, r=34)
-    B.quad('carpet_red', [(tx - 70, T + 3, z1), (tx + 70, T + 3, z1), (tx + 70, T + 3, z0 + 60), (tx - 70, T + 3, z0 + 60)],
+    B.box('stone_band', tx - 126, tx + 126, T + 356, T + 366, -464, -316, collide=False, color=GOLD)
+    oriented(B, 'cloth_red', [(tx - 105, T + 60, -436), (tx + 105, T + 60, -436), (tx + 105, T + 330, -436),
+                              (tx - 105, T + 330, -436)], (0, 0, 1), uv=[(0, 64), (64, 64), (64, 0), (0, 0)])
+    roundel(B, 'medal_light', 'N', tx, -431, T + 290, r=34)
+    B.quad('carpet_red', [(tx - 70, T + 7, z1), (tx + 70, T + 7, z1), (tx + 70, T + 7, z0 + 60), (tx - 70, T + 7, z0 + 60)],
            uv=[(0, 0), (64, 0), (64, 390), (0, 390)])
     for zz in (-250, 0, 250):
-        B.quad('lattice', [(x0 + 2, 200, zz + 50), (x0 + 2, 200, zz - 50), (x0 + 2, 420, zz - 50), (x0 + 2, 420, zz + 50)],
+        B.quad('lattice', [(x0 + 4, 200, zz + 50), (x0 + 4, 200, zz - 50), (x0 + 4, 420, zz - 50), (x0 + 4, 420, zz + 50)],
                uv=[(0, 64), (32, 64), (32, 0), (0, 0)], light=False, color=(255, 250, 220))
         light((x0 + 40, 310, zz), 300, 0.5, (0.9, 0.85, 1.0))
     chandelier(B, light, -860, 0, top + 70, drop=220, r=90, arms=10)
@@ -1313,7 +1335,7 @@ def build(fixed_lights=None):
     for i in range(30):
         sx = cx0 + 70 + (i * 97) % (cx1 - cx0 - 140)
         sz = cz0 + 70 + (i * 151) % (cz1 - cz0 - 140)
-        disc(B, 'stone_band', sx, sz, 6, ctop + 49, 5, color=GOLD, up=False, light=False)
+        disc(B, 'stone_band', sx, sz, 6, ctop + 46, 5, color=GOLD, up=False, light=False)
     # the altar on a dais at the west end, under the Sages' rose
     B.box(('marble', 'stone_band'), cx0, cx0 + 160, F, F + 24, 560, 860)
     B.box(('cloth_red', 'marble2'), cx0 + 30, cx0 + 90, F + 24, F + 94, 640, 780, color=(250, 245, 238))
@@ -1396,7 +1418,7 @@ def build(fixed_lights=None):
     # two long tables down the hall, benches either side, the aisle between
     long_table(B, -1250, -1180, 1500, 1980, F)
     long_table(B, -740, -670, 1500, 1980, F)
-    B.quad('carpet_red', [(-1000, F + 1, hz1), (-920, F + 1, hz1), (-920, F + 1, hz0 + 180), (-1000, F + 1, hz0 + 180)],
+    B.quad('carpet_red', [(-1000, F + 3, hz1), (-920, F + 3, hz1), (-920, F + 3, hz0 + 180), (-1000, F + 3, hz0 + 180)],
            uv=[(0, 330), (36, 330), (36, 0), (0, 0)])
     # the screens passage at the low end (south) under the minstrels' gallery: a carved screen with three openings
     sz = hz1 - 150
@@ -1441,7 +1463,8 @@ def build(fixed_lights=None):
     # ================= Gatehouse vestibule (the front doors) =================
     vx0, vx1, vz0, vz1, vtop = -1100, -820, 2200, 2360, 320
     B.floor('marble_check', vx0, vx1, vz0, vz1)
-    B.floor('marble_check', -1060, -860, vz1 - 40, vz1 - 2, y=F + 0.5, surface='exit')
+    col_quad(B, [(-1060, F + 0.5, vz1 - 2), (-860, F + 0.5, vz1 - 2), (-860, F + 0.5, vz1 - 40), (-1060, F + 0.5, vz1 - 40)],
+             surface='exit')
     B.wall('stone_grey', 'x', vx0, vz0, vz1, F, vtop, +1, color=(236, 228, 214))
     B.wall('stone_grey', 'x', vx1, vz0, vz1, F, vtop, -1, color=(236, 228, 214))
     B.wall('stone_grey', 'z', vz1, vx0, vx1, F, vtop, -1, openings=[(-1060, -860, F, F + 240)], color=(236, 228, 214))
@@ -1734,7 +1757,44 @@ def build_drawbridge():
     return B, D
 
 
+def prune_buried(B, tol=0.6):
+    """Walls here have no thickness, so whatever is set against one side of a wall (mouldings, shelves, a
+    fireplace, a beam's end) has a back face lying exactly in the wall's plane, facing the room on the other side,
+    where it fights the other room's wall and shows through it. Those faces are taken out: any face that isn't a wall
+    itself, lying in a wall's plane, facing the same way, and at least half covered by that wall."""
+    walls = {}
+    for ax, sg, c, lo, hi in B.wall_rects:
+        walls.setdefault((ax, sg), []).append((c, lo, hi))
+    removed = 0
+    for mat, fl in B.faces.items():
+        keep = []
+        for i, f in enumerate(fl):
+            if (mat, i) not in B.wall_faces:
+                P = np.array([v[:3] for v in f], float)
+                n = np.cross(P[1] - P[0], P[2] - P[0])
+                L = np.linalg.norm(n)
+                if L > 1e-9:
+                    ax = int(np.argmax(abs(n)))
+                    if abs(n[ax]) > 0.999 * L and np.ptp(P[:, ax]) < 0.01:
+                        o = [k for k in (0, 1, 2) if k != ax]
+                        lo, hi = P[:, o].min(0), P[:, o].max(0)
+                        a = max(1e-6, float(np.prod(hi - lo)))
+                        cov = 0.0
+                        for c, wlo, whi in walls.get((ax, int(np.sign(n[ax]))), ()):
+                            if abs(c - P[0][ax]) < tol:
+                                d = np.minimum(hi, whi) - np.maximum(lo, wlo)
+                                if (d > 0).all():
+                                    cov += float(np.prod(d))
+                        if cov >= 0.5 * a:
+                            removed += 1
+                            continue
+            keep.append(f)
+        B.faces[mat] = keep
+    return removed
+
+
 def emit(B, W, beams):
+    print('faces hidden in walls, taken out:', prune_buried(B))
     files = {}
     emit_dl(B, BASE + f'{SCENE}_room_0DL_castle', BASE + f'{SCENE}_room_0Vtx_castle', files)
     water_path = BASE + f'{SCENE}_room_0DL_water'
