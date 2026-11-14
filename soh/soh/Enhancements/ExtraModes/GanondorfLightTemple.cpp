@@ -1,6 +1,12 @@
 // Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 // SoH: "Play as Ganondorf", the Temple of Light: fifty rooms in one scene (SCENE_SYOTES), past the Sages' mirror.
 //
+// Version 2 (tools/gdf_castle/lighttemple2.py) builds the temple from the game's own rooms, collision, chests and doors
+// (the stages are in the project's TempleOfLight-VanillaRedo plan). Stage 1: the Entrance Hall and the Sword Sanctum
+// (the Temple of Time's rooms), a small key and the boss key in the game's En_Box chests (kept under dungeon slot
+// GDF_T_KEY_SLOT), the game's locked door and boss door made bigger, the "Temple of Light" title card on entering.
+// What follows describes the runtime's whole kit, which the later stages place again.
+//
 // The rooms, their passages (with the game's own room-change planes, En_Holl, between them), the sunbeams and the
 // flames are the scene's own (tools/gdf_castle/lighttemple.py, mods/gdf_sacred.o2r). Everything that moves or answers
 // him is placed here, room by room as each room becomes the one he's in, from GanondorfLightTempleData.h:
@@ -30,6 +36,8 @@ extern "C" {
 #include "macros.h"
 #include "functions.h"
 #include "variables.h"
+#include "objects/gameplay_keep/gameplay_keep.h"
+#include "objects/object_bdoor/object_bdoor.h"
 extern PlayState* gPlayState;
 extern char** sequenceMap;
 extern size_t sequenceMapSize;
@@ -75,24 +83,20 @@ static bool Shadow(PlayState* play) {
     return Flags_GetSwitch(play, GDF_T_FLAG_ASPECT);
 }
 
+// Small keys and the boss key are the game's own (from the temple's En_Box chests), kept under a dungeon slot that
+// has none of its own while he is in the temple (the save keeps them)
 static s32 KeysHeld(PlayState* play) {
-    s32 n = 0;
-    for (u32 i = 0; i < ARRAY_COUNT(sGdfTKeyChests); i++) {
-        n += Flags_GetTreasure(play, sGdfTKeyChests[i]) ? 1 : 0;
+    return MAX(0, gSaveContext.inventory.dungeonKeys[GDF_T_KEY_SLOT]);
+}
+
+static void UseKey(void) {
+    if (gSaveContext.inventory.dungeonKeys[GDF_T_KEY_SLOT] > 0) {
+        gSaveContext.inventory.dungeonKeys[GDF_T_KEY_SLOT]--;
     }
-    for (s32 i = 0; i < GDF_T_KEYDOORS; i++) {
-        n -= Flags_GetSwitch(play, GDF_T_FLAG_KEYDOOR0 + i) ? 1 : 0;
-    }
-    return n;
 }
 
 static bool HasBossKey(PlayState* play) {
-    for (s32 i = 0; i < GDF_T_SPAWNS; i++) {
-        if ((sGdfTSpawns[i].type == T_CHEST) && (sGdfTSpawns[i].p1 == IT_BOSS)) {
-            return Flags_GetTreasure(play, sGdfTSpawns[i].p0);
-        }
-    }
-    return false;
+    return CHECK_DUNGEON_ITEM(DUNGEON_KEY_BOSS, GDF_T_KEY_SLOT);
 }
 
 static void Chime(u16 sfx) {
@@ -186,6 +190,35 @@ static bool DoorOpen(PlayState* play, const GdfTSpawn* s) {
             return Shadow(play);
     }
     return true;
+}
+
+// Key and boss doors are the game's own (its dungeon door and boss door, with their chains and locks), drawn bigger:
+// a doorway fit for him
+static bool VanillaDoor(s32 kind) {
+    return (kind == D_KEY) || (kind == D_BOSS);
+}
+
+static f32 DoorHeight(s32 kind) {
+    return (kind == D_BOSS) ? 240.0f : 200.0f;
+}
+
+static void DrawVanillaDoor(PlayState* play, GdfThing* t, s32 kind) {
+    // (the dungeon door is 80 x 110, the boss door 120 x 160: scaled to the temple's doorways, 200 x 200 and
+    // 180 x 240)
+    f32 sx = (kind == D_BOSS) ? 1.5f : 2.5f;
+    f32 sy = (kind == D_BOSS) ? 1.5f : 1.82f;
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_Scale(sx, sy, 1.0f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (kind == D_BOSS) ? (Gfx*)gBossDoorDL : (Gfx*)gDungeonDoorDL);
+    Matrix_Pop();
+    if (t->state > 0) {
+        Matrix_Scale(sy * 0.01f, sy * 0.01f, 0.025f, MTXMODE_APPLY);
+        Actor_DrawDoorLock(play, t->state, (kind == D_BOSS) ? DOORLOCK_BOSS : DOORLOCK_NORMAL);
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
 }
 
 static const char* DoorDL(s32 kind) {
@@ -306,6 +339,7 @@ static void Thing_Init(Actor* thisx, PlayState* play) {
         case T_DOOR:
             col = COL("door");
             t->open = DoorOpen(play, Spawn(t)) ? 1.0f : 0.0f;
+            t->state = (t->open > 0.0f) ? 0 : 10; // (the lock: 10 shut, counting down as its chains fall)
             break;
         case T_CHEST:
             col = COL("chest");
@@ -454,6 +488,22 @@ static void Thing_Update(Actor* thisx, PlayState* play) {
         case T_DOOR: {
             bool open = DoorOpen(play, s);
             f32 goal = open ? 1.0f : 0.0f;
+            if (VanillaDoor(s->p0)) {
+                // the game's locked door: the lock's chains fall first, then the door rises into the wall
+                if (open && (t->state > 0)) {
+                    t->state--;
+                    break;
+                }
+                if (t->open != goal) {
+                    if (t->open == 0.0f) {
+                        Audio_PlayActorSound2(thisx, NA_SE_EV_SLIDE_DOOR_OPEN);
+                    }
+                    Math_StepToF(&t->open, goal, 0.05f);
+                }
+                thisx->world.pos.y = thisx->home.pos.y + t->open * DoorHeight(s->p0);
+                SetSolid(play, t, t->open < 0.6f);
+                break;
+            }
             if (t->open != goal) {
                 if ((t->timer % 6) == 0) {
                     Actor_PlaySfx_Flagged(thisx, NA_SE_EV_STONE_STATUE_OPEN - SFX_FLAG);
@@ -730,7 +780,11 @@ static void Thing_Draw(Actor* thisx, PlayState* play) {
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     switch (type) {
         case T_DOOR:
-            if (t->open < 0.99f) {
+            if (VanillaDoor(s->p0)) {
+                if (t->open < 0.99f) {
+                    DrawVanillaDoor(play, t, s->p0);
+                }
+            } else if (t->open < 0.99f) {
                 Draw(play, &POLY_OPA_DISP, DoorDL(s->p0));
             }
             break;
@@ -977,6 +1031,7 @@ extern "C" void GdfTemple_Kick(Actor* a, PlayState* play) {
         case T_DOOR:
             if (s->p0 == D_KEY) {
                 if (KeysHeld(play) > 0) {
+                    UseKey();
                     Flags_SetSwitch(play, s->p1);
                     Audio_PlayActorSound2(a, NA_SE_EV_CHAIN_KEY_UNLOCK);
                 } else {
@@ -1137,8 +1192,27 @@ static void KeepTempleMusic(PlayState* play) {
     sMusicTimer = 21;
 }
 
+// The title card, "Temple of Light", in the middle of the screen as he comes in (the game's own title card, our own
+// lettering: the scene has no place name of its own)
+static bool sTitlePending = false;
+
+static void ShowTitle(PlayState* play) {
+    TitleCardContext* tc = &play->actorCtx.titleCtx;
+    tc->texture = (void*)GDF_T_TITLE;
+    tc->isBossCard = false;
+    tc->hasTranslation = false;
+    tc->x = 160;
+    tc->y = 120;
+    tc->width = 144;
+    tc->height = 24;
+    tc->durationTimer = 80;
+    tc->delayTimer = 10;
+    tc->alpha = 0;
+}
+
 static void OnSceneInit(int16_t sceneNum) {
     PlayState* play = gPlayState;
+    sTitlePending = false;
     sSpawned = 0;
     sLastCur = -1;
     sTeleport = 0;
@@ -1154,6 +1228,8 @@ static void OnSceneInit(int16_t sceneNum) {
     memset(sLit, 0, sizeof(sLit));
     memset(sBeamOn, 0, sizeof(sBeamOn));
     sMusicTimer = 0;
+    sTitlePending = !sArrivedFromRauru;
+    gSaveContext.mapIndex = GDF_T_KEY_SLOT;
 }
 
 // Back from Rauru's arena: into the antechamber
@@ -1173,6 +1249,11 @@ static void OnPlayerUpdate() {
 
     if (sMirrorCooldown > 0) {
         sMirrorCooldown--;
+    }
+    gSaveContext.mapIndex = GDF_T_KEY_SLOT; // (the chests' small keys and boss key go to the temple's slot)
+    if (sTitlePending) {
+        sTitlePending = false;
+        ShowTitle(play);
     }
     KeepTempleMusic(play);
     // the rooms that are out: their things placed; rooms gone from memory, forgotten (their actors went with them)
@@ -1216,9 +1297,9 @@ static void OnPlayerUpdate() {
         } else if (func_800973FC(play, rc)) {
             const GdfTRoom* a = &sGdfTRooms[GDF_T_ANTE];
             Room_FinishRoomChange(play, rc);
-            player->actor.world.pos = { (f32)a->cx, (f32)a->y, (f32)a->cz - 380.0f };
+            player->actor.world.pos = { (f32)a->rx, (f32)a->ry, (f32)a->rz };
             player->actor.prevPos = player->actor.home.pos = player->actor.world.pos;
-            player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = -0x8000;
+            player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = a->ryaw;
             sArrivedFromRauru = false;
         }
         return;
@@ -1265,9 +1346,9 @@ static void OnPlayerUpdate() {
         player->actor.velocity.y = 0.0f;
         player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = sEntryYaw;
     }
-    // the antechamber's far end: on to Rauru
+    // through the open boss door: on to Rauru
     if ((cur == GDF_T_ANTE) && (play->transitionTrigger == TRANS_TRIGGER_OFF) && (play->msgCtx.msgMode == MSGMODE_NONE) &&
-        (player->actor.world.pos.z < sGdfTRooms[GDF_T_ANTE].cz - 760.0f)) {
+        Flags_GetSwitch(play, GDF_T_FLAG_BOSSDOOR) && (player->actor.world.pos.z < GDF_T_RAURU_Z)) {
         play->nextEntranceIndex = RAURU_ENTRANCE;
         play->transitionTrigger = TRANS_TRIGGER_START;
         play->transitionType = TRANS_TYPE_FADE_WHITE;

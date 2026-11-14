@@ -143,9 +143,7 @@ def door_point(rid, side, floor=None):
     cx, cz = room_center(rid)
     cz += door_shift(rid, side)
     if rid == 0:
-        cz = (z0 + z1) / 2
-        if side in 'EW':
-            return (x1 if side == 'E' else x0), 140.0   # (the Entrance Hall's side doors stand near its south end)
+        cz = (z0 + z1) / 2 if side in 'NS' else cz   # (its side doors on the grid's line, where the neighbours' are)
     if rid == P.ATRIUM:
         A = SIZES['atrium'][0]
         return {'N': (cx, cz - A), 'S': (cx, cz + A), 'E': (cx + A, cz), 'W': (cx - A, cz)}[side]
@@ -722,10 +720,24 @@ TRIM = C.TRIM
 # The rooms' contents: puzzles, chests, guards (as spawns for the runtime) and their set pieces (geometry)
 # ---------------------------------------------------------------------------------------------------------------------
 
+# The game's own chests (En_Box, object_box): small for keys and small treasure, big for the boss key (its decorated
+# chest) and the piece of heart; those that appear when their room is solved fall in on its switch flag
+EN_BOX, OBJECT_BOX = 0x000A, 0x000E
+GI = {'key': 0x42, 'boss': 0x3F, 'rupee20': 0x4E, 'rupee50': 0x55, 'rupee200': 0x56, 'heart': 0x48,
+      'heartpiece': 0x3E}
+
+
 def chest_spawn(R, x, y, z, yaw, item, appear_flag=-1):
     i = len(CHEST_FLAGS)
+    assert i < 20, 'treasure flags 20 and up behave differently in the game'
     CHEST_FLAGS[(R.id, len([1 for k in CHEST_FLAGS if k[0] == R.id]))] = i
-    add(R.id, T_CHEST, (x, y, z), yaw, i, ITEMS[item], appear_flag)
+    big = item in ('boss', 'heartpiece')
+    if appear_flag >= 0:
+        kind = 3 if big else 8          # (falling in on the switch flag)
+    else:
+        kind = 2 if item == 'boss' else (0 if big else 5)
+    R.boxes = getattr(R, 'boxes', []) + [((x, y, z), yaw, (kind << 12) | (GI[item] << 5) | i,
+                                          appear_flag if appear_flag >= 0 else 0)]
     R.notes.append(f'chest ({item}){" appears once the room is solved" if appear_flag >= 0 else ""}')
     return i
 
@@ -895,7 +907,7 @@ def decorate(R, B, W, lights, info):
         lights.append(((cx, 300, cz), 520, 0.5, (1.0, 0.95, 0.8)))
         R.notes.append('the old Sanctum, now the way to the Atrium: a sun seal north, closed in Shadow')
     if rid == 0:
-        for (px, pz) in ((-230, -700), (230, -700), (-230, -300), (230, -300), (-230, 100), (230, 100)):
+        for (px, pz) in ((-230, -820), (230, -820), (-230, -160), (230, -160), (-230, 140), (230, 140)):
             B.pillar(px, pz, 30, y, 600)
         B.floor('carpet_red', -60, 60, -1000, 260, y=3)
         R.notes.append('the mirror back to the Mirror Room on the south wall; the great door north')
@@ -1183,7 +1195,10 @@ def emit(files):
         actors = [G.actor_entry(DEMO_KANKYO, pos, (int(sc * 10000), yaw, 0), LIGHT_PLANE) for pos, yaw, sc in beams]
         for pos, sc, kind in sorted(B.flames, key=lambda f: (0, 2, 1).index(f[2])):
             actors.append(G.actor_entry(EN_LIGHT, pos, (kind, 0, max(1, round(sc * 10000))), 0x0000))
-        files[BASE + f'{SCENE}_room_{rid}'] = G.room_file([(opa, xlu if has_w else '')], objects=(OBJECT_TOKI_OBJECTS,),
+        for pos, yaw, params, rz in getattr(R, 'boxes', []):
+            actors.append(G.actor_entry(EN_BOX, pos, (0, yaw, rz), params))
+        files[BASE + f'{SCENE}_room_{rid}'] = G.room_file([(opa, xlu if has_w else '')],
+                                                          objects=(OBJECT_TOKI_OBJECTS, OBJECT_BOX),
                                                           actors=actors, echo=12, behavior=(0, 0), skymod=(0, 1))
         for other, pt, yaw in R.holls:
             key = tuple(sorted((rid, other)))
@@ -1306,6 +1321,8 @@ def write_header(path, rooms):
     out.append(f'#define GDF_T_CHESTS {len(CHEST_FLAGS)}')
     keys = [CHEST_FLAGS[k] for k in CHEST_FLAGS if P.CHESTS[k[0]][k[1]] == 'key']
     out.append('static const s8 sGdfTKeyChests[] = { ' + ', '.join(str(k) for k in sorted(keys)) + ' };')
+    boss = [CHEST_FLAGS[k] for k in CHEST_FLAGS if P.CHESTS[k[0]][k[1]] == 'boss']
+    out.append(f'#define GDF_T_BOSS_CHEST {boss[0]}')
     out.append('')
     open(path, 'w').write('\n'.join(out) + '\n')
 

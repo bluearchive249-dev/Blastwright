@@ -181,7 +181,7 @@ CHESTS = {
     6: ['rupee50'],
     4: ['rupee20'],       # the West Cloister's braziers
     13: ['key'],          # the block vault
-    9: ['magic'],
+    9: ['rupee50'],
     10: ['heart'],
     17: ['key'],
     22: ['key'],
@@ -190,14 +190,12 @@ CHESTS = {
     32: ['rupee200'],
     33: ['heartpiece'],
     38: ['key'],
-    39: ['magic'],
+    39: ['rupee50'],
     43: ['key'],
     44: ['rupee50'],
     47: ['boss'],
     46: ['key'],
     25: ['heart'],
-    15: ['rupee20'],
-    42: ['rupee20'],
 }
 START = 0
 GOAL = 48

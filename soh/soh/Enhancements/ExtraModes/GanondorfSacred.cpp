@@ -65,7 +65,7 @@ static const Vec3f sDoorPos = { -720.0f + 140.0f, 0.0f, 0.0f };
 // The Mirror Room: its mirror at the north end, on the dais; the passage's end (the broken door) at the south
 static const Vec3f sRoomMirrorPos = { 0.0f, 24.0f, -345.0f };
 // The first hall: its mirror on the south wall, facing north into the hall
-static const Vec3f sHallMirrorPos = { 0.0f, 0.0f, 290.0f };
+static const Vec3f sHallMirrorPos = { 0.0f, -40.0f, 2640.0f }; // (the Temple of Light's Entrance Hall: by its front door)
 
 // The Sages' colours: Forest, Fire, Water, Shadow, Spirit, Light
 static const Color_RGBA8 sSageColors[6] = {
@@ -111,6 +111,9 @@ static void Warp(PlayState* play, s16 entrance) {
     play->transitionType = TRANS_TYPE_FADE_WHITE;
     gSaveContext.respawnFlag = 0;
     gSaveContext.cutsceneIndex = 0;
+    if (entrance == FIRST_HALL_ENTRANCE) {
+        gSaveContext.nextTransitionType = TRANS_TYPE_FADE_WHITE_SLOW; // (into the temple: out of the light, slowly)
+    }
 }
 
 static bool CanLeave(PlayState* play) {
