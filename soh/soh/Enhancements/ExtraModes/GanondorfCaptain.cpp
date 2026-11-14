@@ -216,6 +216,14 @@ static void RegisterGanondorfCaptain() {
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(OnOpenText);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnGameFrameUpdate>(OnFrame);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) { sSpawnedHere = false; });
+
+    // The Gerudo serve their King: the fortress's guards don't seize him, on any file (not only one begun in the
+    // desert), whenever he's the one playing
+    REGISTER_VB_SHOULD(VB_GERUDOS_BE_FRIENDLY, {
+        if ((gPlayState != nullptr) && PlayAsGanondorf_ShouldHideLink(gPlayState, GET_PLAYER(gPlayState))) {
+            *should = true;
+        }
+    });
 }
 
 static RegisterShipInitFunc initFunc(RegisterGanondorfCaptain, {});
