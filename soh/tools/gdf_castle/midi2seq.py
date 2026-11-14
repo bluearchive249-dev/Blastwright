@@ -225,7 +225,59 @@ def layer_script(notes, drum_map=None, timpani=False):
     return out, t
 
 
-def build(path, loop=True, volume=0x58, reverb=0x28):
+def intro_parts(tracks, bars=8, bar=4 * TATUMS):
+    """A slow intro that builds into the song, from the song's own harmony: each bar a chord (the notes the song
+    strikes on its first beats, bar by bar), held on Ganon's church organ from the start, the choir joining at bar 3,
+    low strings at bar 5, a timpani roll swelling through the last two bars into the song. Returns
+    [(font, instrument, notes, volume ramp, drums?)], each notes (start, end, key, velocity, program)."""
+    chords = []
+    for b in range(bars):
+        keys = sorted({n[2] for tr in tracks.values() if tr.ch != 9 for n in tr.notes
+                       if b * bar <= n[0] < b * bar + bar // 2})
+        if not keys:
+            keys = chords[-1] if chords else [60]
+        chords.append(keys)
+    root = [min(k) for k in chords]
+    def voiced(keys, lo, hi, n):
+        pcs = []
+        for k in sorted(keys):
+            if k % 12 not in [p % 12 for p in pcs]:
+                pcs.append(k)
+        out = []
+        for k in pcs[:n]:
+            while k < lo:
+                k += 12
+            while k > hi:
+                k -= 12
+            out.append(k)
+        return out
+    organ, choir, strings, timp = [], [], [], []
+    for b in range(bars):
+        t0, t1 = b * bar, (b + 1) * bar
+        swell = (b + 1) / bars
+        for k in voiced(chords[b], 48, 67, 4):
+            organ.append((t0, t1, k, int(40 + 60 * swell), 19))
+        if b >= 2:
+            for k in voiced(chords[b], 60, 76, 3):
+                choir.append((t0, t1, k, int(30 + 80 * swell), 52))
+        if b >= 4:
+            strings.append((t0, t1, voiced([root[b]], 36, 47, 1)[0], int(50 + 60 * swell), 48))
+    # the roll: every eighth of a beat over the last two bars, louder and louder
+    r = voiced([root[-1]], 42, 60, 1)[0]
+    start = (bars - 2) * bar
+    step = TATUMS // 6
+    for i, t in enumerate(range(start, bars * bar, step)):
+        timp.append((t, t + step, r, int(20 + 60 * i / ((bars * bar - start) / step)), 47))
+    ramp = lambda v0, v1, a, b_: [(a + i * TATUMS, int(v0 + (v1 - v0) * i / max(1, (b_ - a) // TATUMS)))
+                                   for i in range((b_ - a) // TATUMS + 1)]
+    return [(F_ORGAN, 0, organ, ramp(45, 105, 0, bars * bar), False),
+            (F_BATTLE, 1, choir, ramp(40, 100, 2 * bar, bars * bar), False),
+            (F_ORCH, 10, strings, ramp(50, 100, 4 * bar, bars * bar), False),
+            (F_ORCH, 0x7F, timp, ramp(50, 95, start, bars * bar), 'timpani')], bars * bar
+
+
+def build(path, loop=True, volume=0x58, reverb=0x28, intro=True, intro_tempo=0.72):
+    """intro: a slow build-up played once before the song; the loop goes back to the song's start, not the intro's."""
     bpm, tempos, tracks, end = gather(path)
     chans = []
     for ch in sorted(tracks):
@@ -242,12 +294,25 @@ def build(path, loop=True, volume=0x58, reverb=0x28):
     seq = bytearray()
     fix = []
     mask = 0
-    for i in range(len(chans)):
+    parts, intro_len = intro_parts(tracks) if intro else ([], 0)
+    n_intro = min(len(parts), 16 - len(chans))
+    for i in range(len(chans) + n_intro):
         mask |= 1 << i
     seq += bytes([0xD3, 0x20])                         # mute behaviour (as the game's sequences do)
     seq += bytes([0xD5, 0x46])                         # mute scale
     seq += bytes([0xD7]) + struct.pack('>H', mask)     # init channels
     seq += bytes([0xDB, volume])                       # volume
+    if n_intro:
+        # the intro, once: slower, its own channels (after the song's), then the song
+        seq += bytes([0xDD, max(1, min(255, int(round(bpm * intro_tempo))))])
+        for k in range(n_intro):
+            fix.append((len(seq) + 1, 'intro%d' % k))
+            seq += bytes([0x90 | (len(chans) + k), 0, 0])
+        t = 0
+        while intro_len - t > 0:
+            step = min(0x7FFF, intro_len - t)
+            seq += b'\xFD' + compressed(step)
+            t += step
     seq += bytes([0xDD, max(1, min(255, int(round(bpm))))])
     loop_at = len(seq)
     for i in range(len(chans)):
@@ -274,6 +339,26 @@ def build(path, loop=True, volume=0x58, reverb=0x28):
     add('seq', seq, fix)
 
     dropped = 0
+    for k in range(n_intro):
+        font, inst, notes, ramp, kind = parts[k]
+        c = bytearray([0xC4, 0xC6, font_cmd_index(font), 0xC1, inst, 0xD4, reverb + 0x10, 0xDD, 64, 0xDF, ramp[0][1]])
+        cf = []
+        layers, d = split_layers(notes)
+        for li, ln in enumerate(layers):
+            cf.append((len(c) + 1, 'ilayer%d_%d' % (k, li)))
+            c += bytes([0x88 | li, 0, 0])
+            ls, _ = layer_script(ln, {} if kind else None, timpani=bool(kind))
+            add('ilayer%d_%d' % (k, li), ls + b'\xFF')
+        t = 0
+        for tt, v in ramp:
+            if tt > t:
+                c += b'\xFD' + compressed(tt - t)
+                t = tt
+            c += bytes([0xDF, max(0, min(127, v))])
+        if intro_len > t:
+            c += b'\xFD' + compressed(intro_len - t)
+        c += b'\xFF'
+        add('intro%d' % k, c, cf)
     for i, tr in enumerate(chans):
         drums = tr.ch == 9
         progs = {n[4] for n in tr.notes}

@@ -123,18 +123,23 @@ def run(seq, seconds):
     chvol = {}   # chan -> [(t, vol)]
     chpan = {}
     tempo = 120
+    tempos = []      # (tatum, bpm)
+    loop_t = None
     # sequence script
     i = 0
     starts = {}
     seq_len = 0
     t = 0
     visited_loop = False
+    addr_time = {}
     while i < len(seq):
+        addr_time[i] = t
         c = seq[i]; i += 1
         if c in (0xD3, 0xD5, 0xDB):
             i += 1
         elif c == 0xDD:
             tempo = seq[i]; i += 1
+            tempos.append((t, tempo))
         elif c in (0xD7, 0xD6):
             i += 2
         elif 0x90 <= c <= 0x9F:
@@ -142,7 +147,10 @@ def run(seq, seconds):
         elif c == 0xFD:
             d, i = cu16(seq, i); t += d
         elif c == 0xFB:
-            break   # (the loop back: the preview plays once)
+            target = struct.unpack_from('>H', seq, i)[0]
+            # (the loop back: where the song starts again, in tatums: the time the script stood at that address)
+            loop_t = addr_time.get(target, 0)
+            break
         elif c == 0xFF:
             break
         else:
@@ -199,7 +207,7 @@ def run(seq, seconds):
                     t += d
                 else:
                     raise SystemExit('layer: unknown command %02X at %04X' % (c, k - 1))
-    return tempo, seq_len, notes, chvol, chpan
+    return tempos, seq_len, notes, chvol, chpan, loop_t
 
 
 def at(lst, t):
@@ -211,9 +219,25 @@ def at(lst, t):
 
 
 def render(seq, out_wav, seconds=None):
-    tempo, seq_len, notes, chvol, chpan = run(seq, seconds or 1e9)
-    sec_per_tatum = 60.0 / tempo / TATUMS
-    total = seq_len * sec_per_tatum
+    tempos, seq_len, notes, chvol, chpan, loop_t = run(seq, seconds or 1e9)
+    # the loop, heard once more (from where it goes back to) so the seam can be checked
+    if loop_t is not None:
+        span = seq_len - loop_t
+        notes = [n + (n[0],) for n in notes] + [(n[0] + span,) + n[1:] + (n[0],) for n in notes if n[0] >= loop_t]
+        tempos = tempos + [(tt + span, b) for tt, b in tempos if tt >= loop_t]
+        seq_len += span
+    else:
+        notes = [n + (n[0],) for n in notes]
+    tempos.sort()
+    def secs(t):
+        out, last_t, bpm = 0.0, 0, tempos[0][1] if tempos else 120
+        for tt, b in tempos:
+            if tt >= t:
+                break
+            out += (tt - last_t) * 60.0 / bpm / TATUMS
+            last_t, bpm = tt, b
+        return out + (t - last_t) * 60.0 / bpm / TATUMS
+    total = secs(seq_len)
     if seconds:
         total = min(total, seconds)
     n_out = int((total + 3) * RATE)
@@ -222,8 +246,9 @@ def render(seq, out_wav, seconds=None):
     fonts = {f: load_font(f) for f in FONTS}
     gnote = lambda semi: 2.0 ** ((semi - 39) / 12.0)
     missing = set()
-    for t, d, gate, font, inst, semi, vel, ch in notes:
-        start = t * sec_per_tatum
+    for t, d, gate, font, inst, semi, vel, ch, t_orig in notes:
+        start = secs(t)
+        sec_per_tatum = (secs(t + d) - start) / max(d, 1)
         if start >= total:
             continue
         drums, insts = fonts[font]
@@ -275,9 +300,9 @@ def render(seq, out_wav, seconds=None):
             h_n = int(hold * RATE)
             if h_n < n:
                 env[h_n:] *= np.exp(-np.arange(n - h_n) / (rel * RATE / 4))
-        vol = at(chvol[ch], t) / 127.0
+        vol = at(chvol[ch], t_orig) / 127.0
         amp = (vel / 127.0) ** 2 * vol * 0.42
-        pan = at(chpan[ch], t) / 127.0
+        pan = at(chpan[ch], t_orig) / 127.0
         gl, gr = np.cos(pan * np.pi / 2), np.sin(pan * np.pi / 2)
         o = int(start * RATE)
         e = min(n_out, o + n)
