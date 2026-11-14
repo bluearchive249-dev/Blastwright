@@ -1356,13 +1356,13 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
                 r->timer = 0;
                 Player_SetCsActionWithHaltedActors(play, thisx, 8);
                 Say(play, "%yRauru:%w So. The King of the Gerudo walks into the heart of the Sacred Realm, and its "
-                          "doors did not stop him.^%rGanondorf:%w Doors, guards, prayers. Hyrule keeps putting "
-                          "little things in my way, old man.^%yRauru:%w I raised this temple so that no hand like "
+                          "doors did not stop him.^%rGanondorf:%w Doors, guards, prayers. Hyrule's whole "
+                          "defence is hoping, old man. It isn't working.^%yRauru:%w I raised this temple so that no hand like "
                           "yours would ever close around the Triforce. I have waited an age for the one who would "
-                          "try.^%rGanondorf:%w Then you're done waiting. Step aside, and you "
-                          "can go back to it.^%yRauru:%w The Triforce mirrors the heart that touches it. "
-                          "Yours would break the world.^%rGanondorf:%w The world broke the day the gods "
-                          "gave my people sand and yours rivers. I've come to settle up.^%yRauru:%w "
+                          "try.^%rGanondorf:%w An age, waiting. Old man, you've "
+                          "been talking to a triangle for a thousand years. Move.^%yRauru:%w The Triforce mirrors the heart that touches it. "
+                          "Yours would break the world.^%rGanondorf:%w Your gods made a world where one "
+                          "people gets rivers and the other gets sand, and you call ME the one who breaks things. Spare me.^%yRauru:%w "
                           "Then there is nothing left to say. Let the light judge you, Ganondorf!");
             }
             break;
@@ -1509,12 +1509,13 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
             }
             if (r->timer == 40) {
                 Say(play, "%yRauru:%w ...The light... could not hold you.^%rGanondorf:%w Light's just power in a "
-                          "white robe, old man. Mine was stronger.^%yRauru:%w The Triforce does not judge. "
+                          "white robe, old man. Mine was bigger. That's all righteousness ever is.^%yRauru:%w The Triforce does not judge. "
                           "It answers the hand that reaches for it... but it will not come to you whole. Remember "
-                          "that, when the rest is denied you.^%rGanondorf:%w A third of the gods' power. "
-                          "No king's ever held that much. I'll get the rest.^%yRauru:%w Go, then. The "
+                          "that, when the rest is denied you.^%rGanondorf:%w A third. Of the gods' power. "
+                          "More than any of your saints ever did with theirs. I'll take the rest.^%yRauru:%w Go, then. The "
                           "Chamber of Sages lies before you. One day seven will rise to answer what you do "
-                          "here.^%rGanondorf:%w Let them rise. I'll be waiting.");
+                          "here.^%rGanondorf:%w Seven Sages. Let them rise. I'll be the one who "
+                          "decides how long they stay up.");
             }
             if ((r->timer > 50) && CanLeave(play)) {
                 TSet(play, FLAG_RAURU_DOWN);
