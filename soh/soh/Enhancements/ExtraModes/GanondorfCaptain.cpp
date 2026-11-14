@@ -52,19 +52,19 @@ static bool sSpawnedHere = false;
 
 // Her words, and his order, by whether his guard is with him (calling them, or sending them back)
 static const char* sCallLines[] = {
-    "%rCaptain:%w My king. Your blades are idle, and your road is long.^%rGanondorf:%w Then let them walk it with "
-    "me. Choose three of your best, Captain. I would have the desert at my back.^%rCaptain:%w They are chosen. "
+    "%rCaptain:%w My king. Your blades are idle, and your road is long.^%rGanondorf:%w Then they walk it with me. "
+    "Pick three, Captain. Your best. I'd like the desert at my back for once.^%rCaptain:%w They are chosen. "
     "Green, blue and red, sworn to your shadow. Where you go, they go.",
-    "%rCaptain:%w Lord Ganondorf. The sisters ask to ride with their king.^%rGanondorf:%w Let them. Hyrule should "
-    "learn what it means to face the Gerudo in earnest.^%rCaptain:%w Three swords for the king. They will not fall "
+    "%rCaptain:%w Lord Ganondorf. The sisters ask to ride with their king.^%rGanondorf:%w Let them. It's about time "
+    "Hyrule met us properly.^%rCaptain:%w Three swords for the king. They will not fall "
     "behind.",
 };
 static const char* sDismissLines[] = {
-    "%rCaptain:%w My king. Your guard has fought well at your side.^%rGanondorf:%w Well enough. Send them back to "
-    "the walls, Captain. A fortress without its sisters is only stone.^%rCaptain:%w As you command. Call, and they "
+    "%rCaptain:%w My king. Your guard has fought well at your side.^%rGanondorf:%w They did. Send them "
+    "home, Captain. The walls need them more than I do.^%rCaptain:%w As you command. Call, and they "
     "will come again.",
-    "%rCaptain:%w The three are weary, lord, though they would never say it.^%rGanondorf:%w Then let them rest. I "
-    "walk alone a while. It suits me.^%rCaptain:%w They return to their posts. The fortress will be ready when you "
+    "%rCaptain:%w The three are weary, lord, though they would never say it.^%rGanondorf:%w Then let them rest. I'll "
+    "walk alone for a while. I'm used to it.^%rCaptain:%w They return to their posts. The fortress will be ready when you "
     "are.",
 };
 static int sLine = 0;
