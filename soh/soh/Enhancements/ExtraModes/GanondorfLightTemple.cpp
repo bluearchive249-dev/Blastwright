@@ -1117,6 +1117,26 @@ static s32 FindTempleSeq() {
     return -1;
 }
 
+// (the scene's own music starts as the fade in from the mirror ends: the temple's takes over once he's standing in
+// the room, and again if anything else replaced it, e.g. the mini-boss music once the Captain is beaten)
+static s16 sMusicTimer = 0;
+
+static void KeepTempleMusic(PlayState* play) {
+    s32 seq = FindTempleSeq();
+    if ((seq < 0) || (play->transitionTrigger != TRANS_TRIGGER_OFF) || (play->transitionMode != TRANS_MODE_OFF)) {
+        return;
+    }
+    if (sMusicTimer < 20) {
+        sMusicTimer++;
+        return;
+    }
+    u16 active = func_800FA0B4(SEQ_PLAYER_BGM_MAIN);
+    if ((active != (u16)seq) && ((active == NA_BGM_DISABLED) || (active == 0x56) || (sMusicTimer == 20))) {
+        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | (seq & 0xFFFF));
+    }
+    sMusicTimer = 21;
+}
+
 static void OnSceneInit(int16_t sceneNum) {
     PlayState* play = gPlayState;
     sSpawned = 0;
@@ -1133,10 +1153,7 @@ static void OnSceneInit(int16_t sceneNum) {
     memset(sBridgeTimer, 0, sizeof(sBridgeTimer));
     memset(sLit, 0, sizeof(sLit));
     memset(sBeamOn, 0, sizeof(sBeamOn));
-    s32 seq = FindTempleSeq();
-    if (seq >= 0) {
-        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | (seq & 0xFFFF));
-    }
+    sMusicTimer = 0;
 }
 
 // Back from Rauru's arena: into the antechamber
@@ -1157,6 +1174,7 @@ static void OnPlayerUpdate() {
     if (sMirrorCooldown > 0) {
         sMirrorCooldown--;
     }
+    KeepTempleMusic(play);
     // the rooms that are out: their things placed; rooms gone from memory, forgotten (their actors went with them)
     for (s32 r = 0; r < GDF_T_ROOMS; r++) {
         if (((sSpawned >> r) & 1) && (r != cur) && (r != rc->prevRoom.num)) {

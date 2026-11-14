@@ -284,21 +284,23 @@ def passage_half(B, W, rid, side, other, y, style, lights, req, half_ok=True):
         a, b = px, mid
         z = pz
         lo, hi = min(a, b), max(a, b)
+    # (each half fades into darkness toward the middle, where the room changes: the fade is laid down first, as it
+    # shades the faces built after it)
     if style == 'hall':
         if side in 'NS':
+            B.fade_to_black((x, y, a + dz * 60), (x, y, b), (x - DW - 1, x + DW + 1, y - 1, y + DH + 21, lo, hi))
             B.floor('marble_check', x - DW, x + DW, lo, hi, y=y)
             B.wall('brick_white2', 'x', x - DW, lo, hi, y, y + DH + 20, 1)
             B.wall('brick_white2', 'x', x + DW, lo, hi, y, y + DH + 20, -1)
             B.ceiling('ceiling', x - DW, x + DW, lo, hi, y + DH + 20)
-            B.fade_to_black((x, y, a + dz * 60), (x, y, b), (x - DW - 1, x + DW + 1, y - 1, y + DH + 21, lo, hi))
             C.room_finish(B, x - DW, x + DW, lo + (16 if a < b else 0), hi - (16 if a > b else 0), y, y + DH + 20,
                           walls='WE', pilasters=False, dado=(214, 208, 198))
         else:
+            B.fade_to_black((a + dx * 60, y, z), (b, y, z), (lo, hi, y - 1, y + DH + 21, z - DW - 1, z + DW + 1))
             B.floor('marble_check', lo, hi, z - DW, z + DW, y=y)
             B.wall('brick_white2', 'z', z - DW, lo, hi, y, y + DH + 20, 1)
             B.wall('brick_white2', 'z', z + DW, lo, hi, y, y + DH + 20, -1)
             B.ceiling('ceiling', lo, hi, z - DW, z + DW, y + DH + 20)
-            B.fade_to_black((a + dx * 60, y, z), (b, y, z), (lo, hi, y - 1, y + DH + 21, z - DW - 1, z + DW + 1))
             C.room_finish(B, lo + (16 if a < b else 0), hi - (16 if a > b else 0), z - DW, z + DW, y, y + DH + 20,
                           walls='NS', pilasters=False, dado=(214, 208, 198))
     else:
@@ -307,6 +309,7 @@ def passage_half(B, W, rid, side, other, y, style, lights, req, half_ok=True):
         col = (205, 215, 225) if style == 'walk' else (235, 232, 245)
         state_bridge = req in ('L', 'S') and style == 'sky'
         if side in 'NS':
+            B.fade_to_black((x, y, a + dz * 200), (x, y, b), (x - DW - 30, x + DW + 30, y - 80, y + DH, lo, hi))
             if not state_bridge:
                 B.box((mat, 'stone_band'), x - DW, x + DW, y - 30, y, lo, hi, color=col)
                 for xx in (x - DW, x + DW):
@@ -315,10 +318,10 @@ def passage_half(B, W, rid, side, other, y, style, lights, req, half_ok=True):
                 col_wall(B, 'x', x + DW, lo, hi, y, y + 120, -1)
             else:
                 add(rid, T_LIGHTBRIDGE, ((x), y, (lo + hi) / 2), 0, 0 if req == 'L' else 1, int(hi - lo), 1)
-            B.fade_to_black((x, y, a + dz * 200), (x, y, b), (x - DW - 30, x + DW + 30, y - 80, y + DH, lo, hi))
             if style == 'walk':
                 C.water(W, x - DW - 200, x + DW + 200, lo, hi, y - 140)
         else:
+            B.fade_to_black((a + dx * 200, y, z), (b, y, z), (lo, hi, y - 80, y + DH, z - DW - 30, z + DW + 30))
             if not state_bridge:
                 B.box((mat, 'stone_band'), lo, hi, y - 30, y, z - DW, z + DW, color=col)
                 for zz in (z - DW, z + DW):
@@ -327,7 +330,6 @@ def passage_half(B, W, rid, side, other, y, style, lights, req, half_ok=True):
                 col_wall(B, 'z', z + DW, lo, hi, y, y + 120, -1)
             else:
                 add(rid, T_LIGHTBRIDGE, ((lo + hi) / 2, y, z), 0x4000, 0 if req == 'L' else 1, int(hi - lo), 1)
-            B.fade_to_black((a + dx * 200, y, z), (b, y, z), (lo, hi, y - 80, y + DH, z - DW - 30, z + DW + 30))
             if style == 'walk':
                 C.water(W, lo, hi, z - DW - 200, z + DW + 200, y - 140)
     if side in 'NS':
