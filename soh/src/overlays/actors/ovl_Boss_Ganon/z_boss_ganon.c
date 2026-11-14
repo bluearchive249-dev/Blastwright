@@ -4060,6 +4060,8 @@ static u8 sGdfPlayerHeadValid = false;
 // The throat grab: whoever he holds hangs from his right fist, placed as the hand is drawn (see the grab, below)
 static void BossGanon_Player_GrabFollowHand(BossGanon* this);
 
+static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 limbIndex); // (his dagger, below)
+
 void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
     static s8 bodyPartLimbMap[] = {
         -1, -1, 1, -1, 3, 4, 5, -1, 6, 7, 8, -1, -1, -1, -1, -1, -1, -1, -1, 2, 12, 13, 14, 9, 10, 11, -1, -1, -1, -1,
@@ -4082,6 +4084,9 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
     if (GDF_IS_PLAYER(this)) {
         s32 set = -1;
 
+        if (!sGdfPgCapture) {
+            BossGanon_Player_DrawKnife(this, play, limbIndex);
+        }
         if ((limbIndex == 10) && !sGdfPgCapture) {
             // The Triforce of Power, once it's his: the game's own mark on the back of his right hand, where his
             // intro shows it (drawn with his other effects, see BossGanon_Player_DrawHandTriforce)
@@ -6655,6 +6660,103 @@ static const s8 sGdfBossToYoungLimb[GDF_LIMB_COUNT_PLAYER] = {
     -1, -1, -1, -1, -1, -1, -1, -1,         // neck, face and hair
     15, 16, 17, -1, 20, 21, -1,             // pelvis, legs (thigh, shin, foot)
 };
+
+// SoH: "Play as Ganondorf", his Gerudo dagger in its sheath, worn as his young self wears it (object_gndd, the
+// cutscene model, from the player's ROM). Where it hangs is read from young Ganondorf's own skeleton at runtime: the
+// limb it hangs from, its offset and its set, scaled from his younger build to the boss model's by the length of
+// their shins. Drawn on the boss model's matching limb.
+#define GDF_YOUNG_KNIFE_JOINTS 32
+static s8 sGdfKnifeState = 0;      // 0 not looked up yet, 1 found, -1 not found
+static s8 sGdfKnifeBossLimb = -1;  // the boss limb (as the draw callbacks count them) it hangs from
+static Vec3f sGdfKnifePos;         // its joint, in that limb's space
+static Vec3s sGdfKnifeRot;         // its set
+static f32 sGdfKnifeScale = 1.0f;  // young model to boss model
+static const char* sGdfKnifeDL = NULL;
+
+static void BossGanon_Player_FindKnife(void) {
+    FlexSkeletonHeader* young = (FlexSkeletonHeader*)ResourceGetDataByName(gYoungGanondorfSkel);
+    FlexSkeletonHeader* boss = (FlexSkeletonHeader*)ResourceGetDataByName(gGanondorfSkel);
+    StandardLimb** ylimbs;
+    StandardLimb** blimbs;
+    Vec3s frame[GDF_YOUNG_KNIFE_JOINTS];
+    s32 count, k = -1, parent = -1, i;
+    f32 yShin, bShin;
+
+    sGdfKnifeState = -1;
+    if ((young == NULL) || (boss == NULL)) {
+        return;
+    }
+    ylimbs = (StandardLimb**)young->sh.segment;
+    blimbs = (StandardLimb**)boss->sh.segment;
+    count = young->sh.limbCount;
+    if ((count > GDF_YOUNG_KNIFE_JOINTS - 1) || (boss->sh.limbCount < 21)) {
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        if ((ylimbs[i] != NULL) && (ylimbs[i]->dList != NULL) && (strstr((const char*)ylimbs[i]->dList, "Knife") != NULL)) {
+            k = i;
+            sGdfKnifeDL = (const char*)ylimbs[i]->dList;
+            break;
+        }
+    }
+    if (k < 0) {
+        return;
+    }
+    // Its parent: the limb whose child, or one of whose child's siblings, it is
+    for (i = 0; (i < count) && (parent < 0); i++) {
+        s32 c = (ylimbs[i] != NULL) ? ylimbs[i]->child : LIMB_DONE;
+
+        while ((c != LIMB_DONE) && (c < count)) {
+            if (c == k) {
+                parent = i;
+                break;
+            }
+            c = ylimbs[c]->sibling;
+        }
+    }
+    if (parent < 0) {
+        return;
+    }
+    // The boss model's limb for that one (the walk's own limb map)
+    for (i = 0; i < GDF_LIMB_COUNT_PLAYER; i++) {
+        if (sGdfBossToYoungLimb[i] == parent) {
+            sGdfKnifeBossLimb = (s8)(i + 1);
+            break;
+        }
+    }
+    if (sGdfKnifeBossLimb < 0) {
+        return;
+    }
+    // His younger build to the boss model's: by the shins (young 17, boss 20, as the walk maps them)
+    yShin = sqrtf(SQ((f32)ylimbs[17]->jointPos.x) + SQ((f32)ylimbs[17]->jointPos.y) + SQ((f32)ylimbs[17]->jointPos.z));
+    bShin = sqrtf(SQ((f32)blimbs[20]->jointPos.x) + SQ((f32)blimbs[20]->jointPos.y) + SQ((f32)blimbs[20]->jointPos.z));
+    sGdfKnifeScale = ((yShin > 1.0f) && (bShin > 1.0f)) ? (bShin / yShin) : 1.0f;
+    sGdfKnifePos.x = ylimbs[k]->jointPos.x * sGdfKnifeScale;
+    sGdfKnifePos.y = ylimbs[k]->jointPos.y * sGdfKnifeScale;
+    sGdfKnifePos.z = ylimbs[k]->jointPos.z * sGdfKnifeScale;
+    // Its set, as it hangs in his standing pose
+    SkelAnime_GetFrameData((AnimationHeader*)gYoungGanondorfWalkAnim, 0, count + 1, frame);
+    sGdfKnifeRot = frame[k + 1];
+    sGdfKnifeState = 1;
+}
+
+static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 limbIndex) {
+    if (sGdfKnifeState == 0) {
+        BossGanon_Player_FindKnife();
+    }
+    if ((sGdfKnifeState != 1) || (limbIndex != sGdfKnifeBossLimb) || (sGdfKnifeDL == NULL)) {
+        return;
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_TranslateRotateZYX(&sGdfKnifePos, &sGdfKnifeRot);
+    Matrix_Scale(sGdfKnifeScale, sGdfKnifeScale, sGdfKnifeScale, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sGdfKnifeDL);
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 
 static void BossGanon_Player_RotToMtx(Vec3s* rot, f32 m[3][3]) {
     f32 sx = sinf((f32)BINANG_TO_RAD(rot->x));
