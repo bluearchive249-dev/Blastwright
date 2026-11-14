@@ -427,9 +427,12 @@ def build_west(beams):
     return B
 
 
-# ---- Rauru's sanctuary (SCENE_BESITU): an octagon 700 across the flats, the six Sages' pillars about a dais of
-# light; Rauru fights here ----
-RAURU_A, RAURU_S, RAURU_BEAM = 700, 290, 0.45   # (the beam scale is the same in GanondorfSacred.cpp)
+# ---- Rauru's arena (SCENE_BESITU): the Chamber of Sages under the Temple of Time's roof. An octagon 1300 across the
+# flats (room for the light he'll throw about), the Temple of Time's marble and windows, the Chamber's six raised Sage
+# platforms in a ring, each with its medallion and a column of its colour, round a raised Triforce dais; a starry
+# blue vault over all. Rauru fights here ----
+RAURU_A, RAURU_BEAM = 1300, 0.6   # (the beam scale is the same in GanondorfSacred.cpp; RAURU_A in GanondorfSacredTemple.cpp)
+RAURU_S = int(RAURU_A * np.tan(np.pi / 8))
 
 
 def octagon(B, A, S, H, mat='brick_white2', south_door=None):
@@ -439,57 +442,82 @@ def octagon(B, A, S, H, mat='brick_white2', south_door=None):
     B.wall(mat, 'x', -A, -S, S, 0, H, 1)
     for sx, sz in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
         a, b = (sx * S, sz * A), (sx * A, sz * S)
-        p = [(a[0], 0, a[1]), (b[0], 0, b[1]), (b[0], H, b[1]), (a[0], H, a[1])]
-        n = np.cross(np.subtract(p[1], p[0]), np.subtract(p[3], p[0]))
-        if np.dot(n, [-(a[0] + b[0]), 0, -(a[1] + b[1])]) < 0:
-            p = [p[1], p[0], p[3], p[2]]
-        B.quad(mat, p, collide=SURF['wall'])
+        for y0 in range(0, H, 500):
+            y1 = min(H, y0 + 500)
+            p = [(a[0], y0, a[1]), (b[0], y0, b[1]), (b[0], y1, b[1]), (a[0], y1, a[1])]
+            n = np.cross(np.subtract(p[1], p[0]), np.subtract(p[3], p[0]))
+            if np.dot(n, [-(a[0] + b[0]), 0, -(a[1] + b[1])]) < 0:
+                p = [p[1], p[0], p[3], p[2]]
+            B.quad(mat, p, collide=SURF['wall'])
+
+
+def floor_medal(B, mat, x, z, r, y, color=(255, 255, 255)):
+    """A Sage's medallion laid in a floor (the textures are half discs: the top half, then mirrored)."""
+    B.quad(mat, [(x - r, y, z), (x + r, y, z), (x + r, y, z - r), (x - r, y, z - r)], uv=[(0, 32), (64, 32), (64, 0), (0, 0)],
+           color=color, light=False)
+    B.quad(mat, [(x - r, y, z + r), (x + r, y, z + r), (x + r, y, z), (x - r, y, z)], uv=[(0, 0), (64, 0), (64, 32), (0, 32)],
+           color=color, light=False)
+
+
+SAGE_MEDALS = ['medal_forest', 'medal_fire', 'medal_water', 'medal_shadow', 'medal_spirit', 'medal_light']
 
 
 def build_rauru(beams):
-    A, S, H = RAURU_A, RAURU_S, 900
-    lights = [((0, 120, 0), 520, 0.7, (1.0, 0.95, 0.75)), ((0, 800, 0), 700, 0.3, WARM)]
-    diag = []
+    A, S, H = RAURU_A, RAURU_S, 1400
+    WY = 520   # the windows' beams start here
+    lights = [((0, 160, 0), 700, 0.7, (1.0, 0.95, 0.75)), ((0, 1100, 0), 1400, 0.3, WARM)]
+    wins = []
     for sx, sz in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
         mx, mz = sx * (A + S) / 2, sz * (A + S) / 2
-        diag.append((mx, mz, -sx / np.sqrt(2), -sz / np.sqrt(2)))
-    for mx, mz, ix, iz in diag:
+        wins.append((mx, mz, -sx / np.sqrt(2), -sz / np.sqrt(2)))
+    for mx, mz in ((A, 0), (-A, 0), (0, -A)):
+        n = np.hypot(mx, mz)
+        wins.append((mx, mz, -mx / n, -mz / n))
+    for mx, mz, ix, iz in wins:
         yaw = int(np.degrees(np.arctan2(ix, iz)) / 360 * 65536)
-        o = (mx + ix * 68 * RAURU_BEAM, 420, mz + iz * 68 * RAURU_BEAM)
+        o = (mx + ix * 68 * RAURU_BEAM, WY, mz + iz * 68 * RAURU_BEAM)
         beams.append((o, yaw))
-        reach = 825 * RAURU_BEAM * min(1.0, 420 / (939 * RAURU_BEAM))
-        lights.append(((mx + ix * 30, 560, mz + iz * 30), 360, 0.5, WARM))
-        lights.append(((o[0] + ix * reach, 30, o[2] + iz * reach), 280, 0.7, (1.0, 0.95, 0.8)))
+        reach = 825 * RAURU_BEAM * min(1.0, WY / (939 * RAURU_BEAM))
+        lights.append(((mx + ix * 30, WY + 200, mz + iz * 30), 420, 0.5, WARM))
+        lights.append(((o[0] + ix * reach, 30, o[2] + iz * reach), 340, 0.7, (1.0, 0.95, 0.8)))
     sage = []
     for k in range(6):
         a = np.pi / 2 + np.pi / 6 + k * np.pi / 3   # (none in the way in, from the south)
-        sage.append((520 * np.cos(a), 520 * np.sin(a), SAGE_TINTS[k]))
-        lights.append(((520 * np.cos(a) * 0.9, 200, 520 * np.sin(a) * 0.9), 300, 0.8, SAGE_TINTS[k]))
+        sage.append((880 * np.cos(a), 880 * np.sin(a), SAGE_TINTS[k], k))
+        lights.append(((880 * np.cos(a), 260, 880 * np.sin(a)), 520, 0.9, SAGE_TINTS[k]))
     B = Builder(lights, float(H))
-    for mx, mz, ix, iz in diag:
-        C.tot_window(B, (ix, iz), (mx, mz), 96 * RAURU_BEAM, 420 + 100 * RAURU_BEAM, 420 + 661 * RAURU_BEAM)
+    for mx, mz, ix, iz in wins:
+        C.tot_window(B, (ix, iz), (mx, mz), 96 * RAURU_BEAM, WY + 100 * RAURU_BEAM, WY + 661 * RAURU_BEAM)
     E = A + 40
     B.floor('marble_check', -E, E, -E, E, y=0)
-    B.ceiling('ceiling', -E, E, -E, E, H)
     door = (-110, 110, 0, 300)
     octagon(B, A, S, H, south_door=door)
     C.arch_door(B, 'z', A, -110, 110, 0, 300)
     passage(B, 'S', A, 110, 300, 170)
-    # the six Sages' pillars, each banded in its Sage's colour, and a medallion-like disc at its foot
-    for x, z, t in sage:
-        B.pillar(x, z, 40, 0, H)
+    C.cove_ceiling(B, -A, A, -A, A, H, c=120, color=(55, 62, 130), band=GOLD)
+    for i in range(70):   # gilded stars on the vault
+        sx = -A + 200 + (i * 337) % (2 * A - 400)
+        sz = -A + 200 + (i * 211) % (2 * A - 400)
+        C.disc(B, 'gold', sx, sz, 9, H + 118, 5, color=GOLD, up=False, light=False)
+    # the six Sages' platforms (the Chamber of Sages' own, raised in a ring), each with its medallion and a column of
+    # its colour rising to the vault
+    for x, z, t, k in sage:
         col = tuple(int(255 * c) for c in t)
-        for y in (120, 520):
-            B.box('gold', x - 44, x + 44, y, y + 18, z - 44, z + 44, collide=False, color=col)
-        C.disc(B, 'gold', x, z, 70, 1.5, 16, color=col)
-    # the dais of light (Rauru hovers above it), a ring of gold and a great Triforce inlay
-    C.prism(B, 'marble', 0, 0, 200, 0, 16, 16, top='marble', collide=True)
-    C.annulus(B, 'gold', 0, 0, 180, 196, 16.5, 32, color=GOLD)
+        C.prism(B, 'marble', x, z, 170, 0, 30, 16, top='marble', collide=True, color=(240, 238, 246))
+        C.annulus(B, 'gold', x, z, 152, 168, 30.5, 24, color=col)
+        floor_medal(B, SAGE_MEDALS[k], x, z, 110, 31.5)
+        C.prism(B, 'gold', x, z, 16, 30, H, 8, color=tuple(min(255, int(c * 1.2) + 40) for c in col))
+    # the Triforce dais (Rauru hovers above it): two steps, a ring of gold, a great Triforce inlay
+    C.prism(B, 'marble', 0, 0, 330, 0, 8, 24, top='marble', collide=True)
+    C.prism(B, 'marble', 0, 0, 230, 8, 16, 24, top='marble', collide=True)
+    C.annulus(B, 'gold', 0, 0, 210, 226, 16.5, 32, color=GOLD)
     for cx, cz in ((0, -70), (-61, 35), (61, 35)):
         B.quad('gold', [(cx - 60, 17, cz + 52), (cx + 60, 17, cz + 52), (cx, 17, cz - 52)], color=GOLD)
-    for k in range(8):
-        a = k * np.pi / 4
-        C.candelabra(B, lambda *args: None, 610 * np.cos(a + np.pi / 8) * 0.85, 610 * np.sin(a + np.pi / 8) * 0.85, 0)
+    # a carpet from the door to the dais, and candelabras round the walls
+    B.floor('carpet_red', -70, 70, 330, A, y=1)
+    for k in range(12):
+        a = (k + 0.5) * np.pi / 6
+        C.candelabra(B, lambda *args: None, (A - 120) * np.cos(a), (A - 120) * np.sin(a), 0)
     return B
 
 

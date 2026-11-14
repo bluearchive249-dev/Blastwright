@@ -1,6 +1,6 @@
 // SoH: "Play as Ganondorf", the way into the Sacred Realm Temple (stage 1).
 //
-// In the Temple of Time (adult), a sealed door stands in the west wall of the main hall: no keyhole, so no key fits,
+// In the Temple of Time (adult), a sealed door stands in the Master Sword chamber's west wall: no keyhole, so no key fits,
 // only a barred window through which the next room's glow shows. Only Ganondorf opens it: he kicks it in (the door
 // kick, z_boss_ganon.c, asks GdfSacred_IsShut / GdfSacred_KickOpen). It stays open (a switch flag of the Temple of
 // Time). Behind it is the Mirror Room (SCENE_SASATEST), six pillars for the six Sages and, on a dais, the Sages'
@@ -57,10 +57,11 @@ static const Vec3f sPlatePos[3] = { { 0.0f, 0.0f, -960.0f }, { -130.0f, 0.0f, -8
 // The order the door's triangles show, and the plates must be stepped in: left, right, then the top
 static const s8 sPlateOrder[3] = { 1, 2, 0 };
 
-// The door: in the main hall's west wall (x -520), between the two west pillars, facing into the hall
-// (it stands sPorch out from the wall: a porch, with a passage behind it back to the wall, fading into the dark)
+// The door: at the far end, in the Master Sword's chamber, in its left (west) wall (x -720, the flat wall facing the
+// pedestal across the chamber), facing in (it stands sPorch out from the wall: a porch, with a passage behind it back
+// to the wall, fading into the dark)
 static const f32 sPorch = 140.0f; // (PORCH in tools/gdf_castle/sacred.py)
-static const Vec3f sDoorPos = { -520.0f + 140.0f, -40.0f, 2075.0f };
+static const Vec3f sDoorPos = { -720.0f + 140.0f, 0.0f, 0.0f };
 // The Mirror Room: its mirror at the north end, on the dais; the passage's end (the broken door) at the south
 static const Vec3f sRoomMirrorPos = { 0.0f, 24.0f, -345.0f };
 // The first hall: its mirror on the south wall, facing north into the hall
@@ -454,15 +455,27 @@ extern "C" void GdfSacred_VisitMirrorRoom(void) {
 
 // ---- His kick (z_boss_ganon.c) ----
 
+// (the Temple of Light's key doors, boss door, chests and kick block answer his kick too: GanondorfLightTemple.cpp)
+extern "C" s32 GdfTemple_IsKickable(Actor* a);
+extern "C" s32 GdfTemple_IsShut(Actor* a);
+extern "C" void GdfTemple_Kick(Actor* a, PlayState* play);
+
 extern "C" s32 GdfSacred_IsSealedDoor(Actor* a) {
-    return (sDoorActorId >= 0) && (a->id == sDoorActorId);
+    return ((sDoorActorId >= 0) && (a->id == sDoorActorId)) || GdfTemple_IsKickable(a);
 }
 
 extern "C" s32 GdfSacred_IsShut(Actor* a) {
+    if (GdfTemple_IsKickable(a)) {
+        return GdfTemple_IsShut(a);
+    }
     return GdfSacred_IsSealedDoor(a) && (gPlayState != NULL) && !DoorIsOpen(gPlayState);
 }
 
 extern "C" void GdfSacred_KickOpen(Actor* a, PlayState* play) {
+    if (GdfTemple_IsKickable(a)) {
+        GdfTemple_Kick(a, play);
+        return;
+    }
     Vec3f mid = { sDoorPos.x + 20.0f, sDoorPos.y + 120.0f, sDoorPos.z };
 
     Flags_SetSwitch(play, SEALED_DOOR_FLAG);
@@ -545,23 +558,18 @@ static void OnPlayerUpdate() {
                 PlaceAt(player, 0.0f, 24.0f, -230.0f, 0); // out of the mirror, facing the hall
             }
         } else if (play->sceneNum == FIRST_HALL_SCENE) {
-            Actor_Spawn(&play->actorCtx, play, sMirrorActorId, sHallMirrorPos.x, sHallMirrorPos.y, sHallMirrorPos.z,
-                        0, -0x8000, 0, 0);
-            Actor_Spawn(&play->actorCtx, play, sGreatDoorActorId, sGreatDoorPos.x, sGreatDoorPos.y, sGreatDoorPos.z,
-                        0, 0, 0, 0);
-            if (sArrival == 3) {
-                PlaceAt(player, 0.0f, 0.0f, -1000.0f, 0); // back through the great door, facing the hall
+            // (the Temple of Light's Entrance Hall: belonging to no room, so it is there again when he comes back
+            // to the hall from the temple's other rooms)
+            Actor* m = Actor_Spawn(&play->actorCtx, play, sMirrorActorId, sHallMirrorPos.x, sHallMirrorPos.y,
+                                   sHallMirrorPos.z, 0, -0x8000, 0, 0);
+            if (m != NULL) {
+                m->room = -1;
             }
         }
-        if ((play->sceneNum == MIRROR_ROOM_SCENE) || (play->sceneNum == FIRST_HALL_SCENE) ||
-            (play->sceneNum == HUB_SCENE)) {
+        if ((play->sceneNum == MIRROR_ROOM_SCENE) || (play->sceneNum == HUB_SCENE)) {
             ScaleBeams(play);
         }
         return;
-    }
-    // Back out of the Sanctum: walking down the passage south
-    if ((play->sceneNum == HUB_SCENE) && CanLeave(play) && (player->actor.world.pos.z > 680.0f)) {
-        Warp(play, FIRST_HALL_ENTRANCE);
     }
     // Back out of the Mirror Room: walking up to the broken door at the passage's end
     if ((play->sceneNum == MIRROR_ROOM_SCENE) && CanLeave(play) && (player->actor.world.pos.z > 595.0f)) {

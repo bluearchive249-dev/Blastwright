@@ -16,11 +16,11 @@ void EnLight_Update(Actor* thisx, PlayState* play);
 void EnLight_Draw(Actor* thisx, PlayState* play);
 void EnLight_UpdateSwitch(Actor* thisx, PlayState* play);
 
-// Play as Ganondorf's castle interior (the test room slot): its flames carry their kind in the x rotation (1: a candle,
-// lit by the room's baked light only; 2: a lamp, a small point light; 0: a fire, as the game's own) and their size in
-// the z rotation (scale x 10000)
+// Play as Ganondorf's castle interior (the test room slot) and Temple of Light (SCENE_SYOTES): their flames carry
+// their kind in the x rotation (1: a candle, lit by the room's baked light only; 2: a lamp, a small point light; 0: a
+// fire, as the game's own) and their size in the z rotation (scale x 10000)
 static s16 EnLight_CastleKind(EnLight* this, PlayState* play) {
-    return (play->sceneNum == SCENE_TESTROOM) ? this->actor.home.rot.x : 0;
+    return ((play->sceneNum == SCENE_TESTROOM) || (play->sceneNum == SCENE_SYOTES)) ? this->actor.home.rot.x : 0;
 }
 
 const ActorInit En_Light_InitVars = {
@@ -72,7 +72,7 @@ void EnLight_Init(Actor* thisx, PlayState* play) {
                           ? NULL
                           : LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
     Actor_SetScale(&this->actor, D_80A9E840[this->actor.params & 0xF].scale * 0.0001f);
-    if ((play->sceneNum == SCENE_TESTROOM) && (this->actor.home.rot.z > 0)) {
+    if (((play->sceneNum == SCENE_TESTROOM) || (play->sceneNum == SCENE_SYOTES)) && (this->actor.home.rot.z > 0)) {
         Actor_SetScale(&this->actor, this->actor.home.rot.z * 0.0001f);
         this->actor.shape.rot.x = this->actor.shape.rot.z = 0;
         this->actor.world.rot.x = this->actor.world.rot.z = 0;

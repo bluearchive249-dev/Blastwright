@@ -1470,6 +1470,7 @@ s32 BgCheck_TryGetCustomMemsize(s32 sceneId, u32* memSize) {
         { SCENE_GANON_BOSS, 0x70C8 },           { SCENE_SPIRIT_TEMPLE_BOSS, 0xACC8 },
         { SCENE_CHAMBER_OF_THE_SAGES, 0x70C8 }, { SCENE_SPIRIT_TEMPLE, 0x16CC8 },
         { SCENE_FIRE_TEMPLE, 0x198C8 },         { SCENE_GANONDORF_BOSS, 0x84C8 },
+        { SCENE_SYOTES, 0x40000 }, // (Play as Ganondorf's Temple of Light: fifty rooms in one scene)
     };
     s32 i;
 

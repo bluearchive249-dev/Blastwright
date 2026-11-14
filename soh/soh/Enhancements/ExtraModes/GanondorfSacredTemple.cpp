@@ -35,6 +35,7 @@ extern "C" {
 #include "variables.h"
 extern PlayState* gPlayState;
 void BossGanon_Player_HoldUp(s16 frames);
+void GdfTemple_ArriveFromRauru(void);
 s32 BossGanon_Player_GetHeldUpPos(Vec3f* pos);
 }
 
@@ -63,8 +64,8 @@ s32 BossGanon_Player_GetHeldUpPos(Vec3f* pos);
 
 #define HUB_A 560.0f
 #define WING_BEAM 0.3f  // (WING_BEAM in sacred.py)
-#define RAURU_BEAM 0.45f // (RAURU_BEAM in sacred.py)
-#define RAURU_A 700.0f
+#define RAURU_BEAM 0.6f // (RAURU_BEAM in sacred.py)
+#define RAURU_A 1300.0f // (the arena: an octagon this far across the flats from its middle; RAURU_A in sacred.py)
 
 static const char sHeishiSkel[] = "__OTR__objects/object_sd/gEnHeishiSkel";
 static const char sHeishiIdle[] = "__OTR__objects/object_sd/gEnHeishiIdleAnim";
@@ -463,7 +464,8 @@ static void Guard_Update(Actor* thisx, PlayState* play) {
         case GS_IDLE:
             Math_StepToF(&thisx->speedXZ, 0.0f, 1.0f);
             if (g->dormant) {
-                if (player->actor.world.pos.z < -700.0f) { // he's crossed the chasm
+                // (the west hall's: he's crossed the chasm; the Temple of Light's (0x20): he comes into sight)
+                if (((thisx->params & 0x20) == 0) ? (player->actor.world.pos.z < -700.0f) : (dist < 650.0f)) {
                     g->dormant = false;
                     if (g->type != GUARD_CAPTAIN) {
                         break; // (the captain speaks for them)
@@ -1030,7 +1032,7 @@ enum { RS_WAIT, RS_HOVER, RS_BOLTS, RS_PILLARS, RS_BLINK, RS_CHARGE, RS_DEFEAT, 
 // strikes the usual way (knockback, his flinch, and his cape guard turns it).
 #define MAX_BULLETS 360
 #define BULLET_HIT_RADIUS 20.0f // across, from his middle
-#define BULLET_ROOM 690.0f      // gone past this far from the room's middle
+#define BULLET_ROOM 1290.0f      // gone past this far from the room's middle
 enum { PAT_HALO, PAT_SPIRAL, PAT_JUDGEMENT, PAT_CLOSING, PAT_BLOOM, PAT_COUNT };
 enum { BC_GOLD, BC_WHITE, BC_ROSE, BC_SKY };
 
@@ -1164,7 +1166,7 @@ static bool Rauru_Spell(GdfRauru* r, PlayState* play, s16 t, s16 yawTo, bool pre
         case PAT_CLOSING: // rings that close in on him from all round, each with one way out
             if ((t % 32 == 0) && (t <= 128)) {
                 s32 n = 40;
-                f32 radius = 470.0f;
+                f32 radius = 820.0f;
                 f32 px = player->actor.world.pos.x;
                 f32 pz = player->actor.world.pos.z;
                 r->gapYaw = (s16)Rand_ZeroFloat(65535.0f);
@@ -1349,7 +1351,7 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
 
     switch (r->state) {
         case RS_WAIT:
-            if ((dist < 760.0f) && CanLeave(play)) {
+            if ((dist < 1100.0f) && CanLeave(play)) {
                 // Their words first: he is held where he stands (as in a cutscene) until the last box closes, and
                 // only then does the fight begin
                 r->state = RS_TALK;
@@ -1418,8 +1420,8 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
                 for (s32 i = 0; i < r->glyphCount; i++) {
                     Vec3f g = player->actor.world.pos;
                     if (i > 0) {
-                        g.x += Rand_CenteredFloat(420.0f);
-                        g.z += Rand_CenteredFloat(420.0f);
+                        g.x += Rand_CenteredFloat(700.0f);
+                        g.z += Rand_CenteredFloat(700.0f);
                     }
                     g.y = thisx->home.pos.y;
                     r->glyph[i] = g;
@@ -1444,8 +1446,8 @@ static void Rauru_Update(Actor* thisx, PlayState* play) {
             if (r->timer == 1) {
                 f32 a = Rand_ZeroFloat(2.0f * M_PI);
                 r->blinkTo = thisx->home.pos;
-                r->blinkTo.x += cosf(a) * 380.0f;
-                r->blinkTo.z += sinf(a) * 380.0f;
+                r->blinkTo.x += cosf(a) * 650.0f;
+                r->blinkTo.z += sinf(a) * 650.0f;
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER);
                 Sparks(play, &thisx->world.pos, 60.0f, 20, 1.0f, 5);
             }
@@ -1869,6 +1871,23 @@ static void Goddess_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ---- For the Temple of Light (GanondorfLightTemple.cpp) ----
+
+static void RegisterActorsOnce();
+
+extern "C" Actor* GdfSacred_SpawnGuard(PlayState* play, f32 x, f32 y, f32 z, s16 yaw, s16 params) {
+    RegisterActorsOnce();
+    return Actor_Spawn(&play->actorCtx, play, sGuardId, x, y, z, 0, yaw, 0, params);
+}
+
+extern "C" s32 GdfSacred_GuardId(void) {
+    return sGuardId;
+}
+
+extern "C" void GdfSacred_Say(PlayState* play, const char* text) {
+    Say(play, text);
+}
+
 // ---- Registering them ----
 
 static s32 Register(const char* name, const char* desc, s32 category, u32 flags, s32 size, ActorFunc init,
@@ -1913,6 +1932,10 @@ static void RegisterActors() {
     sGoddessId = Register("Gdf_Goddess", "A Golden Goddess (Play as Ganondorf)", ACTORCAT_NPC,
                           always | ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, sizeof(GdfGoddess),
                           Goddess_Init, NULL, Goddess_Update, Goddess_Draw);
+}
+
+static void RegisterActorsOnce() {
+    RegisterActors();
 }
 
 // ---- The rooms ----
@@ -2104,7 +2127,8 @@ static void OnPlayerUpdate() {
             break;
         case RAURU_SCENE:
             if (p.z > RAURU_A + 100.0f) {
-                Warp(play, HUB_ENTRANCE);
+                GdfTemple_ArriveFromRauru(); // (back into the Temple of Light's antechamber)
+                Warp(play, ENTR_SYOTES_0);
             } else if (TFlag(play, FLAG_RAURU_DOWN) && !TFlag(play, FLAG_TRIFORCE) &&
                        (sqrtf(SQ(p.x) + SQ(p.z)) < 80.0f)) {
                 sPlainChamber = true;
