@@ -20,6 +20,7 @@
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "GanondorfText.h"
 #include "soh/ShipInit.hpp"
 #include "soh/frame_interpolation.h"
 #include "soh/ActorDB.h"
@@ -233,7 +234,7 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     if ((gPlayState != NULL) && (gPlayState->sceneNum == SPRING_SCENE) && (*textId >= GODDESS_TEXT_ID) &&
         (*textId < GODDESS_TEXT_ID + 3)) {
         s32 g = *textId - GODDESS_TEXT_ID;
-        CustomMessage msg = CustomMessage(sGoddessLines[g][sGoddessLine[g]], TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
+        CustomMessage msg = CustomMessage(GdfFitBoxes(sGoddessLines[g][sGoddessLine[g]]), TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
         msg.AutoFormat();
         msg.LoadIntoFont();
         *loadFromMessageTable = false;
@@ -243,7 +244,7 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     if ((*textId != TEMPLE_TEXT_ID) || sPendingText.empty()) {
         return;
     }
-    CustomMessage msg = CustomMessage(sPendingText, TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
+    CustomMessage msg = CustomMessage(GdfFitBoxes(sPendingText), TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
     msg.AutoFormat();
     msg.LoadIntoFont();
     *loadFromMessageTable = false;

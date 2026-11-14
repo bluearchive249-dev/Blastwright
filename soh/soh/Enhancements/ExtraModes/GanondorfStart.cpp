@@ -9,6 +9,7 @@
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "GanondorfText.h"
 #include "soh/ShipInit.hpp"
 #include "soh/SaveManager.h"
 #include "soh/cvar_prefixes.h"
@@ -97,7 +98,7 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
         return;
     }
     if (*textId == GDF_START_TEXT_NARRATION) {
-        CustomMessage msg = CustomMessage(sNarration);
+        CustomMessage msg = CustomMessage(GdfFitBoxes(sNarration));
         msg.SetTextBoxType(TEXTBOX_TYPE_BLACK);
         msg.SetTextBoxPosition(TEXTBOX_POS_MIDDLE);
         msg.AutoFormat();
@@ -108,7 +109,7 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
         *loadFromMessageTable = false;
         msg.LoadIntoFont();
     } else if (*textId == GDF_START_TEXT_POE) {
-        CustomMessage msg = CustomMessage(sPoeGreeting);
+        CustomMessage msg = CustomMessage(GdfFitBoxes(sPoeGreeting));
         msg.SetTextBoxType(TEXTBOX_TYPE_BLUE);
         msg.SetTextBoxPosition(TEXTBOX_POS_BOTTOM);
         msg.AutoFormat();

@@ -11,6 +11,7 @@
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "GanondorfText.h"
 #include "soh/ShipInit.hpp"
 #include "soh/cvar_prefixes.h"
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -389,7 +390,7 @@ static void BuildMinionMessage(uint16_t* textId, bool* loadFromMessageTable) {
     }
     auto scene = sMinionOpening.find(*textId);
     if (scene != sMinionOpening.end()) {
-        CustomMessage msg = CustomMessage(scene->second.text);
+        CustomMessage msg = CustomMessage(GdfFitBoxes(scene->second.text));
         msg.SetTextBoxType(scene->second.type);
         msg.SetTextBoxPosition(scene->second.position);
         *loadFromMessageTable = false;
@@ -405,7 +406,7 @@ static void BuildMinionMessage(uint16_t* textId, bool* loadFromMessageTable) {
     if (it == sMinionLines.end()) {
         return;
     }
-    CustomMessage msg = CustomMessage(it->second);
+    CustomMessage msg = CustomMessage(GdfFitBoxes(it->second));
     msg.SetTextBoxType(TEXTBOX_TYPE_BLUE);
     msg.SetTextBoxPosition(TEXTBOX_POS_BOTTOM);
     *loadFromMessageTable = false;

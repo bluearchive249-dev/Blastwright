@@ -26,6 +26,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "GanondorfText.h"
 #include "soh/ShipInit.hpp"
 #include "soh/cvar_prefixes.h"
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -141,7 +142,7 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
         if (line.id != *textId) {
             continue;
         }
-        CustomMessage msg = CustomMessage(line.text);
+        CustomMessage msg = CustomMessage(GdfFitBoxes(line.text));
         if (line.box == 0) {
             msg.SetTextBoxType(TEXTBOX_TYPE_BLACK);
             msg.SetTextBoxPosition(TEXTBOX_POS_BOTTOM);

@@ -4,6 +4,7 @@
 // grunts, in his voice.
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "GanondorfText.h"
 #include "soh/ShipInit.hpp"
 
 extern "C" {
@@ -34,7 +35,7 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     }
     // Every line in this cutscene is the rider's (Ganondorf's, now Link's)
     s32 i = sVillainLine++ % ARRAY_COUNT(sVillainLines);
-    CustomMessage msg = CustomMessage(sVillainLines[i].text, TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
+    CustomMessage msg = CustomMessage(GdfFitBoxes(sVillainLines[i].text), TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
     msg.AutoFormat();
     msg.LoadIntoFont();
     *loadFromMessageTable = false;

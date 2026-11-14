@@ -9,6 +9,7 @@
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "GanondorfText.h"
 #include "soh/ShipInit.hpp"
 #include "soh/cvar_prefixes.h"
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -102,7 +103,7 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     if (text == NULL) {
         return;
     }
-    CustomMessage msg = CustomMessage(text);
+    CustomMessage msg = CustomMessage(GdfFitBoxes(text));
     msg.SetTextBoxType(TEXTBOX_TYPE_BLACK);
     msg.SetTextBoxPosition(TEXTBOX_POS_BOTTOM);
     msg.AutoFormat();

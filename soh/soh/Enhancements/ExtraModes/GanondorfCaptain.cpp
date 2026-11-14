@@ -11,6 +11,7 @@
 #include "soh/ActorDB.h"
 #include "soh/cvar_prefixes.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "GanondorfText.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
 #include "soh/frame_interpolation.h" // (the draw macros' frame interpolation calls, with C linkage)
@@ -169,7 +170,7 @@ static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     bool on = CVarGetInteger(BODYGUARDS_CVAR, 0) != 0;
     const char* line = on ? sDismissLines[sLine % ARRAY_COUNT(sDismissLines)]
                           : sCallLines[sLine % ARRAY_COUNT(sCallLines)];
-    CustomMessage msg = CustomMessage(line, TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
+    CustomMessage msg = CustomMessage(GdfFitBoxes(line), TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
 
     msg.AutoFormat();
     msg.LoadIntoFont();

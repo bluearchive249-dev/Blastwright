@@ -9,6 +9,7 @@
 #include "soh/cvar_prefixes.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "GanondorfText.h"
 #include "soh/ShipInit.hpp"
 
 extern "C" {
@@ -108,10 +109,10 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
 
         if (end != std::string::npos) {
             std::string body = text.substr(0, end);
-            std::string out = std::string(pool->greet[(id * 7 + (id >> 4)) % pool->numGreet]) + "\x04" + body;
+            std::string out = GdfFitBoxesRaw(pool->greet[(id * 7 + (id >> 4)) % pool->numGreet]) + "\x04" + body;
 
             if (EndsPlainly(body)) {
-                out += std::string("\x04") + pool->bye[(id * 13 + 5) % pool->numBye];
+                out += std::string("\x04") + GdfFitBoxesRaw(pool->bye[(id * 13 + 5) % pool->numBye]);
             }
             text = out + text.substr(end);
         }
@@ -129,9 +130,9 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
         if (end != std::string::npos) {
             std::string body = text.substr(0, end);
 
-            text = std::string(pool->reply[i]) + "\x04" + body;
+            text = GdfFitBoxesRaw(pool->reply[i]) + "\x04" + body;
             if (EndsPlainly(body)) {
-                text += std::string("\x04") + pool->bye[((*textId) * 13 + 5) % pool->numBye];
+                text += std::string("\x04") + GdfFitBoxesRaw(pool->bye[((*textId) * 13 + 5) % pool->numBye]);
             }
             text += "\x02";
         }
@@ -141,11 +142,11 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
         size_t end = text.rfind('\x02');
         if (end != std::string::npos) {
             std::string body = text.substr(0, end);
-            std::string out = std::string(talk->second.greeting) + "\x04" + body;
+            std::string out = GdfFitBoxesRaw(talk->second.greeting) + "\x04" + body;
 
             // (his answer only where their line ends the talk: not before a choice or a follow-on line)
             if ((talk->second.goodbye[0] != '\0') && EndsPlainly(body)) {
-                out += std::string("\x04") + talk->second.goodbye;
+                out += std::string("\x04") + GdfFitBoxesRaw(talk->second.goodbye);
             }
             text = out + text.substr(end);
         }
