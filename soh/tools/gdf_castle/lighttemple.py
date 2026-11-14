@@ -34,7 +34,7 @@ SAGE_MEDALS = ['medal_forest', 'medal_fire', 'medal_water', 'medal_shadow', 'med
 # The order the Sages' pillars stand in the Mirror Room, walking in from the broken door (left, then right, nearest
 # first): Water, Shadow, Fire, Spirit, Forest, Light. The Sanctum of Fire's pillars must be struck in that order.
 SIMON_ORDER = [2, 3, 1, 4, 0, 5]
-EN_HOLL = 0x0153
+EN_HOLL = 0x0023   # (the game's room-change plane, En_Holl)
 EN_LIGHT = 0x0008
 DEMO_KANKYO, LIGHT_PLANE, OBJECT_TOKI_OBJECTS = C.DEMO_KANKYO, C.LIGHT_PLANE, C.OBJECT_TOKI_OBJECTS
 SCENE = 'syotes'
