@@ -1,7 +1,8 @@
 // SoH: "Play as Ganondorf", inside Hyrule Castle.
 //
-// The castle wing (throne room with its window onto Zelda's courtyard, grand hall, library, barracks, entrance hall,
-// gallery and royal rooms) is a generated scene in the unused SCENE_TESTROOM slot, shipped as gdf_castle.o2r in the
+// The castle (throne room with its window onto Zelda's courtyard, a great hall with a minstrels' gallery, the
+// processional gallery, a chapel, a guard hall, a library, a cloister garden, a spiral stair up a tower to the royal
+// apartments) is a generated scene in the unused SCENE_TESTROOM slot, shipped as gdf_castle.o2r in the
 // mods folder (made by the castle generator; it holds our own geometry and refers to the game's textures by path).
 //
 // On the castle grounds, the castle's raised drawbridge (part of the scene's mesh) is hidden and replaced by a working

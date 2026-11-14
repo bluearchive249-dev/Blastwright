@@ -4,19 +4,23 @@ generated as a scene for the unused SCENE_TESTROOM slot (scenes/shared/testroom_
 own coordinates, so the throne room's east wall holds the courtyard window: the real courtyard (its display lists,
 called from oot.o2r) is outside, with Zelda's garden.
 
-Layout (floor y 20, x west negative):
-  Throne room   x -1150..-575  z -460..460   floor y 84 (the courtyard's), throne on the south side; the window
-                in the east wall looks across the carpet where Ganondorf kneels
-  Grand hall    x -1100..-820  z  460..1660  library door west, barracks door east
-  Library       x -1700..-1100 z  700..1300
-  Barracks      x  -820..-260  z 1000..1500
-  Entrance hall x -1400..-520  z 1660..2360  front doors south, grand stair up the west side to
-  Gallery       y 320 along the entrance hall's north wall, and the
-  Royal rooms   x -1700..-1100 z 1300..1660  floor y 320
-  Garden court  x  -520..0     z 1500..2300  glass roof, fountain, flowerbeds, hedges; doors from the entrance hall
-                (east wall) and the barracks (south wall); sunlit windows east and south
-  Long gallery  x -1950..-1700 z  450..1660  door from the library's west wall, wall fountain at the south end
-  Bedrooms      x -2350..-1950 z  450..850, 850..1250, 1250..1660 (doors off the gallery's west wall)
+Layout (redone 14 Nov 2026 after real castles; floor y 20, x west negative):
+  Throne room    x -1150..-575  z -460..460   floor y 84 (the courtyard's), throne under a baldachin on the south side;
+                 the window in the east wall looks across the carpet where Ganondorf kneels; a starred blue vault
+  Processional   x -1100..-820  z  460..1300  a ribbed barrel vault, kings in stone, steps up to the throne room;
+                 doors west to the chapel and the tower passage, east to the guard hall
+  Chapel         x -1650..-1100 z  460..960   pews, an altar on a dais, the Sages' medallions as rose windows
+  Tower          round, centre (-1480, 1170), r 170: a newel (spiral) stair from the tower passage (x -1330..-1100,
+                 z 1100..1240) up to the royal apartments
+  Great hall     x -1340..-580  z 1300..2200  a medieval hall: dais and high tables (north), long tables, a great
+                 fireplace (west), a hammerbeam roof, a carved screen with the minstrels' gallery over it (south)
+  Vestibule      x -1100..-820  z 2200..2360  the front doors (south)
+  Guard hall     x  -820..-260  z  700..1240  bunks, a table, spears, a fireplace
+  Cloister       x  -580..0     z 1240..2300  after the Alhambra's Court of the Lions: arcaded walks round a garth,
+                 a fountain ringed with stone lions, four rills, sunken beds with trees, a glass roof
+  Library        x -1900..-1340 z 1340..2100  two storeys of shelves, an upper gallery, reading tables, a globe
+  Upstairs (y 440): presence chamber x -1600..-1100 z 760..1000; the King's bedchamber x -1400..-1100 z 460..760;
+                 the Princess's bedchamber x -1900..-1400 z 460..760; a dressing room x -1900..-1600 z 760..1000
 
 Lit like the Temple of Time (LitBuilder): lamps, chandeliers and windows baked into the vertex colours over a bright
 ambient, two passes (the first finds the lights). Windows carry the Temple of Time's sunbeam (Demo_Kankyo light plane,
@@ -38,7 +42,11 @@ THRONE_FLOOR = 84  # the courtyard's height: the room Zelda's window looks into
 TOT = materials('tokinoma')
 NAKA = materials('nakaniwa')
 SPOT15 = materials('spot15')
-ALL = {**TOT, **NAKA, **SPOT15}
+TAKARA = materials('takaraya')      # the Treasure Chest Shop: dark wood planks
+MAHOU = materials('mahouya')        # the Potion Shop: wood, red and blue wallpapers, red cloth
+SOUKO = materials('souko')          # Lon Lon's storehouse: light wood, pale stone
+KENJYA = materials('kenjyanoma')    # the Chamber of Sages: the Sages' medallions
+ALL = {**TOT, **NAKA, **SPOT15, **TAKARA, **MAHOU, **SOUKO, **KENJYA}
 
 
 def tex(name):
@@ -81,6 +89,21 @@ MAT = {
     'grass': tex('spot15_sceneTex_00CA00'),       # tufts of grass (cut out)
     'water': tex('nakaniwa_room_0Tex_0166C0'),    # the courtyard's water (translucent, animated)
     'ivy': tex('spot15_sceneTex_012400'),         # the castle wall's ivy (cut out)
+    # wood, cloth, wallpaper and stone from the game's interiors
+    'wood_planks': tex('takaraya_room_0Tex_004BE0'),   # dark plank floor
+    'wood_dark': tex('mahouya_sceneTex_009A20'),       # dark timber (beams, tables, the screen)
+    'wood_light': tex('souko_sceneTex_005C10'),        # light timber (roofs, ceilings)
+    'stone_grey': tex('souko_sceneTex_005410'),        # pale dressed stone
+    'cloth_red': tex('mahouya_sceneTex_009220'),       # red cloth (hangings, the cloth of state)
+    'cloth_blue': tex('nakaniwa_room_0Tex_011618'),    # blue cloth
+    'wallpaper_red': tex('mahouya_sceneTex_007A20'),   # red-flowered wallpaper
+    'wallpaper_blue': tex('mahouya_sceneTex_002A20'),  # blue-flowered wallpaper
+    'medal_light': tex('kenjyanoma_room_0Tex_008618'),
+    'medal_forest': tex('kenjyanoma_room_0Tex_006618'),
+    'medal_fire': tex('kenjyanoma_room_0Tex_004618'),
+    'medal_water': tex('kenjyanoma_room_0Tex_00B618'),
+    'medal_shadow': tex('kenjyanoma_room_0Tex_002618'),
+    'medal_spirit': tex('kenjyanoma_room_0Tex_007618'),
 }
 # World units per texel, per material (how big the texture is on the surface)
 DENSITY = {'carpet_red': 2.2, 'carpet_blue': 2.2, 'portrait1': 3.0, 'portrait2': 3.0, 'portrait3': 3.0,
@@ -833,22 +856,349 @@ def ivy(B, wall, x, z, y0, y1, w):
              uv=[(0.5, (y1 - y0) / 2.5), (w / 2.5, (y1 - y0) / 2.5), (w / 2.5, 0.5), (0.5, 0.5)])
 
 
+def col_quad(B, pts, surface='floor'):
+    """Collision only (nothing drawn): a quad, turned so it faces up (floors, ramps) or as given (walls)."""
+    p = np.array(pts, float)
+    n = np.cross(p[1] - p[0], p[2] - p[0])
+    if surface != 'wall' and n[1] < 0:
+        pts = list(pts)[::-1]
+    idx = [B.cv(q) for q in pts]
+    B.col_polys.append((SURF[surface], idx[0], idx[1], idx[2], 0, 0))
+    B.col_polys.append((SURF[surface], idx[0], idx[2], idx[3], 0, 0))
+
+
+def ring_wall(B, mat, cx, cz, r, y0, y1, n=24, doors=(), color=(255, 255, 255)):
+    """A round tower's inner wall (facing in, solid), with doorways: doors = [(angle, half_width_angle, y0, y1)]."""
+    for i in range(n):
+        a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+        am = (a0 + a1) / 2
+        cut = None
+        for (da, hw, dy0, dy1) in doors:
+            d = (am - da + math.pi) % (2 * math.pi) - math.pi
+            if abs(d) < hw:
+                cut = (dy0, dy1)
+        spans = [(y0, y1)] if cut is None else [s for s in ((y0, cut[0]), (cut[1], y1)) if s[1] - s[0] > 1]
+        for (ya, yb) in spans:
+            p = [(cx + r * math.cos(a0), ya, cz + r * math.sin(a0)), (cx + r * math.cos(a1), ya, cz + r * math.sin(a1)),
+                 (cx + r * math.cos(a1), yb, cz + r * math.sin(a1)), (cx + r * math.cos(a0), yb, cz + r * math.sin(a0))]
+            oriented(B, mat, p, (-math.cos(am), 0, -math.sin(am)), color=color, collide=SURF['wall'],
+                     uv=[(0, (yb - ya) / 2.0), (2 * math.pi * r / n / 2.0, (yb - ya) / 2.0), (2 * math.pi * r / n / 2.0, 0),
+                         (0, 0)])
+
+
+def spiral_stair(B, light, cx, cz, r_in, r_out, y0, y1, a0, turns, per_turn=22, tread='marble', riser=TRIM,
+                 under=(205, 198, 188)):
+    """A newel stair (the spiral stair of a castle tower): wedge treads winding up round a central newel post,
+    each with its riser and the stair's underside above the turn below; walked as a smooth helical ramp."""
+    n = max(4, int(turns * per_turn))
+    da = 2 * math.pi * turns / n
+    dh = (y1 - y0) / n
+    for i in range(n):
+        a, b = a0 + i * da, a0 + (i + 1) * da
+        y = y0 + (i + 1) * dh
+        ca, sa, cb, sb = math.cos(a), math.sin(a), math.cos(b), math.sin(b)
+        tre = [(cx + r_in * ca, y, cz + r_in * sa), (cx + r_out * ca, y, cz + r_out * sa),
+               (cx + r_out * cb, y, cz + r_out * sb), (cx + r_in * cb, y, cz + r_in * sb)]
+        oriented(B, tread, tre, (0, 1, 0))
+        ris = [(cx + r_in * ca, y - dh, cz + r_in * sa), (cx + r_out * ca, y - dh, cz + r_out * sa),
+               (cx + r_out * ca, y, cz + r_out * sa), (cx + r_in * ca, y, cz + r_in * sa)]
+        oriented(B, 'stone_band', ris, (sa, 0, -ca), color=riser)
+        # the stair's underside, a step's thickness below the tread (seen from the turn below)
+        if y - 40 > y0 + 10:
+            und = [(cx + r_in * ca, y - dh - 34, cz + r_in * sa), (cx + r_out * ca, y - dh - 34, cz + r_out * sa),
+                   (cx + r_out * cb, y - 34, cz + r_out * sb), (cx + r_in * cb, y - 34, cz + r_in * sb)]
+            oriented(B, 'brick_white', und, (0, -1, 0), color=under)
+        # the walking surface: a ramp from this step's foot to its top
+        col_quad(B, [(cx + r_in * ca, y - dh, cz + r_in * sa), (cx + r_out * ca, y - dh, cz + r_out * sa),
+                     (cx + r_out * cb, y, cz + r_out * sb), (cx + r_in * cb, y, cz + r_in * sb)])
+    # the newel post, all the way up, with a gilded band each turn
+    prism(B, 'pillar', cx, cz, r_in, y0, y1 + 260, 10, collide=True)
+    k = 0
+    while y0 + k * 256 < y1:
+        prism(B, 'stone_band', cx, cz, r_in + 4, y0 + k * 256 + 120, y0 + k * 256 + 132, 10, color=GOLD)
+        k += 1
+
+
+def barrel_vault(B, axis, x0, x1, z0, z1, spring, mat='ceiling', color=(236, 230, 222), n=10, ribs=0, rib=GOLD):
+    """A round barrel vault springing from the side walls at `spring` (axis: the vault runs along 'x' or 'z'),
+    with gilded transverse ribs every `ribs` units."""
+    if axis == 'z':
+        w = (x1 - x0) / 2
+        cxm = (x0 + x1) / 2
+        pts = [(cxm - w * math.cos(math.pi * i / n), spring + w * math.sin(math.pi * i / n)) for i in range(n + 1)]
+        for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
+            q = [(ua, ya, z0), (ub, yb, z0), (ub, yb, z1), (ua, ya, z1)]
+            oriented(B, mat, q, (cxm - (ua + ub) / 2, -(ya + yb) / 2 + spring - 1, 0), color=color)
+        if ribs:
+            zz = z0 + ribs
+            while zz < z1 - ribs / 2:
+                for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
+                    q = [(ua, ya - 1, zz - 6), (ub, yb - 1, zz - 6), (ub, yb - 1, zz + 6), (ua, ya - 1, zz + 6)]
+                    oriented(B, 'stone_band', q, (cxm - (ua + ub) / 2, -1, 0), color=rib)
+                zz += ribs
+        # the end walls' lunettes
+        for zz, f in ((z0, 1), (z1, -1)):
+            for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
+                oriented(B, 'brick_white', [(ua, spring, zz), (ub, spring, zz), (ub, yb, zz), (ua, ya, zz)], (0, 0, f),
+                         color=color)
+    else:
+        w = (z1 - z0) / 2
+        czm = (z0 + z1) / 2
+        pts = [(czm - w * math.cos(math.pi * i / n), spring + w * math.sin(math.pi * i / n)) for i in range(n + 1)]
+        for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
+            q = [(x0, ya, ua), (x0, yb, ub), (x1, yb, ub), (x1, ya, ua)]
+            oriented(B, mat, q, (0, -(ya + yb) / 2 + spring - 1, czm - (ua + ub) / 2), color=color)
+        if ribs:
+            xx = x0 + ribs
+            while xx < x1 - ribs / 2:
+                for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
+                    q = [(xx - 6, ya - 1, ua), (xx - 6, yb - 1, ub), (xx + 6, yb - 1, ub), (xx + 6, ya - 1, ua)]
+                    oriented(B, 'stone_band', q, (0, -1, czm - (ua + ub) / 2), color=rib)
+                xx += ribs
+        for xx, f in ((x0, 1), (x1, -1)):
+            for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
+                oriented(B, 'brick_white', [(xx, spring, ua), (xx, spring, ub), (xx, yb, ub), (xx, ya, ua)], (f, 0, 0),
+                         color=color)
+
+
+def arcade(B, axis, fixed, a, b, y0, h, bays, r=12, facing=1, roof=None, depth=110, mat='marble2', color=(245, 240, 230),
+           spandrel='brick_white2', sp_color=(250, 242, 225), paired=True):
+    """A row of slender columns carrying round arches (a cloister's or a colonnade's open side), the arches'
+    spandrels filled up to the walk's roof, the walk roofed back to the wall behind (depth, on the side `facing`
+    points away from... the walk lies on the -facing side of the arcade line). axis 'x': the arcade runs along z in
+    the plane x = fixed; 'z': along x in the plane z = fixed."""
+    bw = (b - a) / bays
+    top = y0 + h
+    spring = y0 + h - bw / 2 - 30
+    for i in range(bays + 1):
+        u = a + i * bw
+        offs = (-9, 9) if paired and 0 < i < bays else (0,)
+        for o in offs:
+            px, pz = (fixed, u + o) if axis == 'x' else (u + o, fixed)
+            prism(B, mat, px, pz, r, y0 + 18, spring, 8, color=color, collide=True)
+            prism(B, 'stone_band', px, pz, r + 6, y0, y0 + 18, 8, color=TRIM)
+            prism(B, 'stone_band', px, pz, r + 3, spring - 14, spring, 8, color=GOLD, r1=r + 8)
+    for i in range(bays):
+        u0, u1 = a + i * bw, a + (i + 1) * bw
+        for side in (1, -1):
+            arch_face(B, axis, fixed + side * 6 * (1 if axis == 'x' else 1), u0 + 12, u1 - 12, spring, top,
+                      spandrel, sp_color, side)
+    # the beam over the arches
+    if axis == 'x':
+        B.box('stone_band', fixed - 8, fixed + 8, top - 18, top, a, b, collide=False, color=TRIM)
+    else:
+        B.box('stone_band', a, b, top - 18, top, fixed - 8, fixed + 8, collide=False, color=TRIM)
+    if roof is not None:
+        # the walk's flat timber ceiling from the arcade back to the wall
+        if axis == 'x':
+            xa, xb = (fixed - facing * depth, fixed) if facing > 0 else (fixed, fixed - facing * depth)
+            oriented(B, 'wood_light', [(xa, top, a), (xb, top, a), (xb, top, b), (xa, top, b)], (0, -1, 0), color=roof)
+        else:
+            za, zb = (fixed - facing * depth, fixed) if facing > 0 else (fixed, fixed - facing * depth)
+            oriented(B, 'wood_light', [(a, top, za), (b, top, za), (b, top, zb), (a, top, zb)], (0, -1, 0), color=roof)
+
+
+def arch_face(B, axis, plane, u0, u1, spring, top, mat, color, side):
+    """The wall above a round arch (u0..u1, springing at `spring`) up to `top`, on one face (side +1/-1)."""
+    r = (u1 - u0) / 2
+    uc = (u0 + u1) / 2
+    n = 8
+    pts = [(uc - r * math.cos(math.pi * i / n), spring + r * math.sin(math.pi * i / n)) for i in range(n + 1)]
+    nrm = (side, 0, 0) if axis == 'x' else (0, 0, side)
+    for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
+        if axis == 'x':
+            q = [(plane, ya, ua), (plane, yb, ub), (plane, top, ub), (plane, top, ua)]
+        else:
+            q = [(ua, ya, plane), (ub, yb, plane), (ub, top, plane), (ua, top, plane)]
+        oriented(B, mat, q, nrm, color=color)
+        # a gilded archivolt round the arch
+        k = 7
+        ca = ((ua - uc) / r, (ya - spring) / r)
+        cb = ((ub - uc) / r, (yb - spring) / r)
+        if axis == 'x':
+            q = [(plane + side, ya, ua), (plane + side, yb, ub), (plane + side, yb + cb[1] * k, ub + cb[0] * k),
+                 (plane + side, ya + ca[1] * k, ua + ca[0] * k)]
+        else:
+            q = [(ua, ya, plane + side), (ub, yb, plane + side), (ub + cb[0] * k, yb + cb[1] * k, plane + side),
+                 (ua + ca[0] * k, ya + ca[1] * k, plane + side)]
+        oriented(B, 'stone_band', q, nrm, color=GOLD)
+
+
+def fireplace(B, light, wall, x, z, y, w=180, h=170, hood=True):
+    """A great stone fireplace against a wall: hearth, jambs, a carved mantel, a hood up to the ceiling and a fire."""
+    inward = {'W': (1, 0), 'E': (-1, 0), 'N': (0, 1), 'S': (0, -1)}[wall]
+    along = (-inward[1], inward[0])
+    def bx(u0, u1, d0, d1, ya, yb, mats, color=(235, 228, 216), collide=True):
+        xs = [x + along[0] * u0 + inward[0] * d0, x + along[0] * u1 + inward[0] * d1]
+        zs = [z + along[1] * u0 + inward[1] * d0, z + along[1] * u1 + inward[1] * d1]
+        B.box(mats, min(xs), max(xs), ya, yb, min(zs), max(zs), collide=collide, color=color)
+    bx(-w / 2 - 30, w / 2 + 30, 0, 70, y, y + 6, ('marble2', 'stone_band'))            # hearth stone
+    for s in (-1, 1):                                                                 # jambs
+        bx(s * w / 2, s * (w / 2 + 28), 0, 46, y, y + h, ('marble2', 'marble2'))
+    bx(-w / 2 - 40, w / 2 + 40, 0, 56, y + h, y + h + 26, ('marble', 'stone_band'), color=TRIM)   # mantel
+    bx(-w / 2 - 34, w / 2 + 34, 0, 50, y + h + 26, y + h + 34, 'stone_band', color=GOLD, collide=False)
+    bx(-w / 2, w / 2, 0, 4, y, y + h, 'brick_court', color=(60, 45, 40), collide=False)        # the sooty back
+    if hood:
+        bx(-w / 2 - 20, w / 2 + 20, 0, 40, y + h + 34, y + h + 220, ('marble2', 'brick_white2'), color=(238, 232, 222),
+           collide=False)
+    # the fire: glowing logs and flames
+    for i, u in enumerate((-40, 0, 40)):
+        fx, fz = x + along[0] * u + inward[0] * 26, z + along[1] * u + inward[1] * 26
+        prism(B, 'wood_dark', fx, fz, 8, y + 6, y + 14, 6, color=(110, 60, 40))
+        cross(B, 'lattice', fx, fz, y + 10, 50, 60 + 15 * (i % 2), 16, 16, color=(255, 150, 60))
+    light((x + inward[0] * 80, y + 70, z + inward[1] * 80), 520, 0.85, (1.0, 0.6, 0.3))
+
+
+def chandelier(B, light, x, z, top, drop=160, r=70, arms=8, inten=0.45, radius=620):
+    """A gilded ring chandelier hung on a chain, candles round its rim."""
+    y = top - drop
+    prism(B, 'stone_band', x, z, 3, y + 20, top, 4, color=GOLD)
+    tube(B, 'stone_band', x, z, r, y, y + 10, 16, color=GOLD)
+    tube(B, 'stone_band', x, z, r - 6, y, y + 10, 16, color=GOLD, inward=True)
+    prism(B, 'stone_band', x, z, 14, y - 16, y + 20, 8, color=GOLD, r1=6)
+    for i in range(arms):
+        a = 2 * math.pi * i / arms
+        cxx, czz = x + r * math.cos(a), z + r * math.sin(a)
+        prism(B, 'plaster', cxx, czz, 3, y + 10, y + 28, 6, color=(250, 245, 230))
+        prism(B, 'lattice', cxx, czz, 2.5, y + 28, y + 36, 4, color=(255, 210, 120), r1=0.5)
+    light((x, y - 20, z), radius, inten, LAMP)
+
+
+def long_table(B, x0, x1, z0, z1, y, benches=True, cloth=None):
+    """A long trestle table (along the longer side) with benches either side."""
+    table(B, x0, x1, z0, z1, y, h=64, top='wood_dark' if cloth is None else cloth,
+          color=WOOD if cloth is None else (245, 240, 230))
+    if benches:
+        if x1 - x0 > z1 - z0:
+            for za, zb in ((z0 - 46, z0 - 16), (z1 + 16, z1 + 46)):
+                B.box(('wood_dark', 'stone_band'), x0 + 10, x1 - 10, y, y + 36, za, zb, color=WOOD)
+        else:
+            for xa, xb in ((x0 - 46, x0 - 16), (x1 + 16, x1 + 46)):
+                B.box(('wood_dark', 'stone_band'), xa, xb, y, y + 36, z0 + 10, z1 - 10, color=WOOD)
+
+
+def bookcase(B, wall, u0, u1, fixed, y, h=260, depth=40):
+    """Bookshelves standing against a wall from u0 to u1 (cut into cases, with a cornice)."""
+    step = 120
+    u = u0
+    while u < u1 - 20:
+        ub = min(u + step - 6, u1)
+        if wall in 'WE':
+            s = 1 if wall == 'W' else -1
+            xa, xb = sorted((fixed, fixed + s * depth))
+            B.box(('stone_band', 'shelves'), xa, xb, y, y + h, u, ub, color=(225, 205, 180))
+            B.box('stone_band', xa - 2, xb + 2, y + h, y + h + 12, u - 2, ub + 2, collide=False, color=WOOD)
+        else:
+            s = 1 if wall == 'N' else -1
+            za, zb = sorted((fixed, fixed + s * depth))
+            B.box(('stone_band', 'shelves'), u, ub, y, y + h, za, zb, color=(225, 205, 180))
+            B.box('stone_band', u - 2, ub + 2, y + h, y + h + 12, za - 2, zb + 2, collide=False, color=WOOD)
+        u += step
+
+
+def pew(B, x0, x1, z, y, face='W'):
+    """A church pew (a bench with a back), running along z, facing -x ('W') or +x."""
+    s = -1 if face == 'W' else 1
+    B.box(('wood_dark', 'stone_band'), x0, x1, y + 30, y + 38, z - 40, z + 40, color=WOOD)
+    bx = x1 - 4 if face == 'W' else x0
+    B.box('wood_dark', bx, bx + 6, y + 38, y + 96, z - 40, z + 40, collide=False, color=WOOD)
+    for zz in (z - 40, z + 34):
+        B.box('stone_band', x0, x1, y, y + 38, zz, zz + 6, color=WOOD)
+
+
+def truss(B, x0, x1, z, top, rise=120, color=(120, 85, 60)):
+    """A hammerbeam roof truss across a hall (x0..x1 at z): a tie, hammer beams on curved braces, a collar and
+    the rafters up to the ridge."""
+    t = 9
+    cx = (x0 + x1) / 2
+    ridge = top + rise
+    w = x1 - x0
+    # hammer beams out from each wall, braced from below
+    for s, xw in ((1, x0), (-1, x1)):
+        hb = xw + s * w * 0.18
+        B.box('wood_dark', min(xw, hb), max(xw, hb), top - 26, top - 8, z - t, z + t, collide=False, color=color)
+        for k in range(4):  # the brace, in short straight pieces
+            a0, a1 = math.pi * k / 8, math.pi * (k + 1) / 8
+            p0 = (xw + s * w * 0.18 * (1 - math.cos(a0)), top - 26 - 90 * (1 - math.sin(a0)))
+            p1 = (xw + s * w * 0.18 * (1 - math.cos(a1)), top - 26 - 90 * (1 - math.sin(a1)))
+            for dz in (-t, t):
+                q = [(p0[0], p0[1] - 8, z + dz), (p1[0], p1[1] - 8, z + dz), (p1[0], p1[1] + 8, z + dz),
+                     (p0[0], p0[1] + 8, z + dz)]
+                oriented(B, 'wood_dark', q, (0, 0, dz), color=color)
+        # a gilded angel's boss on the hammer beam's end
+        prism(B, 'stone_band', hb, z, 12, top - 40, top - 8, 8, color=GOLD, r1=6)
+        # the rafter from the wall top to the ridge
+        q = [(xw, top - 8, z - t), (cx, ridge, z - t), (cx, ridge, z + t), (xw, top - 8, z + t)]
+        oriented(B, 'wood_dark', q, (0, -1, 0), color=color)
+    B.box('wood_dark', x0 + w * 0.3, x1 - w * 0.3, top + rise * 0.55 - 9, top + rise * 0.55 + 9, z - t, z + t,
+          collide=False, color=color)   # the collar beam
+
+
+def pitched_roof(B, x0, x1, z0, z1, top, rise, mat='wood_light', color=(170, 135, 105)):
+    """A timber roof pitched along z (the ridge over the middle of x0..x1), seen from inside, with gable ends."""
+    cx = (x0 + x1) / 2
+    ridge = top + rise
+    oriented(B, mat, [(x0, top, z0), (cx, ridge, z0), (cx, ridge, z1), (x0, top, z1)], (1, -1, 0), color=color)
+    oriented(B, mat, [(x1, top, z0), (cx, ridge, z0), (cx, ridge, z1), (x1, top, z1)], (-1, -1, 0), color=color)
+    for zz, f in ((z0, 1), (z1, -1)):
+        oriented(B, 'brick_white2', [(x0, top, zz), (x1, top, zz), (cx, ridge, zz)], (0, 0, f), color=(232, 224, 210))
+    # purlins along the roof
+    for k in (0.33, 0.66):
+        for s in (-1, 1):
+            xx = cx + s * (x1 - x0) / 2 * (1 - k)
+            yy = top + rise * k
+            B.box('wood_dark', xx - 6, xx + 6, yy - 10, yy, z0, z1, collide=False, color=(110, 78, 55))
+
+
+def channel(B, W, x0, x1, z0, z1, y):
+    """A narrow marble water channel set in the floor (the Court of the Lions' rills)."""
+    B.box(('marble', 'marble2'), x0 - 8, x1 + 8, y, y + 6, z0 - 8, z1 + 8, collide=False, color=(240, 236, 228))
+    B.quad('tile_court', [(x0, y + 6.5, z1), (x1, y + 6.5, z1), (x1, y + 6.5, z0), (x0, y + 6.5, z0)],
+           color=(110, 150, 175))
+    water(W, x0, x1, z0, z1, y + 8)
+
+
+def roundel(B, mat, wall, x, z, yc, r=60, color=(255, 255, 255)):
+    """A round stained-glass window (a rose): one of the Sages' medallions, in a gilded ring."""
+    inward = np.array({'W': (1, 0, 0), 'E': (-1, 0, 0), 'N': (0, 0, 1), 'S': (0, 0, -1)}[wall], float)
+    along = np.array([-inward[2], 0, inward[0]])
+    def P(u, y, d):
+        return tuple(np.array([x, 0, z]) + along * u + inward * d + np.array([0, y, 0]))
+    # the medallion textures are half-discs (64x32): the top half, then the same mirrored for the bottom
+    oriented(B, mat, [P(-r, yc, 3), P(r, yc, 3), P(r, yc + r, 3), P(-r, yc + r, 3)], inward,
+             uv=[(0, 32), (64, 32), (64, 0), (0, 0)], color=color, light=False)
+    oriented(B, mat, [P(-r, yc - r, 3), P(r, yc - r, 3), P(r, yc, 3), P(-r, yc, 3)], inward,
+             uv=[(0, 0), (64, 0), (64, 32), (0, 32)], color=color, light=False)
+    n = 16
+    for i in range(n):
+        a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+        q = [P((r + 2) * math.cos(a0), yc + (r + 2) * math.sin(a0), 4), P((r + 2) * math.cos(a1), yc + (r + 2) * math.sin(a1), 4),
+             P((r + 12) * math.cos(a1), yc + (r + 12) * math.sin(a1), 4), P((r + 12) * math.cos(a0), yc + (r + 12) * math.sin(a0), 4)]
+        oriented(B, 'stone_band', q, inward, color=GOLD)
+
+
 def build(fixed_lights=None):
-    lights = []   # collected on the first pass, given to the builder on the second (the corners are lit as built)
+    """The castle, redone (14 Nov 2026) after real castles: a medieval great hall with a screens passage, minstrels'
+    gallery, dais, hammerbeam roof and fireplace; a vaulted processional gallery up to the throne room; a chapel
+    with rose windows; a guard hall; a library with an upper gallery; a newel (spiral) stair in a round tower to the
+    royal apartments (presence chamber, the King's and the Princess's bedchambers, a dressing room); and a cloister
+    garden after the Alhambra's Court of the Lions (arcaded walks, a fountain, four rills, sunken beds)."""
+    lights = []
     beams = []
-    B = LitBuilder(fixed_lights if fixed_lights is not None else lights, height=620.0)
-    B.AMBIENT = 0.66
-    W = Builder()  # the water, drawn translucent
+    B = LitBuilder(fixed_lights if fixed_lights is not None else lights, height=640.0)
+    B.AMBIENT = 0.62
+    W = Builder()
     F = FLOOR
+    T = THRONE_FLOOR
+    UP = 440   # the royal apartments' floor
 
     def light(pos, radius, inten, tint=WARM):
         lights.append((pos, radius, inten, tint))
 
-    def win(wall, pos, y0, scale=CASTLE_BEAM):
-        window(B, lights, beams, wall, pos, y0, scale, floor=FLOOR)
+    def win(wall, pos, y0, scale=CASTLE_BEAM, floor=FLOOR):
+        window(B, lights, beams, wall, pos, y0, scale, floor=floor)
 
     def sconce(x, z, y, wall):
-        # a gilded wall lamp, its glow on the wall and the floor below
         ix, iz = {'W': (1, 0), 'E': (-1, 0), 'N': (0, 1), 'S': (0, -1)}[wall]
         B.box('stone_band', x - 8 + ix * 8, x + 8 + ix * 8, y - 14, y + 14, z - 8 + iz * 8, z + 8 + iz * 8,
               collide=False, color=GOLD)
@@ -856,380 +1206,461 @@ def build(fixed_lights=None):
               collide=False, color=(255, 230, 160))
         light((x + ix * 40, y, z + iz * 40), 340, 0.6, LAMP)
 
-    # ---- Throne room ----
-    # Laid out as the courtyard shows it through Zelda's window: its floor at the courtyard's own height (y 84, the
-    # little room set behind the window), the King's throne on the south side, so that from the window Ganondorf is
-    # seen in profile kneeling before him on the carpet (where the courtyard's cutscene kneels him, x -891 z 140),
-    # and the guards along the back (west) wall facing the window.
-    T = THRONE_FLOOR
+    def portrait(wall, fixed, u, y, m, w=70, h=70):
+        if wall in 'WE':
+            s = 1 if wall == 'W' else -1
+            B.box('stone_band', min(fixed, fixed + s * 6), max(fixed, fixed + s * 6), y - 6, y + h + 6, u - w / 2 - 6,
+                  u + w / 2 + 6, collide=False, color=GOLD)
+            q = [(fixed + s * 7, y, u - w / 2), (fixed + s * 7, y, u + w / 2), (fixed + s * 7, y + h, u + w / 2),
+                 (fixed + s * 7, y + h, u - w / 2)]
+            oriented(B, m, q, (s, 0, 0), uv=[(0, 16), (16, 16), (16, 0), (0, 0)] if s < 0 else [(16, 16), (0, 16), (0, 0), (16, 0)],
+                     light=False)
+        else:
+            s = 1 if wall == 'N' else -1
+            B.box('stone_band', u - w / 2 - 6, u + w / 2 + 6, y - 6, y + h + 6, min(fixed, fixed + s * 6),
+                  max(fixed, fixed + s * 6), collide=False, color=GOLD)
+            q = [(u - w / 2, y, fixed + s * 7), (u + w / 2, y, fixed + s * 7), (u + w / 2, y + h, fixed + s * 7),
+                 (u - w / 2, y + h, fixed + s * 7)]
+            oriented(B, m, q, (0, 0, s), uv=[(0, 16), (16, 16), (16, 0), (0, 0)] if s > 0 else [(16, 16), (0, 16), (0, 0), (16, 0)],
+                     light=False)
+
+    # ================= Throne room (as before: the courtyard window looks into it) =================
     x0, x1, z0, z1, top = -1150, -575, -460, 460, 540
     B.floor('marble_check', x0, x1, z0, z1, y=T)
-    B.ceiling('ceiling', x0, x1, z0, z1, top)
-    # The window onto the courtyard (east wall), exactly where the courtyard's window tunnel ends
+    rug(B, -1120, -620, -420, 420, T, mat='carpet_blue', border=GOLD)
+    cove_ceiling(B, x0, x1, z0, z1, top, c=70, color=(60, 70, 140), band=GOLD)   # a starry blue vault
+    for i in range(40):  # gilded stars on the vault
+        sx = -1080 + (i * 137) % 440
+        sz = -390 + (i * 211) % 780
+        disc(B, 'stone_band', sx, sz, 7, top + 69, 5, color=GOLD, up=False, light=False)
     B.wall('brick_white', 'x', x1, z0, z1, T, top, -1, openings=[(-20, 20, 113, 198)])
     B.wall('brick_white', 'x', x0, z0, z1, T, top, +1)
     B.wall('brick_white', 'z', z0, x0, x1, T, top, +1)
     B.wall('brick_white', 'z', z1, x0, x1, T, top, -1, openings=[(-1100, -820, T, T + 300)])
-    # A stone band around the walls at the top
-    for zz, f in ((z0 + 1, 1), (z1 - 1, -1)):
-        B.wall('stone_band', 'z', zz, x0, x1, top - 40, top - 10, f, collide=False)
-    # Two rows of pillars along the carpet, clear of the line of sight from the window
     for xx, zs in ((-1060, (-300, -100, 100, 300)), (-690, (-300, 300))):
         for zz in zs:
             B.pillar(xx, zz, 28, T, top)
-    # The dais and the throne on the south side, facing north up the carpet
     tx = -900
     for i, (dx, dz) in enumerate(((210, 120), (170, 90), (130, 60))):
         B.box(('marble', 'stone_band'), tx - dx, tx + dx, T, T + 15 * (i + 1), z0, z0 + dz)
     ty = T + 45
-    B.box(('carpet_red', 'stone_band'), tx - 40, tx + 40, ty, ty + 40, -440, -380)       # seat
-    B.box(('stone_band', 'marble2'), tx - 55, tx + 55, ty, ty + 200, -460, -440)          # back
-    B.box(('stone_band', 'stone_band'), tx - 30, tx + 30, ty + 200, ty + 230, -462, -440, collide=False)  # crest
-    B.box(('stone_band', 'marble2'), tx - 60, tx - 40, ty, ty + 70, -440, -380)           # arms
+    B.box(('carpet_red', 'stone_band'), tx - 40, tx + 40, ty, ty + 40, -440, -380)
+    B.box(('stone_band', 'marble2'), tx - 55, tx + 55, ty, ty + 200, -460, -440)
+    B.box(('stone_band', 'stone_band'), tx - 30, tx + 30, ty + 200, ty + 230, -462, -440, collide=False)
+    B.box(('stone_band', 'marble2'), tx - 60, tx - 40, ty, ty + 70, -440, -380)
     B.box(('stone_band', 'marble2'), tx + 40, tx + 60, ty, ty + 70, -440, -380)
-    # The red carpet from the dais to the doors
-    B.quad('carpet_red', [(tx - 70, T + 1, z1), (tx + 70, T + 1, z1), (tx + 70, T + 1, z0 + 60), (tx - 70, T + 1, z0 + 60)],
+    # the throne's baldachin: four slim gilded columns and a canopy of state over it
+    for bx in (tx - 110, tx + 110):
+        for bz in (-450, -330):
+            prism(B, 'marble2', bx, bz, 8, T + 45, T + 330, 8, color=(245, 240, 230), collide=True)
+            prism(B, 'stone_band', bx, bz, 11, T + 318, T + 332, 8, color=GOLD)
+    B.box('carpet_red', tx - 122, tx + 122, T + 332, T + 356, -462, -318, collide=False, color=(150, 30, 45))
+    B.box('stone_band', tx - 126, tx + 126, T + 352, T + 362, -464, -316, collide=False, color=GOLD)
+    oriented(B, 'cloth_red', [(tx - 105, T + 60, -458), (tx + 105, T + 60, -458), (tx + 105, T + 330, -458),
+                              (tx - 105, T + 330, -458)], (0, 0, 1), uv=[(0, 64), (64, 64), (64, 0), (0, 0)])
+    roundel(B, 'medal_light', 'N', tx, -459, T + 290, r=34)
+    B.quad('carpet_red', [(tx - 70, T + 3, z1), (tx + 70, T + 3, z1), (tx + 70, T + 3, z0 + 60), (tx - 70, T + 3, z0 + 60)],
            uv=[(0, 0), (64, 0), (64, 390), (0, 390)])
-    # Stained glass along the back wall, lit from behind: what the window looks across at
     for zz in (-250, 0, 250):
         B.quad('lattice', [(x0 + 2, 200, zz + 50), (x0 + 2, 200, zz - 50), (x0 + 2, 420, zz - 50), (x0 + 2, 420, zz + 50)],
                uv=[(0, 64), (32, 64), (32, 0), (0, 0)], light=False, color=(255, 250, 220))
-    light((-860, 330, 0), 760, 0.4)
-    for zz in (-250, 0, 250):
-        light((x0 + 40, 310, zz), 300, 0.5, (0.9, 0.85, 1.0))  # the stained glass's glow
+        light((x0 + 40, 310, zz), 300, 0.5, (0.9, 0.85, 1.0))
+    chandelier(B, light, -860, 0, top + 70, drop=220, r=90, arms=10)
     potted(B, -1125, -430, y=T, big=True)
     potted(B, -680, -430, y=T, big=True)
     room_finish(B, x0, x1, z0, z1, T, top, doors={'E': [(-20, 20, 113, 198)], 'S': [(-1100, -820, T, T + 300)]},
-                skip=[('N', -980, -820)])
+                skip=[('N', -1030, -770)])
     arch_door(B, 'z', z1, -1100, -820, T, T + 300)
     for zz in (-125, 125):
         banner(B, 'W', x0, zz, T + 400, w=70, h=250)
     for xx in (tx - 250, tx + 250):
         candelabra(B, light, xx, z0 + 110, T)
-    # The window's reveal, through to the courtyard's own window tunnel at x -575
     B.quad('stone_court', [(-575, 113, 20), (-575, 113, -20), (-615, 113, -20), (-615, 113, 20)])
 
-    # ---- Grand hall ----
-    gx0, gx1, gz0, gz1, gtop = -1100, -820, 460, 1660, 400
-    B.floor('marble', gx0, gx1, gz0, gz1)
-    B.ceiling('ceiling', gx0, gx1, gz0, gz1, gtop)
-    B.wall('brick_court', 'x', gx0, gz0, gz1, F, gtop, +1, openings=[(900, 1100, F, F + 220)])
-    B.wall('brick_court', 'x', gx1, gz0, gz1, F, gtop, -1, openings=[(1150, 1350, F, F + 220)])
-    B.quad('carpet_blue', [(-1000, F + 1, gz1), (-920, F + 1, gz1), (-920, F + 1, gz0), (-1000, F + 1, gz0)],
-           uv=[(0, 545), (36, 545), (36, 0), (0, 0)])
-    # Steps up to the throne room, which stands at the courtyard's height
-    B.stairs('marble', gx0, gx1, gz0 + 200, 200, THRONE_FLOOR - FLOOR, 4, -1)
-    for zz in range(760, 1660, 200):
-        for xx in (-1070, -850):
-            B.pillar(xx, zz, 18, F, gtop)
-    light((-960, 300, 900), 600, 0.3)
-    light((-960, 300, 1450), 600, 0.3)
-    for zz in (700, 1560):
-        potted(B, -1070, zz, big=True)
-        potted(B, -850, zz, big=True)
-    sconce(gx0 + 2, 800, F + 240, 'W')
-    sconce(gx1 - 2, 1000, F + 240, 'E')
-    sconce(gx0 + 2, 1400, F + 240, 'W')
-    room_finish(B, gx0, gx1, gz0, gz1, F, gtop, walls='WE', pilasters=False,
-                doors={'W': [(900, 1100, F, F + 220)], 'E': [(1150, 1350, F, F + 220)]})
-    arch_door(B, 'x', gx0, 900, 1100, F, F + 220)
-    arch_door(B, 'x', gx1, 1150, 1350, F, F + 220)
-    for zz in (1260, 1460):
-        banner(B, 'W', gx0, zz, F + 340, w=56, h=200, mat='carpet_blue')
-    for zz in (860, 1060, 1460):
-        banner(B, 'E', gx1, zz, F + 340, w=56, h=200, mat='carpet_blue')
-    # the lintel over the throne room doors
-    B.wall('stone_band', 'z', gz0 + 1, gx0, gx1, THRONE_FLOOR + 300, THRONE_FLOOR + 330, 1, collide=False)
+    # ================= Processional gallery (to the throne room): ribbed vault, kings in stone =================
+    px0, px1, pz0, pz1, ptop = -1100, -820, 460, 1300, 400
+    B.floor('marble', px0, px1, pz0, pz1)
+    rug(B, -1010, -910, 660, 1300, F, mat='carpet_red')
+    B.wall('brick_white', 'x', px0, pz0, pz1, F, ptop, +1, openings=[(760, 920, F, F + 240), (1100, 1240, F, F + 220)])
+    B.wall('brick_white', 'z', pz1, px0, px1, F, ptop, -1, openings=[(-1060, -860, F, F + 260)])
+    B.wall('brick_white', 'x', px1, pz0, pz1, F, ptop, -1, openings=[(900, 1060, F, F + 240)])
+    barrel_vault(B, 'z', px0, px1, pz0, pz1, ptop, color=(236, 228, 214), ribs=120)
+    B.stairs('marble', px0, px1, pz0 + 200, 200, T - F, 4, -1)
+    for zz in (820, 1000, 1180):   # past kings in stone along the walls (statues), in shallow niches
+        if not (880 < zz < 1080):
+            statue(B, px1 - 40, zz, F, face='W')
+    for zz in (700, 1030):
+        sconce(px0 + 2, zz, F + 220, 'W')
+    sconce(px1 - 2, 760, F + 220, 'E')
+    sconce(px1 - 2, 1200, F + 220, 'E')
+    light((-960, 260, 980), 520, 0.25)
+    room_finish(B, px0, px1, pz0, pz1, F, ptop, walls='WE', pilasters=False,
+                doors={'W': [(760, 920, F, F + 240), (1100, 1240, F, F + 220)], 'E': [(900, 1060, F, F + 240)]},
+                skip=[('W', 460, 660), ('E', 460, 660)])
+    arch_door(B, 'x', px0, 760, 920, F, F + 240)
+    arch_door(B, 'x', px0, 1100, 1240, F, F + 220)
+    arch_door(B, 'x', px1, 900, 1060, F, F + 240)
+    B.wall('stone_band', 'z', pz0 + 1, px0, px1, T + 300, T + 330, 1, collide=False)
 
-    # ---- Library ----
-    lx0, lx1, lz0, lz1, ltop = -1700, -1100, 700, 1300, 380
-    B.floor('tile_court', lx0, lx1, lz0, lz1)
-    cove_ceiling(B, lx0, lx1, lz0, lz1, ltop, c=50, color=(240, 225, 200))
-    B.wall('plaster', 'x', lx0, lz0, lz1, F, ltop, +1, openings=[(900, 1100, F, F + 220)])  # to the long gallery
-    B.wall('plaster', 'x', lx1, lz0, lz1, F, ltop, -1, openings=[(900, 1100, F, F + 220)])
-    B.wall('plaster', 'z', lz0, lx0, lx1, F, ltop, +1)
-    B.wall('plaster', 'z', lz1, lx0, lx1, F, ltop, -1)
-    # Bookshelves round the walls, tables in the middle
-    for zz in range(730, 1290, 140):
-        if zz + 120 > 880 and zz < 1120:
-            continue  # (the door to the long gallery)
-        B.box(('stone_band', 'shelves'), lx0, lx0 + 40, F, F + 260, zz, zz + 120)
-    for xx in range(-1680, -1120, 140):
-        B.box(('stone_band', 'shelves'), xx, xx + 120, F, F + 260, lz0, lz0 + 40)
-        B.box(('stone_band', 'shelves'), xx, xx + 120, F, F + 260, lz1 - 40, lz1)
-    for xx in (-1520, -1320):
-        B.box(('marble2', 'stone_band'), xx - 60, xx + 60, F, F + 50, 940, 1060)
-        # a reading lamp on each table
-        B.box('stone_band', xx - 8, xx + 8, F + 50, F + 80, 992, 1008, collide=False, color=GOLD)
-        B.box('lattice', xx - 12, xx + 12, F + 80, F + 104, 988, 1012, collide=False, color=(255, 230, 160))
-        light((xx, F + 110, 1000), 380, 0.65, LAMP)
-    light((-1400, 260, 1000), 520, 0.25)
-    potted(B, -1140, 740, big=True)
-    potted(B, -1140, 1260, big=True)
-    room_finish(B, lx0, lx1, lz0, lz1, F, ltop, walls='E', pilasters=False, doors={'E': [(900, 1100, F, F + 220)]})
-    arch_door(B, 'x', lx0, 900, 1100, F, F + 220)
-    rug(B, -1600, -1240, 900, 1100, F, mat='carpet_red')
-    for xx in (-1520, -1320):
-        for zz, f in ((925, 'S'), (1075, 'N')):
-            chair(B, xx, zz, F, face=f)
+    # ================= Chapel (west of the processional): nave, pews, altar in an apse, rose windows =================
+    cx0, cx1, cz0, cz1, ctop = -1650, -1100, 460, 960, 340
+    B.floor('marble_check', cx0, cx1, cz0, cz1)
+    B.wall('brick_white2', 'x', cx1, cz0, cz1, F, ctop, -1, openings=[(760, 920, F, F + 240)], color=(246, 240, 228))
+    B.wall('brick_white2', 'x', cx0, cz0, cz1, F, ctop, +1, color=(246, 240, 228))
+    B.wall('brick_white2', 'z', cz0, cx0, cx1, F, ctop, +1, color=(246, 240, 228))
+    B.wall('brick_white2', 'z', cz1, cx0, cx1, F, ctop, -1, color=(246, 240, 228))
+    cove_ceiling(B, cx0, cx1, cz0, cz1, ctop, c=50, color=(70, 80, 150), band=GOLD)   # blue, starred
+    for i in range(30):
+        sx = cx0 + 70 + (i * 97) % (cx1 - cx0 - 140)
+        sz = cz0 + 70 + (i * 151) % (cz1 - cz0 - 140)
+        disc(B, 'stone_band', sx, sz, 6, ctop + 49, 5, color=GOLD, up=False, light=False)
+    # the altar on a dais at the west end, under the Sages' rose
+    B.box(('marble', 'stone_band'), cx0, cx0 + 160, F, F + 24, 560, 860)
+    B.box(('cloth_red', 'marble2'), cx0 + 30, cx0 + 90, F + 24, F + 94, 640, 780, color=(250, 245, 238))
+    B.box('stone_band', cx0 + 28, cx0 + 92, F + 94, F + 100, 638, 782, collide=False, color=GOLD)
+    for zz in (660, 760):
+        candelabra(B, light, cx0 + 60, zz, F + 100, h=40)
+    roundel(B, 'medal_light', 'W', cx0, 710, F + 236, r=64)
+    for xx, m in ((-1560, 'medal_forest'), (-1440, 'medal_fire'), (-1320, 'medal_water'), (-1200, 'medal_spirit')):
+        roundel(B, m, 'N', xx, cz0, F + 260, r=44)
+    for xx, m in ((-1500, 'medal_shadow'), (-1260, 'medal_light')):
+        roundel(B, m, 'S', xx, cz1, F + 260, r=44)
+    light((cx0 + 20, F + 270, 710), 380, 0.55, (1.0, 0.95, 0.75))
+    for xx in (-1440, -1200):
+        light((xx, F + 250, cz0 + 40), 300, 0.4, (0.8, 0.85, 1.0))
+    for xx in range(-1440, -1150, 90):   # pews either side of the aisle, facing the altar (west)
+        pew(B, xx - 30, xx + 30, 580, F)
+        pew(B, xx - 30, xx + 30, 840, F)
+    rug(B, -1450, -1110, 670, 750, F, mat='carpet_red')
+    room_finish(B, cx0, cx1, cz0, cz1, F, ctop, pilasters=False, rail=110,
+                doors={'E': [(760, 920, F, F + 240)], 'N': [(xx - 60, xx + 60, F + 200, F + 320) for xx in (-1560, -1440, -1320, -1200)],
+                       'S': [(xx - 60, xx + 60, F + 200, F + 320) for xx in (-1500, -1260)]}, skip=[('W', 560, 860)])
+    for xx in (-1580, -1150):
+        potted(B, xx, cz0 + 40, big=True)
 
-    # ---- Barracks ----
-    bx0, bx1, bz0, bz1, btop = -820, -260, 1000, 1500, 320
-    B.floor('stone_court', bx0, bx1, bz0, bz1)
-    cove_ceiling(B, bx0, bx1, bz0, bz1, btop, c=40, color=(225, 220, 215))
-    B.wall('brick_court', 'x', bx0, bz0, bz1, F, btop, +1, openings=[(1150, 1350, F, F + 220)])
-    B.wall('brick_court', 'x', bx1, bz0, bz1, F, btop, -1)
-    B.wall('brick_court', 'z', bz0, bx0, bx1, F, btop, +1)
-    B.wall('brick_court', 'z', bz1, bx0, bx1, F, btop, -1, openings=[(-450, -330, F, F + 220)])  # to the garden
-    light((-540, 240, 1250), 520, 0.3)
-    sconce(bx1 - 2, 1100, F + 200, 'E')
-    room_finish(B, bx0, bx1, bz0, bz1, F, btop, doors={'W': [(1150, 1350, F, F + 220)], 'S': [(-450, -330, F, F + 220)]},
-                skip=[('E', 1170, 1330)])
-    arch_door(B, 'z', bz1, -450, -330, F, F + 220)
-    banner(B, 'N', -540, bz0, F + 280, w=60, h=180)
-    for xx in (-700, -560, -420):
-        B.box(('carpet_blue', 'stone_band'), xx - 35, xx + 35, F, F + 30, bz0 + 20, bz0 + 150)   # bunks
-        B.box(('carpet_blue', 'stone_band'), xx - 35, xx + 35, F, F + 30, bz1 - 150, bz1 - 20)
-    B.box(('stone_band', 'brick_court'), bx1 - 50, bx1, F, F + 160, 1180, 1320)                  # weapon rack
+    # ================= Tower passage and the spiral stair =================
+    tx0, tx1, tz0, tz1, ttop = -1330, -1100, 1100, 1240, 300
+    B.floor('marble', tx0, tx1, tz0, tz1)
+    B.ceiling('ceiling', tx0, tx1, tz0, tz1, ttop, color=(220, 212, 200))
+    B.wall('brick_white', 'z', tz0, tx0, tx1, F, ttop, +1)
+    B.wall('brick_white', 'z', tz1, tx0, tx1, F, ttop, -1)
+    sconce(-1210, tz0 + 2, F + 200, 'N')
+    room_finish(B, tx0, tx1, tz0, tz1, F, ttop, walls='NS', pilasters=False)
+    TCX, TCZ, TR = -1480, 1170, 170
+    t_end = 3 * math.pi / 2 - 0.36 + 2 * math.pi       # the stair ends just short of the north door, one turn and
+    t_start = 0.36                                    # more up from the east door
+    turns = (t_end - t_start) / (2 * math.pi)
+    annulus(B, 'marble', TCX, TCZ, 1, TR, F, 28, collide=True)
+    ring_wall(B, 'stone_grey', TCX, TCZ, TR, F, UP + 300, 28,
+              doors=[(0.0, 0.42, F, F + 190), (3 * math.pi / 2, 0.42, UP, UP + 220)], color=(232, 226, 214))
+    spiral_stair(B, light, TCX, TCZ, 30, TR - 2, F, UP, t_start, turns)
+    # the top landing (the last part of a turn, flat, to the north door)
+    for k in range(6):
+        a, b = t_end + 0.9 * k / 6, t_end + 0.9 * (k + 1) / 6
+        q = [(TCX + 30 * math.cos(a), UP, TCZ + 30 * math.sin(a)), (TCX + TR * math.cos(a), UP, TCZ + TR * math.sin(a)),
+             (TCX + TR * math.cos(b), UP, TCZ + TR * math.sin(b)), (TCX + 30 * math.cos(b), UP, TCZ + 30 * math.sin(b))]
+        oriented(B, 'marble', q, (0, 1, 0))
+        col_quad(B, q)
+    disc(B, 'wood_light', TCX, TCZ, TR, UP + 300, 20, up=False, color=(170, 135, 105))
+    for a in (math.pi * 0.75, math.pi * 1.1, math.pi * 0.25):   # arrow-slit windows, lit
+        wx, wz = TCX + (TR - 3) * math.cos(a), TCZ + (TR - 3) * math.sin(a)
+        oriented(B, 'plaster', [(wx - 8 * math.sin(a), F + 150 + 120 * (a / math.pi), wz + 8 * math.cos(a)),
+                                (wx + 8 * math.sin(a), F + 150 + 120 * (a / math.pi), wz - 8 * math.cos(a)),
+                                (wx + 8 * math.sin(a), F + 260 + 120 * (a / math.pi), wz - 8 * math.cos(a)),
+                                (wx - 8 * math.sin(a), F + 260 + 120 * (a / math.pi), wz + 8 * math.cos(a))],
+                 (-math.cos(a), 0, -math.sin(a)), color=(255, 250, 230), light=False)
+        light((wx - 40 * math.cos(a), F + 200 + 120 * (a / math.pi), wz - 40 * math.sin(a)), 260, 0.5, WARM)
+    light((TCX, F + 120, TCZ), 300, 0.35, LAMP)
+    light((TCX, UP + 100, TCZ), 300, 0.35, LAMP)
 
-    # ---- Entrance hall ----
-    ex0, ex1, ez0, ez1, etop = -1400, -520, 1660, 2360, 560
-    B.floor('marble_check', ex0, ex1, ez0, ez1)
-    # the front doors' threshold carries the exit back out to the drawbridge
-    B.floor('marble_check', -1060, -860, ez1 - 40, ez1 - 2, y=F + 0.5, surface='exit')
-    cove_ceiling(B, ex0, ex1, ez0, ez1, etop, c=80)
-    B.wall('brick_white2', 'x', ex0, ez0, ez1, F, etop, +1)
-    B.wall('brick_white2', 'x', ex1, ez0, ez1, F, etop, -1, openings=[(1900, 2100, F, F + 260)])  # to the garden
-    B.wall('brick_white2', 'z', ez0, ex0, ex1, F, etop, +1,
-           openings=[(-1100, -820, F, F + 300), (-1400, -1200, F + 320, F + 520)])
-    B.wall('brick_white2', 'z', ez1, ex0, ex1, F, etop, -1, openings=[(-1060, -860, F, F + 240)])
-    # the great doors (shut, the way out is their threshold)
-    B.quad('window', [(-860, F, ez1 + 20), (-1060, F, ez1 + 20), (-1060, F + 240, ez1 + 20), (-860, F + 240, ez1 + 20)],
-           collide=SURF['wall'], color=(150, 110, 80))
-    B.floor('marble_check', -1060, -860, ez1, ez1 + 20, surface='exit')
-    B.quad('carpet_red', [(-1000, F + 1, ez1), (-920, F + 1, ez1), (-920, F + 1, ez0), (-1000, F + 1, ez0)],
-           uv=[(0, 320), (36, 320), (36, 0), (0, 0)])
-    for xx in (-1150, -770):
-        for zz in (1850, 2150):
-            B.pillar(xx, zz, 34, F, etop)
-    # a chandelier's glow over the middle of the hall, plants by the doors
-    light((-960, 380, 2010), 760, 0.4)
-    B.box('stone_band', -1000, -920, etop - 140, etop - 125, 1970, 2050, collide=False, color=GOLD)
-    B.box('stone_band', -964, -956, etop - 125, etop, 2006, 2014, collide=False, color=GOLD)
-    for xx in (-990, -930):
-        for zz in (1980, 2040):
-            B.box('lattice', xx - 6, xx + 6, etop - 125, etop - 105, zz - 6, zz + 6, collide=False, color=(255, 230, 160))
-    for x, z in ((-550, 1870), (-550, 2130), (-560, 1700)):
-        potted(B, x, z, big=True)
-    for xx in (-1185, -735):  # knights in stone either side of the front doors
-        statue(B, xx, 2305, F, face='N')
-    room_finish(B, ex0, ex1, ez0, ez1, F, etop, walls='N', pilasters=False,
-                doors={'N': [(-1100, -820, F, F + 300), (-1400, -1200, F + 300, F + 520)]})
-    room_finish(B, ex0, ex1, ez0, ez1, F, etop, walls='SE',
-                doors={'S': [(-1060, -860, F, F + 240)], 'E': [(1900, 2100, F, F + 260), (1760, 1800, F + 200, F + 280),
-                                                              (2220, 2260, F + 200, F + 280)]})
-    arch_door(B, 'z', ez0, -1100, -820, F, F + 300)
-    arch_door(B, 'x', ex1, 1900, 2100, F, F + 260)
-    arch_door(B, 'z', ez1, -1060, -860, F, F + 240)
-    for xx in (-1290, -630):
-        banner(B, 'S', xx, ez1, F + 440, w=80, h=280)
-    sconce(ex1 - 2, 1780, F + 240, 'E')
-    sconce(ex1 - 2, 2240, F + 240, 'E')
-    # The grand stair up the west side to the gallery (north)
-    B.stairs('marble', -1400, -1200, 2300, 600, 300, 15, -1)
-    B.railing(-1200, -1200, 2300, 1700, F, h=60)
-    # The gallery along the north wall
+    # ================= Great hall: screens passage, minstrels' gallery, dais, hammerbeam roof, fireplace =================
+    hx0, hx1, hz0, hz1, htop = -1340, -580, 1300, 2200, 520
+    B.floor('wood_planks', hx0, hx1, hz0, hz1)
+    B.wall('stone_grey', 'x', hx0, hz0, hz1, F, htop, +1, openings=[(1640, 1800, F, F + 240)], color=(236, 228, 214))
+    B.wall('stone_grey', 'x', hx1, hz0, hz1, F, htop, -1, openings=[(1680, 1840, F, F + 240)], color=(236, 228, 214))
+    B.wall('stone_grey', 'z', hz0, hx0, hx1, F, htop, +1, openings=[(-1060, -860, F, F + 260)], color=(236, 228, 214))
+    B.wall('stone_grey', 'z', hz1, hx0, hx1, F, htop, -1, openings=[(-1100, -820, F, F + 260)], color=(236, 228, 214))
+    pitched_roof(B, hx0, hx1, hz0, hz1, htop, 220)
+    for zz in range(hz0 + 120, hz1 - 60, 150):
+        truss(B, hx0, hx1, zz, htop, rise=220)
+    # the dais (high end, north): a step up, two high tables either side of the processional arch, the cloth of state
+    for a, b in ((hx0, -1060), (-860, hx1)):
+        B.box(('marble', 'stone_band'), a, b, F, F + 24, hz0, hz0 + 150)
+        col_quad(B, [(a, F + 24, hz0 + 150), (b, F + 24, hz0 + 150), (b, F, hz0 + 180), (a, F, hz0 + 180)])
+    for a, b in ((-1300, -1090), (-830, -620)):
+        long_table(B, a, b, hz0 + 50, hz0 + 110, F + 24, benches=False, cloth='plaster')
+        for xx in range(a + 25, b, 50):
+            chair(B, xx, hz0 + 30, F + 24, face='S')
+    for xx in (-1195, -725):
+        banner(B, 'N', xx, hz0, F + 430, w=140, h=300, mat='cloth_red')
+    # two long tables down the hall, benches either side, the aisle between
+    long_table(B, -1250, -1180, 1500, 1980, F)
+    long_table(B, -740, -670, 1500, 1980, F)
+    B.quad('carpet_red', [(-1000, F + 1, hz1), (-920, F + 1, hz1), (-920, F + 1, hz0 + 180), (-1000, F + 1, hz0 + 180)],
+           uv=[(0, 330), (36, 330), (36, 0), (0, 0)])
+    # the screens passage at the low end (south) under the minstrels' gallery: a carved screen with three openings
+    sz = hz1 - 150
     gy = F + 300
-    B.floor('marble', -1400, -700, ez0, ez0 + 110, y=gy)
-    B.quad('stone_band', [(-1200, gy - 20, ez0 + 110), (-700, gy - 20, ez0 + 110), (-700, gy, ez0 + 110),
-                          (-1200, gy, ez0 + 110)])
-    B.railing(-1200, -700, ez0 + 110, ez0 + 110, gy, h=60)
-    B.railing(-700, -700, ez0, ez0 + 110, gy, h=60)
+    for a, b in ((hx0, -1200), (-1100, -1040), (-880, -820), (-720, hx1)):
+        B.box(('wood_dark', 'wood_dark'), a, b, F, gy - 20, sz - 10, sz + 10, color=(150, 110, 80))
+    for a, b in ((-1200, -1100), (-1040, -880), (-820, -720)):
+        spring = gy - 30 - (b - a) / 2
+        arch_face(B, 'z', sz - 10.5, a, b, spring, gy - 20, 'wood_dark', (150, 110, 80), -1)
+        arch_face(B, 'z', sz + 10.5, a, b, spring, gy - 20, 'wood_dark', (150, 110, 80), 1)
+    B.floor('wood_planks', hx0, hx1, sz - 10, hz1, y=gy)
+    oriented(B, 'wood_planks', [(hx0, gy - 20, sz - 10), (hx1, gy - 20, sz - 10), (hx1, gy - 20, hz1), (hx0, gy - 20, hz1)],
+             (0, -1, 0), color=(150, 115, 85))
+    B.railing(hx0, hx1, sz - 10, sz - 10, gy, h=70, posts=24)
+    oriented(B, 'cloth_red', [(hx0 + 40, gy - 20, sz - 12), (hx1 - 40, gy - 20, sz - 12), (hx1 - 40, gy + 10, sz - 12),
+                              (hx0 + 40, gy + 10, sz - 12)], (0, 0, -1), uv=[(0, 8), (300, 8), (300, 0), (0, 0)])
+    for xx in (-1200, -960, -720):   # musicians' music stands up on the gallery
+        prism(B, 'stone_band', xx, hz1 - 70, 3, gy, gy + 90, 4, color=GOLD)
+        B.box('plaster', xx - 18, xx + 18, gy + 90, gy + 116, hz1 - 74, hz1 - 70, collide=False, color=(250, 245, 230))
+    # the great fireplace on the west wall
+    fireplace(B, light, 'W', hx0, 1600, F, w=200, h=180)
+    # the windows high in the east wall (onto the cloister), and two in the west
+    for zz in (1450, 2000):
+        win('E', (hx1, zz), 250, 0.36)
+    win('W', (hx0, 1950), 250, 0.36)
+    for zz, xx in ((1560, -1150), (1900, -1150), (1560, -770), (1900, -770)):
+        chandelier(B, light, xx, zz, htop + 60, drop=200, r=60, arms=8, inten=0.35, radius=520)
+    light((-960, 300, 1700), 760, 0.25)
+    for xx in (-1300, -620):
+        potted(B, xx, hz0 + 190, big=True)
+    statue(B, -1280, hz1 - 200, F, face='E')
+    statue(B, -640, hz1 - 200, F, face='W')
+    room_finish(B, hx0, hx1, hz0, hz1, F, htop, pilasters=False,
+                doors={'W': [(1640, 1800, F, F + 240), (1460, 1740, F, F + 420), (1890, 2010, F + 260, F + 500)],
+                       'E': [(1680, 1840, F, F + 240), (1390, 1510, F + 260, F + 500), (1940, 2060, F + 260, F + 500)],
+                       'N': [(-1060, -860, F, F + 260)], 'S': [(-1100, -820, F, F + 260)]},
+                skip=[('N', hx0, hx1)])
+    arch_door(B, 'x', hx0, 1640, 1800, F, F + 240)
+    arch_door(B, 'x', hx1, 1680, 1840, F, F + 240)
+    arch_door(B, 'z', hz0, -1060, -860, F, F + 260)
 
-    # ---- Royal rooms (upstairs) ----
-    rx0, rx1, rz0, rz1, rtop = -1700, -1100, 1300, 1660, gy + 300
-    B.floor('marble2', rx0, rx1, rz0, rz1, y=gy)
-    rug(B, rx0 + 60, rx1 - 60, rz0 + 40, rz1 - 40, gy, mat='carpet_red')
-    cove_ceiling(B, rx0, rx1, rz0, rz1, rtop, c=50, color=(240, 228, 232))
-    B.wall('plaster', 'x', rx0, rz0, rz1, gy, rtop, +1)
-    B.wall('plaster', 'x', rx1, rz0, rz1, gy, rtop, -1)
-    B.wall('plaster', 'z', rz0, rx0, rx1, gy, rtop, +1)
-    B.wall('plaster', 'z', rz1, rx0, rx1, gy, rtop, -1, openings=[(-1400, -1200, gy, gy + 200)])
-    # The royal portraits on the north wall
-    for i, xx in enumerate(range(-1640, -1140, 100)):
-        m = f'portrait{i + 1}'
-        B.quad(m, [(xx, gy + 110, rz0 + 2), (xx + 70, gy + 110, rz0 + 2), (xx + 70, gy + 180, rz0 + 2),
-                   (xx, gy + 180, rz0 + 2)], uv=[(0, 16), (16, 16), (16, 0), (0, 0)], light=False)
-    bed(B, -1660, -1530, 1316, 1490, gy, canopy=(120, 40, 110), blanket='carpet_red')
-    room_finish(B, rx0, rx1, rz0, rz1, gy, rtop, pilasters=False,
-                doors={'S': [(-1400, -1200, gy, gy + 200)], 'W': [(1515, 1605, gy + 60, gy + 640)],
-                       'N': [(-1650, -1120, gy + 100, gy + 190)]})
-    arch_door(B, 'z', rz1, -1400, -1200, gy, gy + 200)
-    candelabra(B, light, -1490, 1330, gy, h=130)
-    table(B, -1240, -1150, 1420, 1540, gy)
-    chair(B, -1270, 1480, gy, face='E')
-    win('W', (rx0, 1560), gy + 50, 0.36)
-    light((-1400, gy + 240, 1480), 520, 0.3)
-    potted(B, -1130, 1330, y=gy, big=True)
-    potted(B, -1130, 1630, y=gy)
+    # ================= Gatehouse vestibule (the front doors) =================
+    vx0, vx1, vz0, vz1, vtop = -1100, -820, 2200, 2360, 320
+    B.floor('marble_check', vx0, vx1, vz0, vz1)
+    B.floor('marble_check', -1060, -860, vz1 - 40, vz1 - 2, y=F + 0.5, surface='exit')
+    B.wall('stone_grey', 'x', vx0, vz0, vz1, F, vtop, +1, color=(236, 228, 214))
+    B.wall('stone_grey', 'x', vx1, vz0, vz1, F, vtop, -1, color=(236, 228, 214))
+    B.wall('stone_grey', 'z', vz1, vx0, vx1, F, vtop, -1, openings=[(-1060, -860, F, F + 240)], color=(236, 228, 214))
+    barrel_vault(B, 'z', vx0, vx1, vz0, vz1, vtop - 140 + 140, color=(230, 222, 208), ribs=80)
+    B.quad('window', [(-860, F, vz1 + 20), (-1060, F, vz1 + 20), (-1060, F + 240, vz1 + 20), (-860, F + 240, vz1 + 20)],
+           collide=SURF['wall'], color=(150, 110, 80))
+    B.floor('marble_check', -1060, -860, vz1, vz1 + 20, surface='exit')
+    arch_door(B, 'z', vz1, -1060, -860, F, F + 240)
+    for zz in (2240,):
+        sconce(vx0 + 2, zz + 40, F + 200, 'W')
+        sconce(vx1 - 2, zz + 40, F + 200, 'E')
+    room_finish(B, vx0, vx1, vz0, vz1, F, vtop, walls='WES', pilasters=False, doors={'S': [(-1060, -860, F, F + 240)]})
 
-    build_wings(B, W, F, light, win, sconce)
-    return B, W, beams, lights
+    # ================= Guard hall (east of the processional) =================
+    gx0, gx1, gz0, gz1, gtop = -820, -260, 700, 1240, 360
+    B.floor('stone_court', gx0, gx1, gz0, gz1)
+    B.wall('stone_grey', 'x', gx0, gz0, gz1, F, gtop, +1, openings=[(900, 1060, F, F + 240)], color=(225, 218, 206))
+    B.wall('stone_grey', 'x', gx1, gz0, gz1, F, gtop, -1, color=(225, 218, 206))
+    B.wall('stone_grey', 'z', gz0, gx0, gx1, F, gtop, +1, color=(225, 218, 206))
+    B.wall('stone_grey', 'z', gz1, gx0, gx1, F, gtop, -1, openings=[(-500, -380, F, F + 220)], color=(225, 218, 206))
+    barrel_vault(B, 'x', gx0, gx1, gz0, gz1, gtop - 120 + 120, color=(222, 214, 200), ribs=140, rib=TRIM)
+    fireplace(B, light, 'E', gx1, 970, F, w=150, h=150)
+    long_table(B, -680, -440, 930, 1010, F)
+    for xx in (-760, -640, -520, -400):   # bunks along the north wall
+        B.box(('cloth_blue', 'wood_dark'), xx - 40, xx + 40, F, F + 34, gz0 + 10, gz0 + 160, color=(235, 235, 240))
+    for k, xx in enumerate(range(-780, -540, 30)):
+        prism(B, 'stone_band', xx, gz1 - 20, 3, F, F + 220, 4, color=(150, 145, 140))
+        prism(B, 'stone_band', xx, gz1 - 20, 6, F + 220, F + 250, 4, color=(190, 190, 195), r1=0.5)
+    B.box('wood_dark', -790, -530, F + 140, F + 150, gz1 - 30, gz1 - 10, collide=False, color=WOOD)
+    for zz in (1090,):
+        statue(B, gx0 + 60, zz + 60, F, face='E')
+    banner(B, 'N', -540, gz0, F + 320, w=80, h=220)
+    sconce(gx0 + 2, 800, F + 220, 'W')
+    light((-540, 260, 970), 520, 0.25)
+    room_finish(B, gx0, gx1, gz0, gz1, F, gtop, pilasters=False,
+                doors={'W': [(900, 1060, F, F + 240)], 'S': [(-500, -380, F, F + 220)]}, skip=[('E', 860, 1080)])
+    arch_door(B, 'z', gz1, -500, -380, F, F + 220)
 
-
-def build_wings(B, W, F, light, win, sconce):
-    # ---- The garden court (east of the entrance hall, south of the barracks): a round two-tiered fountain on a
-    # paved plaza, clipped trees in round planters, ivy on the walls, a coved glass roof and tall sunlit windows ----
-    x0, x1, z0, z1, top = -520, 0, 1500, 2300, 600
-    WALL = (252, 242, 222)
-    fx, fz = -260, 1900
-    B.floor('tile_court', x0, x1, z0, z1)
-    annulus(B, 'stone_court', fx, fz, 128, 230, F + 0.6, 24)
-    annulus(B, 'stone_band', fx, fz, 230, 242, F + 0.6, 24, color=TRIM)
-    for a, b in (((x0, 1850), (fx - 236, 1950)), ((fx + 236, 1850), (x1, 1950))):   # paths west and east
-        B.quad('stone_court', [(a[0], F + 0.6, b[1]), (b[0], F + 0.6, b[1]), (b[0], F + 0.6, a[1]), (a[0], F + 0.6, a[1])])
-    for a, b in (((-330, z0), (-190, fz - 236)), ((-330, fz + 236), (-190, z1))):   # north and south
-        B.quad('stone_court', [(a[0], F + 0.6, b[1]), (b[0], F + 0.6, b[1]), (b[0], F + 0.6, a[1]), (a[0], F + 0.6, a[1])])
-    B.wall('brick_white2', 'x', x0, z0, z1, F, top, +1, openings=[(1900, 2100, F, F + 260)], color=WALL)
-    B.wall('brick_white2', 'x', x1, z0, z1, F, top, -1, color=WALL)
-    B.wall('brick_white2', 'z', z0, x0, x1, F, top, +1, openings=[(-450, -330, F, F + 220)], color=WALL)
-    B.wall('brick_white2', 'z', z1, x0, x1, F, top, -1, color=WALL)
-    yc = cove_ceiling(B, x0, x1, z0, z1, top, c=80, mat='brick_white2', color=WALL, centre='lattice',
+    # ================= The cloister garden (after the Court of the Lions) =================
+    ox0, ox1, oz0, oz1, otop = -580, 0, 1240, 2300, 620
+    WALK = 120
+    wt = F + 300    # the walks' roof
+    WALLC = (252, 242, 222)
+    B.floor('tile_court', ox0, ox1, oz0, oz1)
+    B.wall('brick_white2', 'x', ox0, oz0, oz1, F, otop, +1, openings=[(1680, 1840, F, F + 240)], color=WALLC)
+    B.wall('brick_white2', 'x', ox1, oz0, oz1, F, otop, -1, color=WALLC)
+    B.wall('brick_white2', 'z', oz0, ox0, ox1, F, otop, +1, openings=[(-500, -380, F, F + 220)], color=WALLC)
+    B.wall('brick_white2', 'z', oz1, ox0, ox1, F, otop, -1, color=WALLC)
+    yc = cove_ceiling(B, ox0, ox1, oz0, oz1, otop, c=70, mat='brick_white2', color=WALLC, centre='lattice',
                       centre_color=(255, 252, 236), centre_light=False)
-    for xx in range(x0 + 80 + 90, x1 - 80, 90):   # the iron ribs of the glass roof
-        B.box('stone_band', xx - 3, xx + 3, yc - 8, yc - 1, z0 + 80, z1 - 80, collide=False, color=IRON2)
-    for zz in range(z0 + 80 + 100, z1 - 80, 100):
-        B.box('stone_band', x0 + 80, x1 - 80, yc - 8, yc - 1, zz - 3, zz + 3, collide=False, color=IRON2)
-    light((fx, yc - 40, fz), 900, 0.3, (1.0, 0.98, 0.92))   # daylight through the glass
-    wins = {'E': [], 'S': []}
-    for zz in (1650, 1900, 2150):
-        win('E', (x1, zz), 270, 0.42)
-        wins['E'].append((zz - 60, zz + 60, 300, 560))
-    for xx in (-390, -130):
-        win('S', (xx, z1), 270, 0.42)
-        wins['S'].append((xx - 60, xx + 60, 300, 560))
-    room_finish(B, x0, x1, z0, z1, F, top, dado=(150, 140, 120),
-                doors={'W': [(1900, 2100, F, F + 260)], 'N': [(-450, -330, F, F + 220)], **wins},
-                skip=[('N', -515, -460), ('N', -320, -5)])
-    round_fountain(B, W, fx, fz, 120, F, light=light)
-    for a in range(10):
-        t = 2 * math.pi * (a + 0.5) / 10
-        cross(B, 'grass', fx + 250 * math.cos(t), fz + 250 * math.sin(t), F, 60, 30, 64, 32)
-    for tx in (-430, -90):
-        for tz in (1640, 2160):
-            round_planter(B, tx, tz, F, 64)
-            tree(B, tx, tz, F + 30, h=240, r=78)
-    hedge(B, -515, -460, 1505, 1550)
-    hedge(B, -320, -5, 1505, 1550)
-    for zz, f in ((1720, 'S'), (2080, 'N')):  # stone benches on the plaza's rim, facing the fountain
-        B.box(('marble2', 'stone_band'), -320, -200, F, F + 34, zz - 15, zz + 15)
-        for xx in (-316, -214):
-            B.box('stone_band', xx, xx + 10, F, F + 34, zz - 17, zz + 17, collide=False, color=TRIM)
-    for wall, x, z, w in (('E', x1, 1775, 90), ('E', x1, 2025, 90), ('S', -260, z1, 120), ('S', -480, z1, 70),
-                          ('W', x0, 1700, 110), ('W', x0, 2220, 110), ('N', -160, z0, 120)):
-        ivy(B, wall, x, z, F + 20, F + 300, w)
-    for x, z in ((-490, 2270), (-30, 2270)):
+    for xx in range(ox0 + 70 + 90, ox1 - 70, 90):
+        B.box('stone_band', xx - 3, xx + 3, yc - 8, yc - 1, oz0 + 70, oz1 - 70, collide=False, color=IRON2)
+    light(((ox0 + ox1) / 2, yc - 40, (oz0 + oz1) / 2), 1000, 0.32, (1.0, 0.98, 0.92))
+    # the four arcaded walks round the garth (paired columns, gilded archivolts), roofed in timber
+    ga0, ga1, gb0, gb1 = ox0 + WALK, ox1 - WALK, oz0 + WALK, oz1 - WALK
+    arcade(B, 'x', ga0, gb0, gb1, F, 280, 6, facing=1, roof=(185, 150, 115), depth=WALK)
+    arcade(B, 'x', ga1, gb0, gb1, F, 280, 6, facing=-1, roof=(185, 150, 115), depth=WALK)
+    arcade(B, 'z', gb0, ga0, ga1, F, 280, 3, facing=1, roof=(185, 150, 115), depth=WALK)
+    arcade(B, 'z', gb1, ga0, ga1, F, 280, 3, facing=-1, roof=(185, 150, 115), depth=WALK)
+    for (a, b, c, d) in ((ox0, ga0, oz0, gb0), (ga1, ox1, oz0, gb0), (ox0, ga0, gb1, oz1), (ga1, ox1, gb1, oz1)):
+        oriented(B, 'wood_light', [(a, F + 280, c), (b, F + 280, c), (b, F + 280, d), (a, F + 280, d)], (0, -1, 0),
+                 color=(185, 150, 115))
+    # the garth: the lion fountain in the middle, four rills to the walks, four sunken flower beds
+    fx, fz = (ga0 + ga1) / 2, (gb0 + gb1) / 2
+    round_fountain(B, W, fx, fz, 90, F, light=light)
+    for i in range(12):   # the twelve lions round the basin (little stone beasts)
+        a = 2 * math.pi * (i + 0.5) / 12
+        lx, lz = fx + 104 * math.cos(a), fz + 104 * math.sin(a)
+        B.box('marble', lx - 9, lx + 9, F, F + 22, lz - 9, lz + 9, collide=False, color=(235, 230, 215))
+        prism(B, 'marble', lx + 6 * math.cos(a), lz + 6 * math.sin(a), 7, F + 18, F + 34, 6, color=(235, 230, 215))
+    channel(B, W, fx - 10, fx + 10, gb0, fz - 112, F)
+    channel(B, W, fx - 10, fx + 10, fz + 112, gb1, F)
+    channel(B, W, ga0, fx - 112, fz - 10, fz + 10, F)
+    channel(B, W, fx + 112, ga1, fz - 10, fz + 10, F)
+    for (a, b, c, d) in ((ga0 + 20, fx - 34, gb0 + 20, fz - 34), (fx + 34, ga1 - 20, gb0 + 20, fz - 34),
+                         (ga0 + 20, fx - 34, fz + 34, gb1 - 20), (fx + 34, ga1 - 20, fz + 34, gb1 - 20)):
+        if b - a > 60 and d - c > 60:
+            hedge(B, a, b, c, c + 22, h=40)
+            hedge(B, a, b, d - 22, d, h=40)
+            flowerbed(B, a + 10, b - 10, c + 30, d - 30)
+            tree(B, (a + b) / 2, (c + d) / 2, F + 30, h=200, r=60)
+    for zz in (1450, 1770, 2090):
+        win('E', (ox1, zz), 300, 0.42)
+    for xx in (-430, -150):
+        win('S', (xx, oz1), 300, 0.42)
+    for wall, x, z, w in (('E', ox1, 1610, 90), ('E', ox1, 1930, 90), ('S', -290, oz1, 120), ('W', ox0, 1500, 110),
+                          ('W', ox0, 2050, 110), ('N', -200, oz0, 140)):
+        ivy(B, wall, x, z, F + 20, F + 280, w)
+    for x, z in ((-550, 2270), (-30, 2270), (-30, 1270)):
         potted(B, x, z, big=True)
-    candelabra(B, light, -490, 1870, F)
-    candelabra(B, light, -490, 2130, F)
+    room_finish(B, ox0, ox1, oz0, oz1, F, otop, dado=(150, 140, 120), pilasters=False,
+                doors={'W': [(1680, 1840, F, F + 240)], 'N': [(-500, -380, F, F + 220)],
+                       'E': [(zz - 60, zz + 60, 330, 620) for zz in (1450, 1770, 2090)],
+                       'S': [(xx - 60, xx + 60, 330, 620) for xx in (-430, -150)]})
 
-    # ---- The long gallery (west of the library): a coved hallway to the guest bedrooms, knights either side of the
-    # north window, consoles, banners, and a wall fountain at its south end ----
-    hx0, hx1, hz0, hz1, htop = -1950, -1700, 450, 1660, 420
-    HW = (245, 236, 218)
-    doors = (660, 1060, 1460)
-    B.floor('marble', hx0, hx1, hz0, hz1)
-    cove_ceiling(B, hx0, hx1, hz0, hz1, htop, c=50, color=(240, 232, 220))
-    B.quad('carpet_red', [(-1860, F + 1, hz1 - 70), (-1790, F + 1, hz1 - 70), (-1790, F + 1, hz0 + 90), (-1860, F + 1, hz0 + 90)],
-           uv=[(0, 520), (32, 520), (32, 0), (0, 0)])
-    B.wall('brick_white', 'x', hx1, hz0, hz1, F, htop, -1, openings=[(900, 1100, F, F + 220)], color=HW)
-    B.wall('brick_white', 'x', hx0, hz0, hz1, F, htop, +1, openings=[(d - 60, d + 60, F, F + 220) for d in doors], color=HW)
-    B.wall('brick_white', 'z', hz0, hx0, hx1, F, htop, +1, color=HW)
-    B.wall('brick_white', 'z', hz1, hx0, hx1, F, htop, -1, color=HW)
-    win('N', (-1825, hz0), 170, 0.33)
-    room_finish(B, hx0, hx1, hz0, hz1, F, htop,
-                doors={'E': [(900, 1100, F, F + 220), (665, 735, F + 100, F + 280), (1265, 1335, F + 100, F + 280)],
-                       'W': [(d - 60, d + 60, F, F + 220) for d in doors] + [(830, 890, F + 200, F + 280),
-                                                                            (1230, 1290, F + 200, F + 280)],
-                       'N': [(-1870, -1780, 190, 400)]},
-                skip=[('S', -1890, -1760)])
-    for d in doors:  # (each arch is drawn once, on both faces of the wall: here for the bedrooms' doors too; the
-        arch_door(B, 'x', hx0, d - 60, d + 60, F, F + 220)  # library's door is drawn with the library)
-    for zz in (700, 1300):
-        sconce(hx1 - 2, zz, F + 240, 'E')
-    for zz in (860, 1260):
-        sconce(hx0 + 2, zz, F + 240, 'W')
-    for i, zz in enumerate((700, 1300)):  # portraits under the east lamps, gilded frames
-        m = ('portrait3', 'portrait4')[i]
-        B.box('stone_band', hx1 - 6, hx1, F + 94, F + 176, zz - 41, zz + 41, collide=False, color=GOLD)
-        B.quad(m, [(hx1 - 7, F + 100, zz - 35), (hx1 - 7, F + 100, zz + 35), (hx1 - 7, F + 170, zz + 35),
-                   (hx1 - 7, F + 170, zz - 35)], uv=[(0, 16), (16, 16), (16, 0), (0, 0)], light=False)
-    for xx in (-1915, -1735):
-        statue(B, xx, hz0 + 50, F, face='S')
-    for zz in (860, 1260):
-        potted(B, hx0 + 30, zz)
-    for zz in (820, 1180):  # consoles with a plant on each
-        table(B, hx1 - 44, hx1 - 8, zz - 40, zz + 40, F, h=70)
-        potted(B, hx1 - 26, zz, y=F + 70)
-    potted(B, hx1 - 30, 1450)
-    banner(B, 'E', hx1, 1500, F + 360, w=56, h=200, mat='carpet_blue')
-    banner(B, 'W', hx0, 560, F + 360, w=56, h=200, mat='carpet_blue')
-    # the wall fountain: a basin against the south wall, water falling into it from a gilded spout
-    B.box(('marble', 'marble2'), -1885, -1765, F, F + 40, hz1 - 70, hz1 - 54)
-    B.box(('marble', 'marble2'), -1885, -1869, F, F + 40, hz1 - 54, hz1)
-    B.box(('marble', 'marble2'), -1781, -1765, F, F + 40, hz1 - 54, hz1)
-    water(W, -1869, -1781, hz1 - 54, hz1, F + 30)
-    B.box('marble2', -1890, -1760, F + 40, F + 220, hz1 - 6, hz1, collide=False, color=(235, 232, 225))  # its back
-    arch_door(B, 'z', hz1 - 7, -1880, -1770, F + 60, F + 260, depth=3)
-    B.box('stone_band', -1838, -1812, F + 150, F + 180, hz1 - 24, hz1 - 6, collide=False, color=GOLD)
-    B.box('stone_band', -1850, -1800, F + 180, F + 196, hz1 - 14, hz1 - 6, collide=False, color=GOLD)
-    falling(W, (-1834, hz1 - 22), (-1816, hz1 - 22), F + 30, F + 152)
-    candelabra(B, light, -1925, 1560, F)
-    candelabra(B, light, -1725, 1560, F)
-    light((-1825, 200, hz1 - 80), 380, 0.35, (0.85, 0.95, 1.0))
-    light((-1825, 260, 1050), 520, 0.2)
+    # ================= Library (west of the great hall): two storeys of shelves, an upper gallery =================
+    lx0, lx1, lz0, lz1, ltop = -1900, -1340, 1340, 2100, 560
+    B.floor('wood_planks', lx0, lx1, lz0, lz1)
+    B.wall('plaster', 'x', lx1, lz0, lz1, F, ltop, -1, openings=[(1640, 1800, F, F + 240)], color=(240, 228, 206))
+    B.wall('plaster', 'x', lx0, lz0, lz1, F, ltop, +1, color=(240, 228, 206))
+    B.wall('plaster', 'z', lz0, lx0, lx1, F, ltop, +1, color=(240, 228, 206))
+    B.wall('plaster', 'z', lz1, lx0, lx1, F, ltop, -1, color=(240, 228, 206))
+    cove_ceiling(B, lx0, lx1, lz0, lz1, ltop, c=50, color=(235, 220, 195))
+    bookcase(B, 'N', lx0 + 20, lx1 - 20, lz0, F)
+    bookcase(B, 'S', lx0 + 20, lx1 - 20, lz1, F)
+    bookcase(B, 'W', lz0 + 50, 1640, lx0, F)
+    bookcase(B, 'W', 1900, lz1 - 50, lx0, F)
+    bookcase(B, 'E', lz0 + 50, 1600, lx1, F)
+    bookcase(B, 'E', 1840, lz1 - 50, lx1, F)
+    # the upper gallery all round on brackets, its own shelves above
+    ug = F + 290
+    for (a, b, c, d) in ((lx0, lx1, lz0, lz0 + 70), (lx0, lx1, lz1 - 70, lz1), (lx0, lx0 + 70, lz0, lz1), (lx1 - 70, lx1, lz0, lz1)):
+        oriented(B, 'wood_planks', [(a, ug, c), (b, ug, c), (b, ug, d), (a, ug, d)], (0, 1, 0))
+        oriented(B, 'wood_dark', [(a, ug - 14, c), (b, ug - 14, c), (b, ug - 14, d), (a, ug - 14, d)], (0, -1, 0),
+                 color=(130, 95, 70))
+    B.railing(lx0 + 70, lx1 - 70, lz0 + 70, lz0 + 70, ug, posts=14)
+    B.railing(lx0 + 70, lx1 - 70, lz1 - 70, lz1 - 70, ug, posts=14)
+    B.railing(lx0 + 70, lx0 + 70, lz0 + 70, lz1 - 70, ug, posts=18)
+    B.railing(lx1 - 70, lx1 - 70, lz0 + 70, lz1 - 70, ug, posts=18)
+    bookcase(B, 'N', lx0 + 20, lx1 - 20, lz0, ug, h=200)
+    bookcase(B, 'S', lx0 + 20, lx1 - 20, lz1, ug, h=200)
+    fireplace(B, light, 'W', lx0 + 40, 1770, F, w=150, h=150, hood=False)
+    for zz, xx in ((1560, -1620), (1880, -1620)):
+        long_table(B, xx - 110, xx + 110, zz - 40, zz + 40, F, benches=False)
+        for dx in (-60, 60):
+            chair(B, xx + dx, zz - 64, F, face='S')
+            chair(B, xx + dx, zz + 64, F, face='N')
+        B.box('stone_band', xx - 8, xx + 8, F + 64, F + 94, zz - 8, zz + 8, collide=False, color=GOLD)
+        B.box('lattice', xx - 12, xx + 12, F + 94, F + 118, zz - 12, zz + 12, collide=False, color=(255, 230, 160))
+        light((xx, F + 124, zz), 380, 0.6, LAMP)
+    # a great globe on a stand
+    prism(B, 'stone_band', -1450, 1720, 14, F, F + 70, 8, color=WOOD)
+    for k in range(6):
+        ya, yb = F + 70 + 16 * k, F + 70 + 16 * (k + 1)
+        ra = 48 * math.sin(math.pi * k / 6) + 4
+        rb = 48 * math.sin(math.pi * (k + 1) / 6) + 4
+        prism(B, 'cloth_blue', -1450, 1720, ra, ya, yb, 14, color=(120, 160, 210), r1=rb)
+    chandelier(B, light, (lx0 + lx1) / 2, 1720, ltop + 50, drop=200, r=70)
+    light((-1620, 320, 1720), 600, 0.25)
 
-    # ---- The guest bedrooms (three, along the gallery's west side): rose, blue and green ----
-    tints = ((246, 222, 222), (220, 228, 246), (222, 240, 222))
-    for i, (rz0, rz1) in enumerate(((450, 850), (850, 1250), (1250, 1660))):
-        rx0, rx1, rtop = -2350, -1950, 380
-        d = doors[i]
-        tint = tints[i]
-        wz = (rz0 + rz1) / 2 + 40
-        B.floor('marble2', rx0, rx1, rz0, rz1)
-        cove_ceiling(B, rx0, rx1, rz0, rz1, rtop, c=40, color=tint)
-        rug(B, -2290, -2050, rz0 + 60, rz1 - 70, F, mat='carpet_red' if i == 1 else 'carpet_blue')
-        B.wall('plaster', 'x', rx0, rz0, rz1, F, rtop, +1, color=tint)
-        B.wall('plaster', 'x', rx1, rz0, rz1, F, rtop, -1, openings=[(d - 60, d + 60, F, F + 220)], color=tint)
-        B.wall('plaster', 'z', rz0, rx0, rx1, F, rtop, +1, color=tint)
-        B.wall('plaster', 'z', rz1, rx0, rx1, F, rtop, -1, color=tint)
-        win('W', (rx0, wz), 140, 0.33)
-        room_finish(B, rx0, rx1, rz0, rz1, F, rtop, pilasters=False,
-                    doors={'E': [(d - 60, d + 60, F, F + 220)], 'W': [(wz - 45, wz + 45, 160, 400)],
-                           'S': [(-2190, -2100, F + 110, F + 200)]})
-        canopy = ((170, 40, 50), (60, 80, 170), (90, 140, 80))[i]
-        bed(B, -2270, -2150, rz0 + 12, rz0 + 190, F, canopy=canopy, blanket='carpet_red' if i == 1 else 'carpet_blue')
-        # nightstand and its lamp
-        B.box(('marble2', 'stone_band'), -2130, -2085, F, F + 50, rz0 + 14, rz0 + 58, color=WOOD)
-        prism(B, 'stone_band', -2107, rz0 + 36, 5, F + 50, F + 74, 6, color=GOLD)
-        prism(B, 'lattice', -2107, rz0 + 36, 14, F + 74, F + 98, 8, color=(255, 230, 160), r1=8, top='lattice')
-        light((-2107, F + 100, rz0 + 36), 330, 0.6, LAMP)
-        # wardrobe (with a crown and feet), chest, desk and chair
-        B.box(('stone_band', 'window'), -2330, -2220, F + 8, F + 220, rz1 - 52, rz1 - 4, color=WOOD)
-        B.box('stone_band', -2336, -2214, F + 220, F + 234, rz1 - 56, rz1 - 2, collide=False, color=WOOD)
-        B.box('stone_band', -2300, -2250, F + 120, F + 128, rz1 - 54, rz1 - 52, collide=False, color=GOLD)
-        B.box(('stone_band', 'stone_band'), -2245, -2175, F, F + 40, rz0 + 205, rz0 + 245, color=WOOD)
-        B.box('stone_band', -2247, -2173, F + 30, F + 36, rz0 + 203, rz0 + 247, collide=False, color=GOLD)
-        table(B, -2160, -2060, rz1 - 50, rz1 - 6, F, h=64)
-        chair(B, -2110, rz1 - 80, F, face='S', seat=canopy)
-        # a portrait in a gilded frame over the desk, and plants
-        m = ('portrait1', 'portrait2', 'portrait5')[i]
-        B.box('stone_band', -2186, -2104, F + 114, F + 196, rz1 - 6, rz1, collide=False, color=GOLD)
-        B.quad(m, [(-2110, F + 120, rz1 - 7), (-2180, F + 120, rz1 - 7), (-2180, F + 190, rz1 - 7), (-2110, F + 190, rz1 - 7)],
-               uv=[(0, 16), (16, 16), (16, 0), (0, 0)], light=False)
-        potted(B, -1985, rz0 + 35, big=True)
-        potted(B, -2320, rz0 + 35)
-        light((-2150, 280, (rz0 + rz1) / 2), 460, 0.2)
+    # ================= Upstairs: the royal apartments (floor y 440) =================
+    # Presence chamber (antechamber) south of the bedchambers, entered from the tower's north door
+    ax0, ax1, az0, az1, atop = -1600, -1100, 760, 1000, UP + 300
+    B.floor('marble2', ax0, ax1, az0, az1, y=UP)
+    rug(B, ax0 + 40, ax1 - 40, az0 + 40, az1 - 40, UP, mat='carpet_red')
+    for wall_args in (('x', ax1, az0, az1, -1, ()), ('x', ax0, az0, az1, +1, [(820, 940, UP, UP + 220)])):
+        ax, fx_, a, b, f, ops = wall_args
+        B.wall('wallpaper_red', ax, fx_, a, b, UP, atop, f, openings=ops)
+    B.wall('wallpaper_red', 'z', az1, ax0, ax1, UP, atop, -1, openings=[(-1530, -1430, UP, UP + 220)])
+    B.wall('wallpaper_red', 'z', az0, ax0, ax1, UP, atop, +1, openings=[(-1320, -1200, UP, UP + 220)])
+    cove_ceiling(B, ax0, ax1, az0, az1, atop, c=40, color=(240, 225, 225))
+    for xx, m in ((-1300, 'portrait2'), (-1180, 'portrait3')):
+        portrait('S', az1, xx, UP + 120, m)
+    portrait('E', ax1, 880, UP + 120, 'portrait4')
+    candelabra(B, light, -1580, 980, UP, h=130)
+    candelabra(B, light, -1120, 980, UP, h=130)
+    chandelier(B, light, -1350, 880, atop + 40, drop=140, r=50, arms=6, inten=0.4, radius=420)
+    room_finish(B, ax0, ax1, az0, az1, UP, atop, pilasters=False,
+                doors={'W': [(820, 940, UP, UP + 220)], 'S': [(-1530, -1430, UP, UP + 220)], 'N': [(-1320, -1200, UP, UP + 220)]})
+    arch_door(B, 'x', ax0, 820, 940, UP, UP + 220)
+    arch_door(B, 'z', az0, -1320, -1200, UP, UP + 220)
+    arch_door(B, 'z', az1, -1530, -1430, UP, UP + 220)
+    # the floor slab over the tower passage and chapel, seen from below in the passage: (the chapel draws its own)
+    # The King's bedchamber (north-east): a great bed on a step, a fireplace, a window to the north
+    kx0, kx1, kz0, kz1, ktop = -1400, -1100, 460, 760, UP + 320
+    B.floor('wood_planks', kx0, kx1, kz0, kz1, y=UP)
+    rug(B, kx0 + 30, kx1 - 30, kz0 + 200, kz1 - 30, UP, mat='carpet_blue')
+    for args in (('x', kx1, kz0, kz1, -1), ('x', kx0, kz0, kz1, +1), ('z', kz0, kx0, kx1, +1)):
+        B.wall('wallpaper_red', *args[:3], args[3], UP, ktop, args[4])
+    B.wall('wallpaper_red', 'z', kz1, kx0, kx1, UP, ktop, -1, openings=[(-1320, -1200, UP, UP + 220)])
+    cove_ceiling(B, kx0, kx1, kz0, kz1, ktop, c=50, color=(70, 60, 120))
+    B.box(('carpet_red', 'stone_band'), kx0 + 20, kx0 + 220, UP, UP + 12, kz0 + 6, kz0 + 230, color=(160, 40, 50))
+    bed(B, kx0 + 40, kx0 + 200, kz0 + 14, kz0 + 220, UP + 12, canopy=(120, 30, 60), blanket='cloth_red')
+    fireplace(B, light, 'E', kx1, 620, UP, w=120, h=130, hood=False)
+    win('N', (-1170, kz0), UP + 60, 0.30, floor=UP)
+    B.box(('wood_dark', 'wood_dark'), kx1 - 70, kx1 - 10, UP, UP + 60, kz1 - 140, kz1 - 60, color=WOOD)   # a chest
+    potted(B, kx0 + 30, kz1 - 30, y=UP, big=True)
+    room_finish(B, kx0, kx1, kz0, kz1, UP, ktop, pilasters=False,
+                doors={'S': [(-1320, -1200, UP, UP + 220)], 'N': [(-1230, -1110, UP + 120, UP + 330)]},
+                skip=[('E', 540, 700)])
+    # The Princess's bedchamber (north-west): blue flowers, a canopy bed, a dressing table, a window seat
+    qx0, qx1, qz0, qz1, qtop = -1900, -1400, 460, 760, UP + 320
+    B.floor('wood_planks', qx0, qx1, qz0, qz1, y=UP)
+    rug(B, qx0 + 60, qx1 - 60, qz0 + 60, qz1 - 40, UP, mat='carpet_red')
+    for args in (('x', qx0, qz0, qz1, +1), ('z', qz0, qx0, qx1, +1), ('x', qx1, qz0, qz1, -1)):
+        B.wall('wallpaper_blue', *args[:3], args[3], UP, qtop, args[4])
+    B.wall('wallpaper_blue', 'z', qz1, qx0, qx1, UP, qtop, -1, openings=[(-1780, -1660, UP, UP + 220)])
+    cove_ceiling(B, qx0, qx1, qz0, qz1, qtop, c=50, color=(240, 236, 250))
+    bed(B, -1700, -1560, qz0 + 14, qz0 + 200, UP, canopy=(90, 110, 190), blanket='cloth_blue')
+    table(B, -1880, -1790, qz0 + 20, qz0 + 70, UP, h=70, top='marble2')
+    B.box('window', -1870, -1800, UP + 70, UP + 170, qz0 + 4, qz0 + 10, collide=False, color=(200, 220, 240))   # mirror
+    chair(B, -1835, qz0 + 100, UP, face='N', seat=(90, 110, 190))
+    win('N', (-1480, qz0), UP + 60, 0.30, floor=UP)
+    B.box(('cloth_blue', 'marble2'), -1540, -1420, UP, UP + 40, qz0 + 10, qz0 + 50, color=(220, 225, 245))   # window seat
+    for x, z in ((-1880, qz1 - 30), (-1420, qz1 - 30)):
+        potted(B, x, z, y=UP, big=True)
+    harp_x, harp_z = -1820, 640
+    prism(B, 'stone_band', harp_x, harp_z, 4, UP, UP + 130, 4, color=GOLD)
+    B.box('stone_band', harp_x - 3, harp_x + 3, UP + 120, UP + 130, harp_z - 40, harp_z, collide=False, color=GOLD)
+    light((-1650, UP + 200, 610), 460, 0.3)
+    room_finish(B, qx0, qx1, qz0, qz1, UP, qtop, pilasters=False,
+                doors={'S': [(-1780, -1660, UP, UP + 220)], 'N': [(-1540, -1420, UP + 100, UP + 340)]})
+    arch_door(B, 'z', qz1, -1780, -1660, UP, UP + 220)
+    # The dressing room (south-west), between the Princess's chamber and the presence chamber
+    dx0, dx1, dz0, dz1, dtop = -1900, -1600, 760, 1000, UP + 280
+    B.floor('wood_planks', dx0, dx1, dz0, dz1, y=UP)
+    for args in (('x', dx0, dz0, dz1, +1), ('z', dz1, dx0, dx1, -1)):
+        B.wall('wallpaper_blue', *args[:3], args[3], UP, dtop, args[4])
+    B.wall('wallpaper_blue', 'z', dz0, dx0, dx1, UP, dtop, +1, openings=[(-1780, -1660, UP, UP + 220)])
+    cove_ceiling(B, dx0, dx1, dz0, dz1, dtop, c=36, color=(240, 236, 250))
+    for zz in (800, 900):
+        B.box(('stone_band', 'window'), dx0 + 4, dx0 + 60, UP + 6, UP + 220, zz, zz + 90, color=WOOD)   # wardrobes
+    B.box(('cloth_red', 'stone_band'), -1700, -1620, UP, UP + 40, 930, 990, color=WOOD)
+    B.wall('wallpaper_blue', 'x', dx1, dz0, dz1, UP, dtop, -1, openings=[(820, 940, UP, UP + 220)])
+    light((-1750, UP + 180, 880), 360, 0.45, LAMP)
+    room_finish(B, dx0, dx1, dz0, dz1, UP, dtop, pilasters=False, walls='WSN',
+                doors={'N': [(-1780, -1660, UP, UP + 220)]})
+
+    return B, W, beams, lights
 
 
 def emit_dl(B, dl_path, vtx_path, files, obj=False):
@@ -1340,10 +1771,15 @@ def emit(B, W, beams):
     # (x, y, z, yaw): two by the throne, two along the throne room's back wall facing the window (as the courtyard
     # shows them), the rest about the castle
     T = THRONE_FLOOR
+    UP = 440
     guards = [(-1010, T, -330, 0), (-790, T, -330, 0), (-1037, T, 58, 0x4000), (-1037, T, -58, 0x4000),
-              (-1060, FLOOR, 760, 0x4000), (-860, FLOOR, 1160, -0x4000), (-600, FLOOR, 1260, -0x8000),
-              (-420, FLOOR, 1300, 0), (-1110, FLOOR, 2250, -0x8000), (-810, FLOOR, 2250, -0x8000),
-              (-1450, FLOOR, 1000, 0x4000), (-1250, FLOOR + 300, 1500, 0x4000)]
+              (-1060, FLOOR, 1000, 0x4000), (-860, FLOOR, 1180, -0x4000),           # the processional
+              (-1090, FLOOR, 1500, 0), (-830, FLOOR, 1500, 0),                    # before the dais
+              (-1070, FLOOR, 2250, -0x8000), (-850, FLOOR, 2250, -0x8000),         # at the front doors
+              (-700, FLOOR, 1150, 0), (-330, FLOOR, 820, -0x8000),                 # the guard hall
+              (-520, FLOOR, 2000, 0x4000),                                         # the cloister's west walk
+              (-1400, FLOOR, 1500, -0x4000),                                       # the library
+              (-1350, UP, 970, -0x8000)]                                           # the presence chamber
     actors = [G.actor_entry(HEISHI3, (x, y, z), (0, yaw, 0), 0) for x, y, z, yaw in guards]
     # Zelda at the courtyard window, peering in (her own spot and facing in the courtyard: her peeking animation
     # turns her about, so it is the same 0x4000 the courtyard gives her)
