@@ -162,7 +162,42 @@ def gather(path):
         for s, vel, p in lst:
             tracks[ch].notes.append((s, max(end, s + 1), key, vel, p))
     tempos = [(T(e[0]), 60e6 / e[4]) for e in ev if e[3] == 'tempo']
-    return bpm, tempos, tracks, end
+    return trim(bpm, tempos, tracks, end)
+
+
+def trim(bpm, tempos, tracks, end, bar=4 * TATUMS):
+    """For a seamless loop: the silence before the first note is cut, and the song ends where it comes round to its
+    start again (a MIDI written to be heard once repeats its opening and fades out: that repeat and its fade are cut,
+    the game's loop plays the opening again instead). Failing a repeat, it ends where the closing fade begins."""
+    notes = sorted((n[0], tr.ch, n[2]) for tr in tracks.values() for n in tr.notes)
+    if not notes:
+        return bpm, tempos, tracks, end
+    start = notes[0][0]
+    have = set(notes)
+    window = [(t, c, k) for t, c, k in notes if start <= t < start + 8 * bar]
+    repeats = []
+    for t in range(start + 16 * bar, end, TATUMS):
+        off = t - start
+        match = sum((tt + off, c, k) in have for tt, c, k in window) / max(1, len(window))
+        if match >= 0.4:
+            repeats.append(t)
+    cut = max(repeats) if repeats else end   # (the last repeat of the opening: the whole song before it plays)
+    if not repeats:
+        # (no repeat found: the closing fade, where every channel's volume starts falling for good)
+        fades = [max((tt for tt, v in tr.vol if v >= max(vv for _, vv in tr.vol) - 1), default=end) for tr in tracks.values()
+                 if tr.vol and tr.vol[-1][1] < 10]
+        cut = min(fades) if fades else end
+    for tr in tracks.values():
+        tr.notes = [(a - start, min(b, cut) - start, k, v, p) for a, b, k, v, p in tr.notes if start <= a < cut]
+        keep = lambda lst: [(max(0, t - start), v) for t, v in lst if t < cut]
+        last_vol = [v for t, v in tr.vol if t <= start]
+        tr.vol = [(t, v) for t, v in keep(tr.vol)]
+        if last_vol:
+            tr.vol = [(0, last_vol[-1])] + [(t, v) for t, v in tr.vol if t > 0]
+        tr.pan = keep(tr.pan)
+        tr.prog = keep(tr.prog)
+    tempos = [(max(0, t - start), b) for t, b in tempos if t < cut]
+    return bpm, tempos, tracks, cut - start
 
 
 def split_layers(notes, max_layers=4):
