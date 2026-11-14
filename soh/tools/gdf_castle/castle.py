@@ -320,6 +320,7 @@ WARM = (1.0, 0.9, 0.72)
 # a pointed window of light at its back (local z -68, y 100..661) and rays falling from its origin, down and forward
 # (to y -939 some 600..1040 ahead). The game code scales it to the room.
 DEMO_KANKYO, LIGHT_PLANE, OBJECT_TOKI_OBJECTS = 0x008C, 0x000E, 0x005E
+EN_LIGHT = 0x0008   # the game's flame (gameplay_keep's fire, with a point light and glow)
 
 
 class LitBuilder(Builder):
@@ -333,6 +334,7 @@ class LitBuilder(Builder):
 
     def __init__(self, lights=None, height=420.0):
         super().__init__()
+        self.flames = None   # the game's flames to place (the castle sets a list; see flame())
         self.lights = lights
         self.height = height
 
@@ -448,7 +450,19 @@ SURF = {'floor': 0, 'wall': 1, 'exit': 2}
 
 CASTLE_BEAM = 0.32  # the windows' default sunbeam scale (each beam carries its own: see emit())
 WOOD = (150, 105, 75)
-WOODT = (232, 214, 196)   # the tint over the game's own wood textures (they carry their colour)
+WOODT = (232, 214, 196)
+
+
+def flame(B, pos, scale, kind=1):
+    """The game's own fire (En_Light: gameplay_keep's flame, flickering, its point light and glow) at a wick or a
+    hearth. Recorded on the builder (B.flames) and placed as an actor by emit(); its size is carried in the actor's z
+    rotation (scale x 10000), its kind in the x rotation (z_en_light.c): 0 a fire (its light, glow and crackle),
+    2 a lamp (a small light and glow), 1 a candle (the flame alone; the room's baked light does the rest).
+    Returns False when the builder takes no flames (the Sacred Realm's), so the caller draws its painted flame."""
+    if getattr(B, 'flames', None) is None:
+        return False
+    B.flames.append((tuple(float(c) for c in pos), scale, kind))
+    return True   # the tint over the game's own wood textures (they carry their colour)
 COZY = (1.0, 0.62, 0.32)  # candle and firelight (about 2000-2700K)
 TERRACOTTA = (205, 125, 85)
 LAMP = (1.0, 0.72, 0.42)
@@ -766,7 +780,8 @@ def candelabra(B, light, x, z, y, h=150):
     for dx in (-24, 0, 24):
         cy = y + h + (14 if dx == 0 else 2)
         prism(B, 'plaster', x + dx, z, 3, cy, cy + 22, 6, color=(250, 245, 230))
-        prism(B, 'lattice', x + dx, z, 2.5, cy + 22, cy + 30, 4, color=(255, 210, 120), r1=0.5)
+        if not flame(B, (x + dx, cy + 22, z), 0.0009, 2 if dx == 0 else 1):
+            prism(B, 'lattice', x + dx, z, 2.5, cy + 22, cy + 30, 4, color=(255, 210, 120), r1=0.5)
     light((x, y + h + 40, z), 300, 0.55, LAMP)
 
 
@@ -1076,7 +1091,8 @@ def fireplace(B, light, wall, x, z, y, w=180, h=170, hood=True):
     for i, u in enumerate((-40, 0, 40)):
         fx, fz = x + along[0] * u + inward[0] * 26, z + along[1] * u + inward[1] * 26
         prism(B, 'wood_dark', fx, fz, 8, y + 6, y + 14, 6, color=(110, 60, 40))
-        cross(B, 'lattice', fx, fz, y + 10, 50, 60 + 15 * (i % 2), 16, 16, color=(255, 150, 60))
+        if not flame(B, (fx, y + 8, fz), 0.0045 if i == 1 else 0.0035, 0 if i == 1 else 1):
+            cross(B, 'lattice', fx, fz, y + 10, 50, 60 + 15 * (i % 2), 16, 16, color=(255, 150, 60))
     light((x + inward[0] * 80, y + 70, z + inward[1] * 80), 520, 0.85, (1.0, 0.6, 0.3))
 
 
@@ -1091,7 +1107,8 @@ def chandelier(B, light, x, z, top, drop=160, r=70, arms=8, inten=0.45, radius=6
         a = 2 * math.pi * i / arms
         cxx, czz = x + r * math.cos(a), z + r * math.sin(a)
         prism(B, 'plaster', cxx, czz, 3, y + 10, y + 28, 6, color=(250, 245, 230))
-        prism(B, 'lattice', cxx, czz, 2.5, y + 28, y + 36, 4, color=(255, 210, 120), r1=0.5)
+        if not flame(B, (cxx, y + 28, czz), 0.0009, 2 if i == 0 else 1):
+            prism(B, 'lattice', cxx, czz, 2.5, y + 28, y + 36, 4, color=(255, 210, 120), r1=0.5)
     light((x, y - 20, z), radius, inten, LAMP)
 
 
@@ -1257,6 +1274,7 @@ def build(fixed_lights=None):
     beams = []
     B = LitBuilder(fixed_lights if fixed_lights is not None else lights, height=640.0)
     B.AMBIENT = 0.50
+    B.flames = []
     B.AMB_TINT = (1.0, 0.86, 0.68)   # cozy: a dimmer, warm fill, the rooms lit in pools by fire and candles
     W = Builder()
     F = FLOOR
@@ -1273,8 +1291,8 @@ def build(fixed_lights=None):
         ix, iz = {'W': (1, 0), 'E': (-1, 0), 'N': (0, 1), 'S': (0, -1)}[wall]
         B.box('stone_band', x - 8 + ix * 8, x + 8 + ix * 8, y - 14, y + 14, z - 8 + iz * 8, z + 8 + iz * 8,
               collide=False, color=GOLD)
-        B.box('lattice', x - 5 + ix * 10, x + 5 + ix * 10, y + 14, y + 30, z - 5 + iz * 10, z + 5 + iz * 10,
-              collide=False, color=(255, 230, 160))
+        prism(B, 'plaster', x + ix * 10, z + iz * 10, 4, y + 14, y + 34, 6, color=(250, 240, 220))
+        flame(B, (x + ix * 10, y + 34, z + iz * 10), 0.0014, 2)
         light((x + ix * 40, y, z + iz * 40), 340, 0.6, LAMP)
 
     def candle(x, z, y, n=3, inten=0.42, radius=300):
@@ -1285,7 +1303,7 @@ def build(fixed_lights=None):
             cx, cz = x + 5 * math.cos(a), z + 5 * math.sin(a)
             hh = 14 + 5 * i
             prism(B, 'plaster', cx, cz, 2.5, y + 1, y + hh, 6, color=(250, 240, 220))
-            prism(B, 'lattice', cx, cz, 2, y + hh, y + hh + 6, 4, color=(255, 200, 110), r1=0.4)
+            flame(B, (cx, y + hh, cz), 0.0007)
         light((x, y + 40, z), radius, inten, COZY)
 
     def portrait(wall, fixed, u, y, m, w=70, h=70):
@@ -1808,7 +1826,8 @@ def build(fixed_lights=None):
             chair(B, xx + dx, zz - 64, F, face='S')
             chair(B, xx + dx, zz + 64, F, face='N')
         B.box('stone_band', xx - 8, xx + 8, F + 64, F + 94, zz - 8, zz + 8, collide=False, color=GOLD)
-        B.box('lattice', xx - 12, xx + 12, F + 94, F + 118, zz - 12, zz + 12, collide=False, color=(255, 230, 160))
+        prism(B, 'plaster', xx, zz, 5, F + 94, F + 112, 6, color=(250, 240, 220))
+        flame(B, (xx, F + 112, zz), 0.0012, 2)
         light((xx, F + 124, zz), 380, 0.6, LAMP)
     # a great globe on a stand
     prism(B, 'wood_dark', -1450, 1720, 14, F, F + 70, 8, color=WOODT)
@@ -2062,6 +2081,9 @@ def emit(B, W, beams):
     # the windows' sunbeams (the Temple of Time's light plane, scaled to the castle by GanondorfCastle.cpp)
     # (each one's scale in its x rotation, x10000: GanondorfCastle.cpp reads it, sets the scale, and clears it)
     actors += [G.actor_entry(DEMO_KANKYO, pos, (int(sc * 10000), yaw, 0), LIGHT_PLANE) for pos, yaw, sc in beams]
+    # the game's flames (En_Light): fires first, then lamps, so they get the scene's few point lights
+    for pos, sc, kind in sorted(B.flames, key=lambda f: (0, 2, 1).index(f[2])):
+        actors.append(G.actor_entry(EN_LIGHT, pos, (kind, 0, max(1, round(sc * 10000))), 0x0000))
     files[room_path] = G.room_file([(dl_path, water_path), (court_opa.path, court_xlu.path)],
                                    objects=(0x0097, 0x0191, OBJECT_TOKI_OBJECTS),
                                    actors=actors,

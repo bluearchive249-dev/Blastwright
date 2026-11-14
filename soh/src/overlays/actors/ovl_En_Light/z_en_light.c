@@ -16,6 +16,13 @@ void EnLight_Update(Actor* thisx, PlayState* play);
 void EnLight_Draw(Actor* thisx, PlayState* play);
 void EnLight_UpdateSwitch(Actor* thisx, PlayState* play);
 
+// Play as Ganondorf's castle interior (the test room slot): its flames carry their kind in the x rotation (1: a candle,
+// lit by the room's baked light only; 2: a lamp, a small point light; 0: a fire, as the game's own) and their size in
+// the z rotation (scale x 10000)
+static s16 EnLight_CastleKind(EnLight* this, PlayState* play) {
+    return (play->sceneNum == SCENE_TESTROOM) ? this->actor.home.rot.x : 0;
+}
+
 const ActorInit En_Light_InitVars = {
     ACTOR_EN_LIGHT,
     ACTORCAT_ITEMACTION,
@@ -61,8 +68,15 @@ void EnLight_Init(Actor* thisx, PlayState* play) {
                                 this->actor.world.pos.z, 255, 255, 180, -1);
     }
 
-    this->lightNode = LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
+    this->lightNode = (EnLight_CastleKind(this, play) == 1)
+                          ? NULL
+                          : LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
     Actor_SetScale(&this->actor, D_80A9E840[this->actor.params & 0xF].scale * 0.0001f);
+    if ((play->sceneNum == SCENE_TESTROOM) && (this->actor.home.rot.z > 0)) {
+        Actor_SetScale(&this->actor, this->actor.home.rot.z * 0.0001f);
+        this->actor.shape.rot.x = this->actor.shape.rot.z = 0;
+        this->actor.world.rot.x = this->actor.world.rot.z = 0;
+    }
     this->timer = (s32)(Rand_ZeroOne() * 255.0f);
 
     if ((this->actor.params & 0x400) != 0) {
@@ -96,13 +110,13 @@ void EnLight_Update(Actor* thisx, PlayState* play) {
 
     flameParams = &D_80A9E840[this->actor.params & 0xF];
     intensity = (Rand_ZeroOne() * 0.5f) + 0.5f;
-    radius = (this->actor.params < 0) ? 100 : 300;
+    radius = (this->actor.params < 0) ? 100 : ((EnLight_CastleKind(this, play) != 0) ? 140 : 300);
     Lights_PointSetColorAndRadius(&this->lightInfo, (flameParams->primColor.r * intensity),
                                   (flameParams->primColor.g * intensity), (flameParams->primColor.b * intensity),
                                   radius);
     EnLight_UpdatePosRot(this, play);
 
-    if (this->actor.params >= 0) {
+    if ((this->actor.params >= 0) && (EnLight_CastleKind(this, play) == 0)) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EV_TORCH - SFX_FLAG);
     }
 }
@@ -145,7 +159,7 @@ void EnLight_UpdateSwitch(Actor* thisx, PlayState* play) {
                                   300.0f * scale);
     EnLight_UpdatePosRot(this, play);
 
-    if (this->actor.params >= 0) {
+    if ((this->actor.params >= 0) && (EnLight_CastleKind(this, play) == 0)) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EV_TORCH - SFX_FLAG);
     }
 }
