@@ -33,6 +33,8 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 extern PlayState* gPlayState;
+void BossGanon_Player_HoldUp(s16 frames);
+s32 BossGanon_Player_GetHeldUpPos(Vec3f* pos);
 }
 
 #define HUB_SCENE SCENE_SYOTES2
@@ -1656,19 +1658,27 @@ static void Triforce_Update(Actor* thisx, PlayState* play) {
                 t->timer = 0;
             }
             break;
-        case 1: { // to his hand
+        case 1: { // into his raised hands: he holds it up over his head, as Link holds up what he finds
             Vec3f to = player->actor.world.pos;
+
             to.y += 120.0f;
-            Math_StepToF(&thisx->world.pos.x, to.x, 6.0f);
-            Math_StepToF(&thisx->world.pos.y, to.y, 6.0f);
-            Math_StepToF(&thisx->world.pos.z, to.z, 6.0f);
-            Math_StepToF(&thisx->scale.x, 0.01f, 0.0015f);
+            BossGanon_Player_HoldUp(30);
+            BossGanon_Player_GetHeldUpPos(&to);
+            // (he stands still for it)
+            player->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
+            player->linearVelocity = 0.0f;
+            Math_StepToF(&thisx->world.pos.x, to.x, 8.0f);
+            Math_StepToF(&thisx->world.pos.y, to.y, 8.0f);
+            Math_StepToF(&thisx->world.pos.z, to.z, 8.0f);
+            Math_StepToF(&thisx->scale.x, 0.012f, 0.0015f);
             thisx->scale.y = thisx->scale.z = thisx->scale.x;
             if (t->timer == 40) {
                 TSet(play, FLAG_TRIFORCE);
                 Sparks(play, &thisx->world.pos, 120.0f, 50, 2.0f, 5);
                 Audio_PlayActorSound2(thisx, NA_SE_EV_TRIFORCE_FLASH);
-                Audio_PlayFanfare(NA_BGM_ITEM_GET | 0x900);
+                func_800F5B58();
+                Audio_PlayFanfare(NA_BGM_MEDALLION_GET | 0x900); // (the medallions' fanfare: a sacred thing claimed)
+                player->stateFlags1 &= ~PLAYER_STATE1_INPUT_DISABLED;
                 Say(play, "You claimed the %yTriforce%w!^Its power answers you as the %rTriforce of Power%w, and it "
                           "will not leave your hand.^Your wounds close and your magic returns by themselves. Nothing "
                           "in Hyrule can stand against the King of Evil now.");
@@ -1677,12 +1687,21 @@ static void Triforce_Update(Actor* thisx, PlayState* play) {
             }
             break;
         }
-        case 2:
+        case 2: { // still held up over his head while the words are read
+            Vec3f to;
+
+            if (play->msgCtx.msgMode != MSGMODE_NONE) {
+                BossGanon_Player_HoldUp(15);
+            }
+            if (BossGanon_Player_GetHeldUpPos(&to)) {
+                thisx->world.pos = to;
+            }
             if ((t->timer > 10) && CanLeave(play)) {
                 t->state = 3;
                 Warp(play, ENTR_TEMPLE_OF_TIME_ENTRANCE);
             }
             break;
+        }
     }
 }
 
@@ -1774,13 +1793,17 @@ typedef struct {
 static const Color_RGB8 sGoddessColors[3] = { { 255, 110, 80 }, { 110, 160, 255 }, { 110, 255, 140 } };
 static const s32 sGoddessSparks[3] = { 1, 2, 0 }; // (their colours among the Sages')
 
+#define GODDESS_SCALE 0.5f // (five times the tale's: each stands a head taller than the King of Evil)
+#define GODDESS_LIFT (GODDESS_SCALE * 220.0f) // (her light reaches as far below her middle as above it: lifted clear of
+                                              // the floor)
+
 static void Goddess_Init(Actor* thisx, PlayState* play) {
     GdfGoddess* g = (GdfGoddess*)thisx;
-    g->baseY = thisx->world.pos.y;
+    g->baseY = thisx->world.pos.y + GODDESS_LIFT;
     g->frames = thisx->params * 40;
     thisx->textId = GODDESS_TEXT_ID + thisx->params;
     thisx->targetMode = 6;
-    Actor_SetFocus(thisx, 90.0f);
+    Actor_SetFocus(thisx, 0.0f);
 }
 
 static void Goddess_Update(Actor* thisx, PlayState* play) {
@@ -1789,16 +1812,15 @@ static void Goddess_Update(Actor* thisx, PlayState* play) {
 
     g->frames++;
     thisx->world.pos.y = g->baseY + 8.0f * Math_SinS(g->frames * 0x300);
-    Actor_SetFocus(thisx, 90.0f);
+    Actor_SetFocus(thisx, 0.0f); // (her middle)
     // she turns to him
     Math_SmoothStepToS(&thisx->shape.rot.y, Actor_WorldYawTowardActor(thisx, &player->actor), 8, 0x400, 0x40);
     if (g->frames % 6 == 0) {
         Vec3f at = thisx->world.pos;
-        at.y += 70.0f;
-        Sparks(play, &at, 50.0f, 1, 0.5f, sGoddessSparks[thisx->params]);
+        Sparks(play, &at, GODDESS_LIFT, 2, 0.8f, sGoddessSparks[thisx->params]);
     }
     if (!Actor_ProcessTalkRequest(thisx, play)) {
-        Actor_OfferTalk(thisx, play, 140.0f);
+        Actor_OfferTalk(thisx, play, 200.0f);
     }
 }
 
@@ -1809,7 +1831,6 @@ static const char sGoddessBodyDL[] = "__OTR__objects/object_god_lgt/gGoldenGodde
 static const char sGoddessAuraDL[] = "__OTR__objects/object_god_lgt/gGoldenGoddessAuraDL";
 static const u8 sGoddessPrim[3][3] = { { 255, 170, 255 }, { 170, 255, 255 }, { 170, 255, 170 } };
 static const u8 sGoddessEnv[3][3] = { { 255, 0, 255 }, { 0, 40, 255 }, { 0, 200, 0 } };
-#define GODDESS_SCALE 0.1f // (the game's own, in the tale)
 
 static void Goddess_Draw(Actor* thisx, PlayState* play) {
     GdfGoddess* g = (GdfGoddess*)thisx;

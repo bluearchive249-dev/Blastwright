@@ -1539,6 +1539,10 @@ static void EnElf_DrawPoeNavi(EnElf* this, PlayState* play) {
     if (player->stateFlags1 & (PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS)) {
         return;
     }
+    // and while he browses a shop's shelves (the shopkeeper hides him then too), so the wares can be seen
+    if (player->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW) {
+        return;
+    }
     if (!sPoeNaviReady) {
         SkelAnime_Init(play, &sPoeNaviSkel, (SkeletonHeader*)gPoeSkel, (AnimationHeader*)gPoeFloatAnim,
                        sPoeNaviJoints, sPoeNaviMorph, 21);

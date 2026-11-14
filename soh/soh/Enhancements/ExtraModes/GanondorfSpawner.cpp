@@ -105,9 +105,10 @@ const Summon sEnemies[] = {
 
 // Bosses outside their own rooms: some won't behave, and some may crash the game
 const Summon sBosses[] = {
-    // The mini-bosses fight anywhere. Of the dungeon bosses only these two are tried: the others are scripted to
-    // their own rooms (Gohma's ceiling and dark room, Volvagia's holes, Morpha's pool, Bongo Bongo's drum, Phantom Ganon's paintings, Twinrova's
-    // platforms) and do nothing or crash the game elsewhere.
+    // The mini-bosses fight anywhere. Of the dungeon bosses only King Dodongo is tried: the others are scripted to
+    // their own rooms (Gohma's ceiling and dark room, Barinade's ceiling and Jabu-Jabu's belly, Volvagia's holes,
+    // Morpha's pool, Bongo Bongo's drum, Phantom Ganon's paintings, Twinrova's platforms) and do nothing or crash the
+    // game elsewhere.
     { "Dark Link", ACTOR_EN_TORCH2, 0 },
     { "Dead Hand", ACTOR_EN_DH, 0 },
     { "Flare Dancer", ACTOR_EN_FD, 0 },
@@ -115,7 +116,6 @@ const Summon sBosses[] = {
     { "Gerudo fighter", ACTOR_EN_GELDB, 0 },
     { "Stalfos", ACTOR_EN_TEST, 0 },
     { "King Dodongo (experimental)", ACTOR_BOSS_DODONGO, 0 },
-    { "Barinade (experimental)", ACTOR_BOSS_VA, 0 },
 };
 
 const Summon sObjects[] = {

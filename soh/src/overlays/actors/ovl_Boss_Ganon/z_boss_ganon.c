@@ -253,6 +253,7 @@ static GanondorfEffect* sCurEffects = sEffects;
 static BossGanon* sVanillaGanondorf;
 static EnGanonMant* sVanillaCape;
 static BossGanon* sPlayerGanondorf;
+static s16 sGdfHoldUpTimer = 0; // (frames left of a hold-up that isn't one of Link's item gets)
 static EnGanonMant* sPlayerCape;
 // SoH: his cloak's other pieces, sewn onto his cape one after another (over his left shoulder, then down his front),
 // the "Cloak" option
@@ -13205,7 +13206,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     // Holding up something he found (a chest, a heart piece, ...), like Link does
-    if ((player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) && (player->unk_862 != 0) &&
+    if ((((player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) && (player->unk_862 != 0)) || (sGdfHoldUpTimer > 0)) &&
         (this->actionFunc != BossGanon_Player_ItemGet) && (this->actionFunc != BossGanon_Player_Downed) &&
         (this->actionFunc != BossGanon_Player_Ride) && !this->playerHidden) {
         BossGanon_Player_ReleaseOrganCam(this, play);
@@ -15734,11 +15735,29 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
     }
 }
 
+// Something else can ask him to hold a thing up the same way for a while (the Triforce in the Sacred Realm), with no
+// item of Link's being got: he keeps the pose while this counts down, and it can be renewed each frame
+void BossGanon_Player_HoldUp(s16 frames) {
+    if (frames > sGdfHoldUpTimer) {
+        sGdfHoldUpTimer = frames;
+    }
+}
+
+// Where what he's holding up is, for the player Ganondorf (false when he isn't holding anything up)
+s32 BossGanon_Player_GetHeldUpPos(Vec3f* pos) {
+    return (sPlayerGanondorf != NULL) && BossGanon_Player_GetItemHoldPos(&sPlayerGanondorf->actor, pos);
+}
+
 // Both fists up over his head with the item between them, like Link holding up what he found
 void BossGanon_Player_ItemGet(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
+    bool gettingItem = (player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) && (player->unk_862 != 0);
 
-    if (!(player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) || (player->unk_862 == 0) || this->playerHidden) {
+    if (sGdfHoldUpTimer > 0) {
+        sGdfHoldUpTimer--;
+    }
+    if ((!gettingItem && (sGdfHoldUpTimer <= 0)) || this->playerHidden) {
+        sGdfHoldUpTimer = 0;
         BossGanon_Player_SetupFloat(this, play);
         return;
     }
