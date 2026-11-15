@@ -806,11 +806,19 @@ def statue(B, x, z, y, face='S', color=(205, 205, 210)):
     prism(B, 'stone_band', qx, qz, 6, y + 230, y + 260, 4, color=(170, 165, 160), r1=0.5)
 
 
-def rug(B, x0, x1, z0, z1, y, mat='carpet_red', border=GOLD, color=(255, 255, 255)):
+def rug(B, x0, x1, z0, z1, y, mat='carpet_red', border=GOLD, color=(255, 255, 255), rims=1):
+    """A rug: a gilded rim round the cloth (rims=2: a second, thinner rim inside the first, a band of cloth between)."""
+    def cloth(k, h):
+        B.quad(mat, [(x0 + k, y + h, z1 - k), (x1 - k, y + h, z1 - k), (x1 - k, y + h, z0 + k), (x0 + k, y + h, z0 + k)],
+               uv=[(0, (z1 - z0 - 2 * k) / 2.2), ((x1 - x0 - 2 * k) / 2.2, (z1 - z0 - 2 * k) / 2.2),
+                   ((x1 - x0 - 2 * k) / 2.2, 0), (0, 0)], color=color)
     B.quad('stone_band', [(x0, y + 2, z1), (x1, y + 2, z1), (x1, y + 2, z0), (x0, y + 2, z0)], color=border)
-    k = 10
-    B.quad(mat, [(x0 + k, y + 4, z1 - k), (x1 - k, y + 4, z1 - k), (x1 - k, y + 4, z0 + k), (x0 + k, y + 4, z0 + k)],
-           uv=[(0, (z1 - z0) / 2.2), ((x1 - x0) / 2.2, (z1 - z0) / 2.2), ((x1 - x0) / 2.2, 0), (0, 0)], color=color)
+    cloth(10, 4)
+    if rims > 1:
+        k = 34
+        B.quad('stone_band', [(x0 + k, y + 6, z1 - k), (x1 - k, y + 6, z1 - k), (x1 - k, y + 6, z0 + k),
+                              (x0 + k, y + 6, z0 + k)], color=border)
+        cloth(k + 6, 8)
 
 
 def table(B, x0, x1, z0, z1, y, h=60, top='wood_dark', color=WOODT):
@@ -1249,11 +1257,12 @@ def roundel(B, mat, wall, x, z, yc, r=60, color=(255, 255, 255)):
     along = np.array([-inward[2], 0, inward[0]])
     def P(u, y, d):
         return tuple(np.array([x, 0, z]) + along * u + inward * d + np.array([0, y, 0]))
-    # the medallion textures are half-discs (64x32): the top half, then the same mirrored for the bottom
+    # the medallion textures are half-discs (64x32), the disc's middle along their first row (t 0) and its rim at
+    # the last: the top half, then the same mirrored for the bottom, meeting along the middle
     oriented(B, mat, [P(-r, yc, 4), P(r, yc, 4), P(r, yc + r, 4), P(-r, yc + r, 4)], inward,
-             uv=[(0, 32), (64, 32), (64, 0), (0, 0)], color=color, light=False)
-    oriented(B, mat, [P(-r, yc - r, 4), P(r, yc - r, 4), P(r, yc, 4), P(-r, yc, 4)], inward,
              uv=[(0, 0), (64, 0), (64, 32), (0, 32)], color=color, light=False)
+    oriented(B, mat, [P(-r, yc - r, 4), P(r, yc - r, 4), P(r, yc, 4), P(-r, yc, 4)], inward,
+             uv=[(0, 32), (64, 32), (64, 0), (0, 0)], color=color, light=False)
     n = 16
     for i in range(n):
         a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
@@ -1461,6 +1470,21 @@ def build(fixed_lights=None):
              (TCX + TR * math.cos(b), UP, TCZ + TR * math.sin(b)), (TCX + 30 * math.cos(b), UP, TCZ + 30 * math.sin(b))]
         oriented(B, 'marble', q, (0, 1, 0))
         col_quad(B, q)
+    # a parapet along the landing's open edge, over the stairwell (past it the stair is a turn below)
+    a = t_end + 0.9
+    ca, sa = math.cos(a), math.sin(a)
+    p0, p1 = (TCX + 30 * ca, TCZ + 30 * sa), (TCX + (TR - 1) * ca, TCZ + (TR - 1) * sa)
+    nx, nz = -sa * 5, ca * 5          # (half its thickness, across it)
+    for s_ in (1, -1):
+        q = [(p0[0] + s_ * nx, UP - 30, p0[1] + s_ * nz), (p1[0] + s_ * nx, UP - 30, p1[1] + s_ * nz),
+             (p1[0] + s_ * nx, UP + 100, p1[1] + s_ * nz), (p0[0] + s_ * nx, UP + 100, p0[1] + s_ * nz)]
+        oriented(B, 'marble', q, (s_ * nx, 0, s_ * nz), color=(236, 230, 220))
+        p_ = np.array(q, float)
+        if np.dot(np.cross(p_[1] - p_[0], p_[2] - p_[0]), (s_ * nx, 0, s_ * nz)) < 0:
+            q = q[::-1]
+        col_quad(B, q, surface='wall')
+    B.quad('stone_band', [(p0[0] - nx, UP + 100, p0[1] - nz), (p1[0] - nx, UP + 100, p1[1] - nz),
+                          (p1[0] + nx, UP + 100, p1[1] + nz), (p0[0] + nx, UP + 100, p0[1] + nz)], color=GOLD)
     disc(B, 'wood_light', TCX, TCZ, TR, UP + 300, 20, up=False, color=(170, 135, 105))
     for a in (math.pi * 0.75, math.pi * 1.1, math.pi * 0.25):   # arrow-slit windows, lit
         wx, wz = TCX + (TR - 3) * math.cos(a), TCZ + (TR - 3) * math.sin(a)
@@ -1499,8 +1523,8 @@ def build(fixed_lights=None):
     for zz in (1600, 1740, 1880):
         candle(-1215, zz, F + 64)
         candle(-705, zz, F + 64)
-    B.quad('carpet_red', [(-1000, F + 3, hz1), (-920, F + 3, hz1), (-920, F + 3, hz0 + 180), (-1000, F + 3, hz0 + 180)],
-           uv=[(0, 330), (36, 330), (36, 0), (0, 0)])
+    # the great runner up the aisle between the long tables: more than half the hall wide, two gilded rims
+    rug(B, -1165, -755, hz0 + 180, hz1 - 6, F, mat='carpet_red', rims=2)
     # the screens passage at the low end (south) under the minstrels' gallery: a carved screen with three openings
     sz = hz1 - 150
     gy = F + 300
@@ -2079,18 +2103,18 @@ def emit(B, W, beams):
     files[col_path] = G.collision_file(B.col_verts, B.col_polys, SURFACES, cam_settings=(1, 1))
     room_path = BASE + f'{SCENE}_room_0'
     HEISHI3, ZL4 = 0x0142, 0x01D3
-    # (x, y, z, yaw): two by the throne, two along the throne room's back wall facing the window (as the courtyard
+    # (x, y, z, yaw), each at least 35 units clear of walls, pillars and furniture: two by the throne, two along the throne room's back wall facing the window (as the courtyard
     # shows them), the rest about the castle
     T = THRONE_FLOOR
     UP = 440
-    guards = [(-1010, T, -330, 0), (-790, T, -330, 0), (-1037, T, 58, 0x4000), (-1037, T, -58, 0x4000),
-              (-1060, FLOOR, 1000, 0x4000), (-860, FLOOR, 1180, -0x4000),           # the processional
+    guards = [(-970, T, -301, 0), (-775, T, -282, 0), (-1037, T, 28, 0x4000), (-1037, T, -28, 0x4000),
+              (-1060, FLOOR, 1000, 0x4000), (-930, FLOOR, 1180, -0x4000),           # the processional
               (-1090, FLOOR, 1500, 0), (-830, FLOOR, 1500, 0),                    # before the dais
-              (-1070, FLOOR, 2250, -0x8000), (-850, FLOOR, 2250, -0x8000),         # at the front doors
-              (-700, FLOOR, 1150, 0), (-330, FLOOR, 820, -0x8000),                 # the guard hall
+              (-1050, FLOOR, 2250, -0x8000), (-870, FLOOR, 2250, -0x8000),         # at the front doors
+              (-690, FLOOR, 1150, 0), (-330, FLOOR, 820, -0x8000),                 # the guard hall
               (-520, FLOOR, 2000, 0x4000),                                         # the cloister's west walk
-              (-1400, FLOOR, 1500, -0x4000),                                       # the library
-              (-1350, UP, 970, -0x8000)]                                           # the presence chamber
+              (-1420, FLOOR, 1500, -0x4000),                                       # the library
+              (-1350, UP, 950, -0x8000)]                                           # the presence chamber
     actors = [G.actor_entry(HEISHI3, (x, y, z), (0, yaw, 0), 0) for x, y, z, yaw in guards]
     # Zelda at the courtyard window, peering in (her own spot and facing in the courtyard: her peeking animation
     # turns her about, so it is the same 0x4000 the courtyard gives her)

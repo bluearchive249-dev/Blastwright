@@ -16,6 +16,7 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/cvar_prefixes.h"
 #include <ship/Context.h>
+#include <ship/resource/ResourceManager.h>
 #include <ship/resource/archive/ArchiveManager.h>
 #include <libultraship/bridge/consolevariablebridge.h>
 
