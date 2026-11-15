@@ -18,7 +18,7 @@ Layout (redone 14 Nov 2026 after real castles; floor y 20, x west negative):
   Guard hall     x  -820..-260  z  700..1240  bunks, a table, spears, a fireplace
   Cloister       x  -580..0     z 1240..2300  after the Alhambra's Court of the Lions: arcaded walks round a garth,
                  a fountain ringed with stone lions, four rills, sunken beds with trees, a glass roof
-  Library        x -1900..-1340 z 1340..2100  two storeys of shelves, an upper gallery, reading tables, a globe
+  Library        x -1900..-1340 z 1340..2100  two storeys of shelves, an upper gallery, reading tables
   Upstairs (y 440): presence chamber x -1600..-1100 z 760..1000; the King's bedchamber x -1400..-1100 z 460..760;
                  the Princess's bedchamber x -1900..-1400 z 460..760; a dressing room x -1900..-1600 z 760..1000
 
@@ -1553,7 +1553,7 @@ def build(fixed_lights=None):
     # ================= Great hall: screens passage, minstrels' gallery, dais, hammerbeam roof, fireplace =================
     hx0, hx1, hz0, hz1, htop = -1340, -580, 1300, 2200, 520
     B.floor('wood_planks', hx0, hx1, hz0, hz1)
-    B.wall('stone_grey', 'x', hx0, hz0, hz1, F, htop, +1, openings=[(1640, 1800, F, F + 240)], color=(236, 228, 214))
+    B.wall('stone_grey', 'x', hx0, hz0, hz1, F, htop, +1, openings=[(1860, 2000, F, F + 240)], color=(236, 228, 214))
     B.wall('stone_grey', 'x', hx1, hz0, hz1, F, htop, -1, openings=[(1680, 1840, F, F + 240)], color=(236, 228, 214))
     B.wall('stone_grey', 'z', hz0, hx0, hx1, F, htop, +1, openings=[(-1060, -860, F, F + 260)], color=(236, 228, 214))
     B.wall('stone_grey', 'z', hz1, hx0, hx1, F, htop, -1, openings=[(-1100, -820, F, F + 260)], color=(236, 228, 214))
@@ -1601,20 +1601,20 @@ def build(fixed_lights=None):
     # the windows high in the east wall (onto the cloister), and two in the west
     for zz in (1450, 2000):
         win('E', (hx1, zz), 250, 0.36)
-    win('W', (hx0, 1950), 250, 0.36)
+    win('W', (hx0, 1400), 250, 0.36)
     for zz, xx in ((1560, -1150), (1900, -1150), (1560, -770), (1900, -770)):
         chandelier(B, light, xx, zz, htop + 60, drop=200, r=60, arms=8, inten=0.35, radius=520)
     light((-960, 300, 1700), 760, 0.25)
     for xx in (-1300, -620):
         potted(B, xx, hz0 + 190, big=True)
-    statue(B, -1280, hz1 - 200, F, face='E')
+    statue(B, -1280, 1800, F, face='E')   # (between the fireplace and the library door)
     statue(B, -640, hz1 - 200, F, face='W')
     room_finish(B, hx0, hx1, hz0, hz1, F, htop, pilasters=False,
-                doors={'W': [(1640, 1800, F, F + 240), (1460, 1740, F, F + 420), (1890, 2010, F + 260, F + 500)],
+                doors={'W': [(1860, 2000, F, F + 240), (1460, 1740, F, F + 420), (1340, 1460, F + 260, F + 500)],
                        'E': [(1680, 1840, F, F + 240), (1390, 1510, F + 260, F + 500), (1940, 2060, F + 260, F + 500)],
                        'N': [(-1060, -860, F, F + 260)], 'S': [(-1100, -820, F, F + 260)]},
                 skip=[('N', hx0, hx1)])
-    arch_door(B, 'x', hx0, 1640, 1800, F, F + 240)
+    arch_door(B, 'x', hx0, 1860, 2000, F, F + 240)
     arch_door(B, 'x', hx1, 1680, 1840, F, F + 240)
     arch_door(B, 'z', hz0, -1060, -860, F, F + 260)
 
@@ -1874,7 +1874,7 @@ def build(fixed_lights=None):
     # ================= Library (west of the great hall): two storeys of shelves, an upper gallery =================
     lx0, lx1, lz0, lz1, ltop = -1900, -1340, 1340, 2100, 560
     B.floor('wood_planks', lx0, lx1, lz0, lz1)
-    B.wall('plaster', 'x', lx1, lz0, lz1, F, ltop, -1, openings=[(1640, 1800, F, F + 240)], color=(240, 228, 206))
+    B.wall('plaster', 'x', lx1, lz0, lz1, F, ltop, -1, openings=[(1860, 2000, F, F + 240)], color=(240, 228, 206))
     B.wall('plaster', 'x', lx0, lz0, lz1, F, ltop, +1, color=(240, 228, 206))
     B.wall('plaster', 'z', lz0, lx0, lx1, F, ltop, +1, color=(240, 228, 206))
     B.wall('plaster', 'z', lz1, lx0, lx1, F, ltop, -1, color=(240, 228, 206))
@@ -1883,8 +1883,7 @@ def build(fixed_lights=None):
     bookcase(B, 'S', lx0 + 20, lx1 - 20, lz1, F)
     bookcase(B, 'W', lz0 + 50, 1640, lx0, F)
     bookcase(B, 'W', 1900, lz1 - 50, lx0, F)
-    bookcase(B, 'E', lz0 + 50, 1600, lx1, F)
-    bookcase(B, 'E', 1840, lz1 - 50, lx1, F)
+    bookcase(B, 'E', lz0 + 50, 1820, lx1, F)
     # the upper gallery all round on brackets, its own shelves above
     ug = F + 290
     for (a, b, c, d) in ((lx0, lx1, lz0, lz0 + 70), (lx0, lx1, lz1 - 70, lz1), (lx0, lx0 + 70, lz0, lz1), (lx1 - 70, lx1, lz0, lz1)):
@@ -1907,13 +1906,6 @@ def build(fixed_lights=None):
         prism(B, 'plaster', xx, zz, 5, F + 94, F + 112, 6, color=(250, 240, 220))
         flame(B, (xx, F + 112, zz), 0.0012, 2)
         light((xx, F + 124, zz), 380, 0.6, LAMP)
-    # a great globe on a stand
-    prism(B, 'wood_dark', -1450, 1720, 14, F, F + 70, 8, color=WOODT)
-    for k in range(6):
-        ya, yb = F + 70 + 16 * k, F + 70 + 16 * (k + 1)
-        ra = 48 * math.sin(math.pi * k / 6) + 4
-        rb = 48 * math.sin(math.pi * (k + 1) / 6) + 4
-        prism(B, 'cloth_blue', -1450, 1720, ra, ya, yb, 14, color=(120, 160, 210), r1=rb)
     chandelier(B, light, (lx0 + lx1) / 2, 1720, ltop + 50, drop=200, r=70)
     light((-1620, 320, 1720), 600, 0.25)
 
