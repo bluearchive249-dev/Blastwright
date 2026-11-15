@@ -206,19 +206,22 @@ class Builder:
             self.wall_faces.add((mat, i))
 
     def _wall(self, mat, axis, fixed, a, b, y0, y1, facing, openings=(), collide=True, color=(255, 255, 255)):
+        # The wall cut into strips at every opening's sides; each strip is solid but for the openings across it (so
+        # openings stacked one over another, a door on each floor, both stay open)
         pieces = []
-        ops = sorted(openings)
-        u = a
-        for (o0, o1, v0, v1) in ops:
-            if o0 > u:
-                pieces.append((u, o0, y0, y1))
-            if v0 > y0:
-                pieces.append((o0, o1, y0, v0))
-            if v1 < y1:
-                pieces.append((o0, o1, v1, y1))
-            u = o1
-        if u < b:
-            pieces.append((u, b, y0, y1))
+        cuts = sorted({a, b} | {min(max(c, a), b) for o in openings for c in o[:2]})
+        for u0, u1 in zip(cuts, cuts[1:]):
+            if u1 - u0 < 1e-6:
+                continue
+            gaps = sorted((max(v0, y0), min(v1, y1)) for o0, o1, v0, v1 in openings
+                          if o0 <= u0 + 1e-6 and o1 >= u1 - 1e-6 and v1 > y0 and v0 < y1)
+            v = y0
+            for g0, g1 in gaps:
+                if g0 > v:
+                    pieces.append((u0, u1, v, g0))
+                v = max(v, g1)
+            if v < y1:
+                pieces.append((u0, u1, v, y1))
         for (u0, u1, v0, v1) in pieces:
             if axis == 'x':
                 self.wall_rects.append((0, 1 if facing > 0 else -1, fixed, np.array([v0, u0]), np.array([v1, u1])))
@@ -698,7 +701,7 @@ def room_finish(B, x0, x1, z0, z1, y, top, doors=None, walls='NSWE', dado=DADO, 
         a, b = (x0, x1) if wall in 'NS' else (z0, z1)
         ds = doors.get(wall, ())
         for u0, u1 in _wall_runs(a, b, ds, y, y + rail + 8):
-            _moulding(B, wall, x0, x1, z0, z1, u0, u1, y + 18, y + rail, 2, 'stone_band', dado)   # the dado
+            _moulding(B, wall, x0, x1, z0, z1, u0, u1, y + 18, y + rail, 3, 'stone_band', dado)   # the dado
             _moulding(B, wall, x0, x1, z0, z1, u0, u1, y, y + 18, 7, 'stone_band', (90, 70, 58))  # skirting
         for u0, u1 in _wall_runs(a, b, ds, y + rail, y + rail + 9):
             _moulding(B, wall, x0, x1, z0, z1, u0, u1, y + rail, y + rail + 9, 6, 'stone_band', TRIM)  # chair rail
@@ -901,7 +904,7 @@ def ivy(B, wall, x, z, y0, y1, w):
     inward = {'W': (1, 0, 0), 'E': (-1, 0, 0), 'N': (0, 0, 1), 'S': (0, 0, -1)}[wall]
     along = (-inward[2], 0, inward[0])
     def P(u, y):
-        return (x + along[0] * u + inward[0] * 4, y, z + along[2] * u + inward[2] * 4)
+        return (x + along[0] * u + inward[0] * 8, y, z + along[2] * u + inward[2] * 8)
     oriented(B, 'ivy', [P(-w / 2, y0), P(w / 2, y0), P(w / 2, y1), P(-w / 2, y1)], inward,
              uv=[(0.5, (y1 - y0) / 2.5), (w / 2.5, (y1 - y0) / 2.5), (w / 2.5, 0.5), (0.5, 0.5)])
 
@@ -1035,6 +1038,20 @@ def arcade(B, axis, fixed, a, b, y0, h, bays, r=12, facing=1, roof=None, depth=1
         for side in (1, -1):
             arch_face(B, axis, fixed + side * 6 * (1 if axis == 'x' else 1), u0 + 12, u1 - 12, spring, top,
                       spandrel, sp_color, side)
+        # the arch's underside (soffit) between its two faces, so it reads solid from below and from the side
+        ra, uc, n = (u1 - u0 - 24) / 2, (u0 + u1) / 2, 8
+        pts = [(uc - ra * math.cos(math.pi * k / n), spring + ra * math.sin(math.pi * k / n)) for k in range(n + 1)]
+        for (ua, ya), (ub, yb) in zip(pts, pts[1:]):
+            P = (lambda u, y, d: (fixed + d, y, u)) if axis == 'x' else (lambda u, y, d: (u, y, fixed + d))
+            mu, my = (ua + ub) / 2 - uc, (ya + yb) / 2 - spring
+            hint = np.array(P(-mu, -my, 0)) - np.array(P(0, 0, 0))
+            oriented(B, 'stone_band', [P(ua, ya, -6), P(ub, yb, -6), P(ub, yb, 6), P(ua, ya, 6)], hint, color=TRIM)
+        # and its sides down the columns' backs (between the paired shafts' capitals and the arch's foot)
+        for uu in (u0 + 12, u1 - 12):
+            P = (lambda u, y, d: (fixed + d, y, u)) if axis == 'x' else (lambda u, y, d: (u, y, fixed + d))
+            hint = np.array(P(uc, 0, 0)) - np.array(P(uu, 0, 0))
+            oriented(B, spandrel, [P(uu, spring - 14, -6), P(uu, spring - 14, 6), P(uu, spring, 6), P(uu, spring, -6)],
+                     hint, color=sp_color)
     # the beam over the arches
     if axis == 'x':
         B.box('stone_band', fixed - 8, fixed + 8, top - 18, top, a, b, collide=False, color=TRIM)
