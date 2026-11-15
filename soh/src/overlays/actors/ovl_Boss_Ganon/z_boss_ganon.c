@@ -9419,8 +9419,15 @@ static s32 BossGanon_Player_IsSmashable(s16 id) {
     }
 }
 
+// The Door of Time's own opening scene (z_en_okarina_tag_cutscene_data.c), as the Song of Time plays it
+extern CutsceneData D_80ABFB40[];
+
 // Shut to him: locked, chained or barred (and so not opened the normal way)
 static s32 BossGanon_Player_IsShut(PlayState* play, Actor* a) {
+    if (a->id == ACTOR_DOOR_TOKI) {
+        // The Door of Time: no stones and no song for him; he kicks it open
+        return !Flags_GetEventChkInf(EVENTCHKINF_OPENED_THE_DOOR_OF_TIME) && (play->csCtx.state == CS_STATE_IDLE);
+    }
     if (a->id == ACTOR_EN_DOOR) {
         return ((EnDoor*)a)->lockTimer != 0;
     }
@@ -9473,7 +9480,9 @@ static Actor* BossGanon_Player_FindShutDoor(PlayState* play) {
             d = Math_Vec3f_DistXZ(&player->actor.world.pos, &a->world.pos);
             dyaw = Math_Vec3f_Yaw(&player->actor.world.pos, &a->world.pos) - player->actor.shape.rot.y;
             // (gates and grates are wide, and their origin may be at one end: further for them)
-            if (d > ((BossGanon_Player_IsSmashable(a->id) || (a->id == ACTOR_BG_SPOT02_OBJECTS)) ? 170.0f
+            if (d > ((BossGanon_Player_IsSmashable(a->id) || (a->id == ACTOR_BG_SPOT02_OBJECTS) ||
+                      (a->id == ACTOR_DOOR_TOKI))
+                         ? 170.0f
                                                                                                 : GDF_BREAK_RANGE)) {
                 continue;
             }
@@ -9519,6 +9528,14 @@ static void BossGanon_Player_BreakDoor(BossGanon* this, PlayState* play, Actor* 
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
     EffectSsHahen_SpawnBurst(play, &pos, 12.0f, 0, 12, 10, 24, HAHEN_OBJECT_DEFAULT, 10, NULL);
 
+    if (a->id == ACTOR_DOOR_TOKI) {
+        // The Door of Time swings open with its own scene (or at once, with SoH's time saver on)
+        if (GameInteractor_Should(VB_PLAY_DOOR_OF_TIME_CS, true, a)) {
+            play->csCtx.segment = D_80ABFB40;
+            gSaveContext.cutsceneTrigger = 1;
+        }
+        return;
+    }
     if ((a->id == ACTOR_BG_SPOT02_OBJECTS) && (a->params == 0)) {
         // The Shadow Temple's stone door: it grinds up as if the torches were lit
         s32 doorFlag = ((BgSpot02Objects*)a)->unk_16B;
