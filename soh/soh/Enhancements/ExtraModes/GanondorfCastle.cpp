@@ -59,7 +59,7 @@ static GdfDrawbridge* sBridge = NULL;
 // gdf_castle.o2r is in the mods folder (asked of the archives themselves: the game's file list is made before the
 // mods folder is read, so it never holds a mod's files)
 static bool CastleFileLoaded() {
-    return Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HasFile(
+    return Ship::Context::GetRawInstance()->GetResourceManager()->GetArchiveManager()->HasFile(
         "objects/gdf_castle/gGdfDrawbridgeDL");
 }
 
