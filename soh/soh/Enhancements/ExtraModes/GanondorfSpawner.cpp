@@ -1,6 +1,5 @@
 // Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
-// Play as Ganondorf: the Dark Summoning menu. Once he holds the Triforce (or with the developer tools on, for testing),
-// hold L and press R to open it: the world stops, and he can call up enemies, bosses, objects and items, or anything
+// Play as Ganondorf: the Dark Summoning menu. With the developer tools on, hold L and press R to open it: the world stops, and he can call up enemies, bosses, objects and items, or anything
 // in the game from the full list, in front of him.
 //   Stick or D-pad up/down: choose   Stick or D-pad left/right: change page   A: summon   B (or L+R again): close
 // The mouse works too: click a page, click an entry to summon it.
@@ -29,7 +28,6 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 s32 PlayAsGanondorf_OwnsLButton(void);
-s32 GdfSacred_HasTriforce(void);
 extern PlayState* gPlayState;
 }
 
@@ -222,7 +220,7 @@ bool Allowed() {
     if ((play == nullptr) || !PlayAsGanondorf_OwnsLButton()) {
         return false;
     }
-    return GdfSacred_HasTriforce() || CVarGetInteger(CVAR_DEVELOPER_TOOLS("DebugEnabled"), 0);
+    return CVarGetInteger(CVAR_DEVELOPER_TOOLS("DebugEnabled"), 0);
 }
 
 void SetOpen(bool open) {
