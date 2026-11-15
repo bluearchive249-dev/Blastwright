@@ -15,6 +15,8 @@
 #include "soh/ActorDB.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/cvar_prefixes.h"
+#include <ship/Context.h>
+#include <ship/resource/archive/ArchiveManager.h>
 #include <libultraship/bridge/consolevariablebridge.h>
 
 extern "C" {
@@ -54,10 +56,17 @@ static bool sSpawnPending = false;
 static s16 sLastScene = -1;
 static GdfDrawbridge* sBridge = NULL;
 
+// gdf_castle.o2r is in the mods folder (asked of the archives themselves: the game's file list is made before the
+// mods folder is read, so it never holds a mod's files)
+static bool CastleFileLoaded() {
+    return Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HasFile(
+        "objects/gdf_castle/gGdfDrawbridgeDL");
+}
+
 static bool CastleAvailable() {
     return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) &&
            CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.CastleInterior"), 1) &&
-           ResourceMgr_FileExists("objects/gdf_castle/gGdfDrawbridgeDL");
+           CastleFileLoaded();
 }
 
 // ---- The drawbridge actor ----
