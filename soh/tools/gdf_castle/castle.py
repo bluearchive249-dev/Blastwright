@@ -1920,8 +1920,13 @@ def build(fixed_lights=None):
     return B, W, beams, lights
 
 
+# The renderer reads a vertex load's offset above 0xFFFFF bytes as a pointer (libultraship's G_VTX_OTR_HASH), so no
+# vertex array may pass 65535 vertices: a big room's are split into several (<vtx_path>, <vtx_path>_1, ...)
+VTX_CHUNK = 60000
+
+
 def emit_dl(B, dl_path, vtx_path, files, obj=False):
-    verts = []
+    chunks = [[]]
     dl = G.DL(dl_path)
     for mat, faces in B.faces.items():
         for c in material_cmds(MAT[mat]):
@@ -1936,12 +1941,16 @@ def emit_dl(B, dl_path, vtx_path, files, obj=False):
         def flush():
             if not batch:
                 return
+            if len(chunks[-1]) + sum(len(f) for f in batch) > VTX_CHUNK:
+                chunks.append([])
+            verts = chunks[-1]
             base = len(verts)
             local = []
             for f in batch:
                 local.append(list(range(len(verts) - base, len(verts) - base + len(f))))
                 verts.extend(f)
-            dl.vtx(vtx_path, base, len(verts) - base)
+            k = len(chunks) - 1
+            dl.vtx(vtx_path + (f'_{k}' if k else ''), base, len(verts) - base)
             tris = []
             for idx in local:
                 tris.append((idx[0], idx[1], idx[2]))
@@ -1969,7 +1978,8 @@ def emit_dl(B, dl_path, vtx_path, files, obj=False):
         flush()
     dl.pipesync()
     dl.end()
-    files[vtx_path] = G.vtx_file(verts)
+    for k, verts in enumerate(chunks):
+        files[vtx_path + (f'_{k}' if k else '')] = G.vtx_file(verts)
     files[dl_path] = dl.data()
 
 
