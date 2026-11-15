@@ -824,6 +824,31 @@ def rug(B, x0, x1, z0, z1, y, mat='carpet_red', border=GOLD, color=(255, 255, 25
         cloth(k + 6, 8)
 
 
+def runner(B, x0, x1, z0, z1, y, mat='carpet_red', rims=1, rim=22, gap=26):
+    """A runner along z in the game's own red carpet: the texture's gilded border (its columns 1-9, one side only)
+    laid along each edge, mirrored for the far side, and (rims=2) again a band in, the plain red (its columns 12-30)
+    between; all one layer, so the rims line up with the carpet's edges."""
+    tl = (z1 - z0) / 2.2
+    strips = []   # (u0, u1, s at u0, s at u1)
+    u = x0
+    for k in range(rims):
+        strips.append((u, u + rim, 0, 11)); u += rim
+        if k < rims - 1:
+            strips.append((u, u + gap, 12, 30)); u += gap
+    left_end = u
+    u = x1
+    right = []
+    for k in range(rims):
+        right.append((u - rim, u, 11, 0)); u -= rim
+        if k < rims - 1:
+            right.append((u - gap, u, 30, 12)); u -= gap
+    strips.append((left_end, u, 12, 30))
+    strips += right
+    for u0, u1, s0, s1 in strips:
+        B.quad(mat, [(u0, y + 3, z1), (u1, y + 3, z1), (u1, y + 3, z0), (u0, y + 3, z0)],
+               uv=[(s0, tl), (s1, tl), (s1, 0), (s0, 0)])
+
+
 def table(B, x0, x1, z0, z1, y, h=60, top='wood_dark', color=WOODT):
     """A table in the game's dark timber: a thick top on four turned legs with an apron under the top."""
     B.box((top, 'wood_dark'), x0, x1, y + h - 8, y + h, z0, z1, color=color)
@@ -953,11 +978,20 @@ def spiral_stair(B, light, cx, cz, r_in, r_out, y0, y1, a0, turns, per_turn=22, 
         tre = [(cx + r_in * ca, y, cz + r_in * sa), (cx + r_out * ca, y, cz + r_out * sa),
                (cx + r_out * cb, y, cz + r_out * sb), (cx + r_in * cb, y, cz + r_in * sb)]
         oriented(B, tread, tre, (0, 1, 0))
-        ris = [(cx + r_in * ca, y - dh, cz + r_in * sa), (cx + r_out * ca, y - dh, cz + r_out * sa),
+        # the riser; low down (under a head's height) the step is solid stone to the floor: its front runs down to
+        # the floor, so the first turn reads as a built stair, not treads floating over the floor
+        solid = y < y0 + 230
+        ris = [(cx + r_in * ca, y0 if solid else y - dh, cz + r_in * sa),
+               (cx + r_out * ca, y0 if solid else y - dh, cz + r_out * sa),
                (cx + r_out * ca, y, cz + r_out * sa), (cx + r_in * ca, y, cz + r_in * sa)]
         oriented(B, 'stone_band', ris, (sa, 0, -ca), color=riser)
+        if solid and i > 0:
+            # and the back of the step below it (seen from the far side of the newel)
+            back = [(cx + r_in * ca, y0, cz + r_in * sa), (cx + r_out * ca, y0, cz + r_out * sa),
+                    (cx + r_out * ca, y - dh, cz + r_out * sa), (cx + r_in * ca, y - dh, cz + r_in * sa)]
+            oriented(B, 'brick_white', back, (-sa, 0, ca), color=under)
         # the stair's underside, a step's thickness below the tread (seen from the turn below)
-        if y - 40 > y0 + 10:
+        if not solid and y - 40 > y0 + 10:
             und = [(cx + r_in * ca, y - dh - 34, cz + r_in * sa), (cx + r_out * ca, y - dh - 34, cz + r_out * sa),
                    (cx + r_out * cb, y - 34, cz + r_out * sb), (cx + r_in * cb, y - 34, cz + r_in * sb)]
             oriented(B, 'brick_white', und, (0, -1, 0), color=under)
@@ -1274,12 +1308,14 @@ def roundel(B, mat, wall, x, z, yc, r=60, color=(255, 255, 255)):
     along = np.array([-inward[2], 0, inward[0]])
     def P(u, y, d):
         return tuple(np.array([x, 0, z]) + along * u + inward * d + np.array([0, y, 0]))
-    # the medallion textures are half-discs (64x32), the disc's middle along their first row (t 0) and its rim at
-    # the last: the top half, then the same mirrored for the bottom, meeting along the middle
+    # the medallion textures are half-discs (64x32): the top half, then the same mirrored for the bottom, meeting
+    # along the disc's middle. Light, Fire and Water have the middle along their first row (t 0), Forest, Shadow and
+    # Spirit along their last (t 32).
+    m = 0 if mat in ('medal_light', 'medal_fire', 'medal_water') else 32
     oriented(B, mat, [P(-r, yc, 4), P(r, yc, 4), P(r, yc + r, 4), P(-r, yc + r, 4)], inward,
-             uv=[(0, 0), (64, 0), (64, 32), (0, 32)], color=color, light=False)
+             uv=[(0, m), (64, m), (64, 32 - m), (0, 32 - m)], color=color, light=False)
     oriented(B, mat, [P(-r, yc - r, 4), P(r, yc - r, 4), P(r, yc, 4), P(-r, yc, 4)], inward,
-             uv=[(0, 32), (64, 32), (64, 0), (0, 0)], color=color, light=False)
+             uv=[(0, 32 - m), (64, 32 - m), (64, m), (0, m)], color=color, light=False)
     n = 16
     for i in range(n):
         a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
@@ -1541,7 +1577,7 @@ def build(fixed_lights=None):
         candle(-1215, zz, F + 64)
         candle(-705, zz, F + 64)
     # the great runner up the aisle between the long tables: more than half the hall wide, two gilded rims
-    rug(B, -1165, -755, hz0 + 180, hz1 - 6, F, mat='carpet_red', rims=2)
+    runner(B, -1165, -755, hz0 + 180, hz1 + 1, F, rims=2)
     # the screens passage at the low end (south) under the minstrels' gallery: a carved screen with three openings
     sz = hz1 - 150
     gy = F + 300
@@ -1585,6 +1621,7 @@ def build(fixed_lights=None):
     # ================= Gatehouse vestibule (the front doors) =================
     vx0, vx1, vz0, vz1, vtop = -1100, -820, 2200, 2360, 320
     B.floor('marble_check', vx0, vx1, vz0, vz1)
+    runner(B, -1060, -860, vz0 - 1, vz1, F, rims=2, rim=18, gap=20)   # the great hall's runner on to the front doors
     col_quad(B, [(-1060, F + 0.5, vz1 - 2), (-860, F + 0.5, vz1 - 2), (-860, F + 0.5, vz1 - 40), (-1060, F + 0.5, vz1 - 40)],
              surface='exit')
     B.wall('stone_grey', 'x', vx0, vz0, vz1, F, vtop, +1, color=(236, 228, 214))
