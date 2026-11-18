@@ -11,6 +11,7 @@
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
+#include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "soh/frame_interpolation.h" // gives the OPEN_DISPS macros C linkage for FrameInterpolation_*
 #include "soh/ActorDB.h"
 #include "soh/ResourceManagerHelpers.h"
@@ -279,7 +280,23 @@ static void OnPlayerUpdate() {
     }
 }
 
+// The sign at the processional's south end (En_Kanban params 0xFE: text 0x3FE)
+#define CASTLE_SIGN_TEXT 0x3FE
+
+static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
+    if ((gPlayState == NULL) || (gPlayState->sceneNum != SCENE_TESTROOM) || (*textId != CASTLE_SIGN_TEXT)) {
+        return;
+    }
+    CustomMessage msg = CustomMessage("This castle is still a W.I.P.");
+    msg.SetTextBoxType(TEXTBOX_TYPE_WOODEN);
+    msg.SetTextBoxPosition(TEXTBOX_POS_BOTTOM);
+    msg.AutoFormat();
+    *loadFromMessageTable = false;
+    msg.LoadIntoFont();
+}
+
 static void RegisterGanondorfCastle() {
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(OnOpenText);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>(OnSceneInit);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayerUpdate>(OnPlayerUpdate);
 }

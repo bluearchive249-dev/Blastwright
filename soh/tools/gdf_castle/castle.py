@@ -33,6 +33,7 @@ from matlib import materials, raw_cmds
 import o2rgen as G
 
 SCENE = 'testroom'
+EN_KANBAN, OBJECT_KANBAN = 0x0141, 0x012F
 BASE = f'scenes/shared/{SCENE}_scene/'
 FLOOR = 20
 THRONE_FLOOR = 84  # the courtyard's height: the room Zelda's window looks into
@@ -2426,8 +2427,11 @@ def emit(B, W, beams):
     for pos, sc, kind, g in sorted(B.flames, key=lambda f: (0, 2, 1).index(f[2])):
         sc = sc * (SCALE if g == 0 else 1.0)
         actors.append(G.actor_entry(EN_LIGHT, tuple(M(g)(pos)), (kind, 0, max(1, round(sc * 10000))), 0x0000))
+    # a sign at the processional's south end, just in from the great hall, facing those who come in
+    # (En_Kanban: text 0x300 | params; GanondorfCastle.cpp gives 0x3FE its words in this scene)
+    actors.append(G.actor_entry(EN_KANBAN, tuple(P((-845, FLOOR, 1250))), (0, 0, 0), 0x00FE))
     files[room_path] = G.room_file([(dl_path, water_path), (vanilla_path, ''), (court_opa.path, court_xlu.path)],
-                                   objects=(0x0097, 0x0191, OBJECT_TOKI_OBJECTS),
+                                   objects=(0x0097, 0x0191, OBJECT_TOKI_OBJECTS, OBJECT_KANBAN),
                                    actors=actors,
                                    echo=10, behavior=(0, 0), skymod=(0, 1))
     spawns = [
