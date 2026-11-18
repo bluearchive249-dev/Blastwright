@@ -6385,6 +6385,11 @@ static void BossGanon_Player_KeepFloatRoot(BossGanon* this);
 static s32 BossGanon_Player_UsesSpear(void);
 static s32 BossGanon_Player_HasTrident(void);
 static s32 BossGanon_Player_ApplyTridentAttack(BossGanon* this);
+// His dagger: drawn from the sheath on his leg into his right fist (the model only, for a stance to come)
+static u8 sGdfDagger = false; // the dagger drawn (its stance is not in the game yet: the model is kept for it)
+static s32 BossGanon_Player_DaggerOut(void);
+static void BossGanon_Player_DrawDagger(BossGanon* this, PlayState* play);
+static void BossGanon_Player_SetBlade(BossGanon* this, Vec3f* base, Vec3f* tip);
 static void BossGanon_Player_ApplyClipRoot(BossGanon* this, const Vec3s* root, s32 count, f32 frame, f32 weight);
 static void BossGanon_Player_ApplyClip(BossGanon* this, const Vec3s (*clip)[13], s32 count, f32 frame, s32 loop,
                                        f32 weight, f32 body);
@@ -6705,6 +6710,180 @@ static void BossGanon_Player_FindKnife(void) {
     sGdfKnifeState = 1;
 }
 
+// ---- The dagger, drawn ----
+// Made when first needed from the game's own models (in the player's ROM; nothing of them is in our files):
+//  - the sheath: the young Ganondorf's knife with its hilt's triangles (the Gerudo cloth and the jewelled guard) taken
+//    out; the hilt: those triangles alone
+//  - the blade: the Kokiri Sword's (its first, mirror-bright part, without its hilt), its vertices copied and bent into
+//    a curved blade along the sheath's own curve, so it would slide home into it: the sheath curves on an arc (fitted
+//    to it: radius 1634, leaving the mouth along the hilt's line); the blade runs 90% of the way down it
+// Knife space: x across the blade's thickness, the curve in y and z.
+#define GDF_DAGGER_GFX 400
+#define GDF_BLADE_VTX 24
+static Gfx sGdfSheathGfx[GDF_DAGGER_GFX];
+static Gfx sGdfHiltGfx[GDF_DAGGER_GFX];
+static Gfx sGdfBladeGfx[GDF_DAGGER_GFX];
+static Vtx sGdfBladeVtx[GDF_BLADE_VTX];
+static s8 sGdfDaggerBuilt = 0; // 0 not yet, 1 built, -1 couldn't be
+
+#define GDF_KSWORD_A0 (-5.66f)      // the Kokiri blade's foot, along it ((x + y) / sqrt 2)
+#define GDF_KSWORD_LEN 45.3f        // its foot to its point
+#define GDF_DAGGER_MOUTH_Y (-3.0f)  // the sheath's mouth (knife space)
+#define GDF_DAGGER_MOUTH_Z (-52.0f)
+#define GDF_DAGGER_MID_X 107.0f     // the middle of its thickness
+#define GDF_DAGGER_T0_Y (-0.9353f)  // the blade's way out of the mouth (down the hilt's line)
+#define GDF_DAGGER_T0_Z (-0.3539f)
+#define GDF_DAGGER_N_Y 0.3539f      // the way the sheath curves from there
+#define GDF_DAGGER_N_Z (-0.9353f)
+#define GDF_DAGGER_RADIUS 1634.0f
+#define GDF_DAGGER_S_PER_A 30.06f   // knife units of curve per unit of Kokiri blade (90% of the sheath's 1513)
+#define GDF_DAGGER_WIDTH 22.0f      // across the blade (its half width 7.8 to 172, inside the sheath)
+#define GDF_DAGGER_THICK 10.0f
+#define GDF_DAGGER_HILT_Y 520.0f    // the middle of the hilt, where his fist closes
+#define GDF_DAGGER_HILT_Z 150.0f
+#define GDF_DAGGER_HILT_X 106.0f
+
+static s32 BossGanon_Player_TwoSlot(u8 op) {
+    return (op == 0x20) || (op == 0x31) || (op == 0x32) || (op == 0x33) || (op == 0x35) || (op == 0x36) ||
+           (op == 0x42);
+}
+
+// A point along the curved blade: `a` along the Kokiri blade from its foot, `w` across it, `t` through it
+static void BossGanon_Player_DaggerPoint(f32 a, f32 w, f32 t, Vec3f* out, f32* ty, f32* tz, f32* ny, f32* nz) {
+    f32 th = a * GDF_DAGGER_S_PER_A / GDF_DAGGER_RADIUS;
+    f32 sn = sinf(th);
+    f32 cs = cosf(th);
+
+    *ty = cs * GDF_DAGGER_T0_Y + sn * GDF_DAGGER_N_Y;
+    *tz = cs * GDF_DAGGER_T0_Z + sn * GDF_DAGGER_N_Z;
+    *ny = -sn * GDF_DAGGER_T0_Y + cs * GDF_DAGGER_N_Y;
+    *nz = -sn * GDF_DAGGER_T0_Z + cs * GDF_DAGGER_N_Z;
+    out->x = GDF_DAGGER_MID_X + t * GDF_DAGGER_THICK;
+    out->y = GDF_DAGGER_MOUTH_Y + GDF_DAGGER_RADIUS * (sn * GDF_DAGGER_T0_Y + (1.0f - cs) * GDF_DAGGER_N_Y) +
+             *ny * w * GDF_DAGGER_WIDTH;
+    out->z = GDF_DAGGER_MOUTH_Z + GDF_DAGGER_RADIUS * (sn * GDF_DAGGER_T0_Z + (1.0f - cs) * GDF_DAGGER_N_Z) +
+             *nz * w * GDF_DAGGER_WIDTH;
+}
+
+static void BossGanon_Player_BendBladeVtx(Vtx* out, const Vtx* in) {
+    f32 x = in->v.ob[0];
+    f32 y = in->v.ob[1];
+    f32 nx = (s8)in->n.n[0];
+    f32 ny = (s8)in->n.n[1];
+    f32 nz = (s8)in->n.n[2];
+    f32 na = (nx + ny) * 0.70710678f;
+    f32 nw = (nx - ny) * 0.70710678f;
+    f32 ty, tz, cy, cz;
+    Vec3f p;
+
+    *out = *in;
+    BossGanon_Player_DaggerPoint((x + y) * 0.70710678f - GDF_KSWORD_A0, (x - y) * 0.70710678f, in->v.ob[2], &p, &ty,
+                                 &tz, &cy, &cz);
+    out->v.ob[0] = (s16)p.x;
+    out->v.ob[1] = (s16)p.y;
+    out->v.ob[2] = (s16)p.z;
+    // its normal turned with it (lit by his scene's lights, like his own)
+    out->n.n[0] = (s8)CLAMP(nz, -127.0f, 127.0f);
+    out->n.n[1] = (s8)CLAMP(na * ty + nw * cy, -127.0f, 127.0f);
+    out->n.n[2] = (s8)CLAMP(na * tz + nw * cz, -127.0f, 127.0f);
+}
+
+static s32 BossGanon_Player_BuildDagger(void) {
+    Gfx* knife;
+    Gfx* sword;
+    Vtx* swordVtx;
+    void* fabric;
+    void* jewel;
+    s32 i, ns = 0, nh = 0, nb = 0, hilt = false, seenTri = false;
+
+    if (sGdfDaggerBuilt != 0) {
+        return sGdfDaggerBuilt > 0;
+    }
+    sGdfDaggerBuilt = -1;
+    knife = (Gfx*)ResourceGetDataByName(sGdfKnifeDL);
+    sword = (Gfx*)ResourceGetDataByName("__OTR__objects/object_gi_sword_1/gGiKokiriSwordDL");
+    swordVtx = (Vtx*)ResourceGetDataByName("__OTR__objects/object_gi_sword_1/object_gi_sword_1Vtx_000000");
+    fabric = ResourceGetDataByName(gYoungGanondorfGerudoFabricTex);
+    jewel = ResourceGetDataByName(gYoungGanondorfChestAndKnifeJewelTex);
+    if ((knife == NULL) || (sword == NULL) || (swordVtx == NULL) || (fabric == NULL) || (jewel == NULL)) {
+        return false;
+    }
+    // The knife: its triangles sorted by the texture they're drawn with; everything else to both
+    for (i = 0; i < 4 * GDF_DAGGER_GFX; i++) {
+        u8 op = (u8)(knife[i].words.w0 >> 24);
+        s32 two = BossGanon_Player_TwoSlot(op);
+        s32 tri = (op == G_TRI1) || (op == G_TRI2) || (op == G_QUAD);
+        s32 k;
+
+        if (op == G_ENDDL) {
+            break;
+        }
+        if ((ns + 3 > GDF_DAGGER_GFX) || (nh + 3 > GDF_DAGGER_GFX)) {
+            return false;
+        }
+        if (op == 0x20) {
+            u64 h = ((u64)(u32)knife[i + 1].words.w0 << 32) | (u32)knife[i + 1].words.w1;
+            void* tex = ResourceGetDataByCrc(h);
+
+            hilt = (tex == fabric) || (tex == jewel);
+        }
+        for (k = 0; k <= two; k++) {
+            if (!tri || !hilt) {
+                sGdfSheathGfx[ns++] = knife[i + k];
+            }
+            if (!tri || hilt) {
+                sGdfHiltGfx[nh++] = knife[i + k];
+            }
+        }
+        i += two;
+    }
+    gSPEndDisplayList(&sGdfSheathGfx[ns]);
+    gSPEndDisplayList(&sGdfHiltGfx[nh]);
+    // The blade: the Kokiri Sword's first part (up to its second change of material), its vertices bent
+    for (i = 0; i < 4 * GDF_DAGGER_GFX; i++) {
+        u8 op = (u8)(sword[i].words.w0 >> 24);
+        s32 two = BossGanon_Player_TwoSlot(op);
+
+        if ((op == G_ENDDL) || ((op == G_RDPPIPESYNC) && seenTri)) {
+            break;
+        }
+        if (nb + 3 > GDF_DAGGER_GFX) {
+            return false;
+        }
+        if (op == 0x32) {
+            s32 n = (s32)((sword[i].words.w0 >> 12) & 0xFF);
+            s32 v0 = (s32)((sword[i].words.w0 >> 1) & 0x7F) - n;
+            uintptr_t off = (uintptr_t)sword[i].words.w1;
+            s32 idx = (off > 0xFFFFF) ? (s32)((Vtx*)off - swordVtx) : (s32)(off / sizeof(Vtx));
+            s32 k;
+
+            if ((idx < 0) || (idx + n > GDF_BLADE_VTX) || (v0 < 0)) {
+                return false;
+            }
+            for (k = 0; k < n; k++) {
+                BossGanon_Player_BendBladeVtx(&sGdfBladeVtx[idx + k], &swordVtx[idx + k]);
+            }
+            gSPVertex(&sGdfBladeGfx[nb++], &sGdfBladeVtx[idx], n, v0);
+            i += two;
+            continue;
+        }
+        if ((op == G_TRI1) || (op == G_TRI2) || (op == G_QUAD)) {
+            seenTri = true;
+        }
+        sGdfBladeGfx[nb++] = sword[i];
+        if (two) {
+            sGdfBladeGfx[nb++] = sword[i + 1];
+        }
+        i += two;
+    }
+    if (!seenTri) {
+        return false;
+    }
+    gSPEndDisplayList(&sGdfBladeGfx[nb]);
+    sGdfDaggerBuilt = 1;
+    return true;
+}
+
 static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 limbIndex) {
     if (sGdfKnifeState == 0) {
         BossGanon_Player_FindKnife();
@@ -6717,7 +6896,10 @@ static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 lim
     Matrix_TranslateRotateZYX(&sGdfKnifePos, &sGdfKnifeRot);
     Matrix_Scale(sGdfKnifeScale, sGdfKnifeScale, sGdfKnifeScale, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sGdfKnifeDL);
+    // (drawn, only the sheath stays on his leg: the hilt is in his hand)
+    gSPDisplayList(POLY_OPA_DISP++, (BossGanon_Player_DaggerOut() && BossGanon_Player_BuildDagger())
+                                        ? (Gfx*)sGdfSheathGfx
+                                        : (Gfx*)sGdfKnifeDL);
     Matrix_Pop();
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -8060,6 +8242,10 @@ static const GdfSwordBodyKey sGdfSwordBody[][6] = {
 // Persists across areas (the player Ganondorf is spawned again in every scene)
 static u8 sPlayerSwordState = GDF_SWORD_OFF;
 
+static s32 BossGanon_Player_DaggerOut(void) {
+    return sGdfDagger && (sPlayerSwordState == GDF_SWORD_DRAWN);
+}
+
 // His sword or trident is out: the C-buttons are its moves, not Link's items
 s32 BossGanon_Player_InStance(void) {
     return sPlayerSwordState != GDF_SWORD_OFF;
@@ -9091,7 +9277,7 @@ s32 BossGanon_Player_IsPhantom(void) {
 
 // A trident in his hands (the weapon menu): the spear's moveset (the combo ends in a stab) and no sheath
 static s32 BossGanon_Player_HasTrident(void) {
-    return !BossGanon_Player_IsPhantom() && (GanondorfTrident_GetSelected() != 0);
+    return !BossGanon_Player_IsPhantom() && !sGdfDagger && (GanondorfTrident_GetSelected() != 0);
 }
 
 static s32 BossGanon_Player_UsesSpear(void) {
@@ -10860,6 +11046,7 @@ static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight) {
 #define GDF_SUMMON_BURST_FRAME 9
 
 static void BossGanon_Player_SetupSummonTrident(BossGanon* this, PlayState* play) {
+    sGdfDagger = false;
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
     Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -6.0f);
     this->actionFunc = BossGanon_Player_SummonTrident;
@@ -11746,6 +11933,51 @@ static void BossGanon_Player_ApplyTridentRun(BossGanon* this) {
     }
 }
 
+// The dagger in his right fist: its hilt (his fist closed round the middle of it) and the curved blade going on from
+// the hilt's line, the hilt's line laid along his grip as the sword's is. (Knife space to the sword frame: x stays
+// across, the blade's way out of the hilt becomes the sword's +z.)
+#define GDF_DAGGER_ROLL_DEG 0.0f // turned about the blade (0: its curve's plane across his fist)
+
+static void BossGanon_Player_DrawDagger(BossGanon* this, PlayState* play) {
+    static MtxF sToFrame = { {
+        { 1.0f, 0.0f, 0.0f, 0.0f },
+        { 0.0f, -0.3539f, -0.9353f, 0.0f },
+        { 0.0f, 0.9353f, -0.3539f, 0.0f },
+        { 0.0f, 0.0f, 0.0f, 1.0f },
+    } };
+    Vec3f foot;
+    Vec3f point;
+    Vec3f base;
+    Vec3f tip;
+    f32 ty, tz, ny, nz;
+
+    if ((sPlayerSwordState != GDF_SWORD_DRAWN) || !this->playerHandMtxValid || (sGdfKnifeState != 1) ||
+        !BossGanon_Player_BuildDagger()) {
+        this->playerBladeValid = false;
+        return;
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_Put(&this->playerRightHandMtx);
+    Matrix_Translate(GDF_GRIP_X, GDF_GRIP_Y, GDF_GRIP_Z, MTXMODE_APPLY);
+    Matrix_RotateX(M_PI, MTXMODE_APPLY);
+    Matrix_RotateZ(DEG_TO_RAD(GDF_DAGGER_ROLL_DEG), MTXMODE_APPLY);
+    Matrix_Mult(&sToFrame, MTXMODE_APPLY);
+    Matrix_Scale(sGdfKnifeScale, sGdfKnifeScale, sGdfKnifeScale, MTXMODE_APPLY);
+    Matrix_Translate(-GDF_DAGGER_HILT_X, -GDF_DAGGER_HILT_Y, -GDF_DAGGER_HILT_Z, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, sGdfHiltGfx);
+    gSPDisplayList(POLY_OPA_DISP++, sGdfBladeGfx);
+    // Its edge for hits: from the hilt's mouth to the point
+    BossGanon_Player_DaggerPoint(0.0f, 0.0f, 0.0f, &foot, &ty, &tz, &ny, &nz);
+    BossGanon_Player_DaggerPoint(GDF_KSWORD_LEN, 0.0f, 0.0f, &point, &ty, &tz, &ny, &nz);
+    Matrix_MultVec3f(&foot, &base);
+    Matrix_MultVec3f(&point, &tip);
+    BossGanon_Player_SetBlade(this, &base, &tip);
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 // The opening in Link's house: instead of lying in Link's bed, Ganondorf leans against the wall beside it, arms crossed
 // and head bowed, brooding, for as long as the scene's cutscene runs. The arms were posed offline with IK on his
 // skeleton (each forearm across his chest, the fist tucked by the other arm's biceps).
@@ -11876,6 +12108,10 @@ static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play) {
     Gfx* swordDL;
     Gfx* sheathDL;
 
+    if (sGdfDagger) {
+        BossGanon_Player_DrawDagger(this, play);
+        return;
+    }
     // Phantom Ganon: his spear is part of his model
     if (BossGanon_Player_IsPhantom()) {
         if (!this->playerSpearValid || (sPlayerSwordState != GDF_SWORD_DRAWN)) {
@@ -12204,6 +12440,9 @@ void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play) {
 static u8 sGdfPgSpearForced = false;
 
 void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play) {
+    if (sPlayerSwordState == GDF_SWORD_OFF) {
+        sGdfDagger = false;
+    }
     if (BossGanon_Player_IsPhantom()) {
         sPlayerSwordState = GDF_SWORD_DRAWN;
         sGdfPgSpearForced = true;
