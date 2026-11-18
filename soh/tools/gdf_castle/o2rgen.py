@@ -4,7 +4,7 @@ path in the player's oot.o2r, and the game's own display lists can be called the
 import struct, zipfile, numpy as np
 from otr import crc64
 
-TYPE = {'room': b'MORO', 'col': b'LOCO', 'array': b'RRAO', 'dl': b'TLDO'}
+TYPE = {'room': b'MORO', 'col': b'LOCO', 'array': b'RRAO', 'dl': b'TLDO', 'mtx': b'XTMO'}
 
 
 def header(kind):
@@ -57,6 +57,13 @@ class DL:
     def call(self, path):
         self.cmds.append(struct.pack('<II', 0x31000000, 0) + hash_words(path))
 
+    def matrix(self, mtx_path):
+        """Multiplies a matrix resource (mtx_file) onto the modelview, pushed: pop() undoes it"""
+        self.cmds.append(struct.pack('<II', 0x36000000, 0) + hash_words(mtx_path))
+
+    def pop(self):
+        self.w(0xD8380002, 64)
+
     def pipesync(self):
         self.w(0xE7000000, 0)
 
@@ -65,6 +72,14 @@ class DL:
 
     def data(self):
         return header('dl') + b'\x04' + b'\xff' * 7 + b''.join(self.cmds)
+
+
+def mtx_file(M):
+    """A 4x4 matrix (row vectors: translation in row 3) in the N64's fixed point layout: integer halves first"""
+    v = [int(round(float(x) * 65536)) & 0xFFFFFFFF for row in M for x in row]
+    hi = [(v[i] & 0xFFFF0000) | (v[i + 1] >> 16) for i in range(0, 16, 2)]
+    lo = [((v[i] & 0xFFFF) << 16) | (v[i + 1] & 0xFFFF) for i in range(0, 16, 2)]
+    return header('mtx') + struct.pack('<16I', *(hi + lo))
 
 
 # ---- Collision ----

@@ -188,6 +188,7 @@ class Builder:
         self.wall_rects = []      # (axis, facing sign, plane, low corner, high corner) of every piece of wall
         self.face_meta = {}       # material -> per face: (group, texture by world position?, its uv growth)
         self.col_gid = []         # per collision vertex: its group
+        self.placed = []          # the game's own models placed here: (display list, 4x4 matrix, group)
 
     def add_face(self, mat, verts, world_uv):
         self.faces.setdefault(mat, []).append(verts)
@@ -313,19 +314,11 @@ class Builder:
 
     # An octagonal pillar with a base and a capital
     def pillar(self, x, zc, r, y0, y1, mat='pillar', band='stone_band'):
+        """A free-standing pillar: the Temple of Time's own (its shaft, the game's model) on a base and under a
+        capital, with collision round it"""
         self.box(band, x - r - 8, x + r + 8, y0, y0 + 24, zc - r - 8, zc + r + 8)
         self.box(band, x - r - 8, x + r + 8, y1 - 24, y1, zc - r - 8, zc + r + 8, collide=False)
-        n = 8
-        for i in range(n):
-            a0 = 2 * math.pi * i / n + math.pi / 8
-            a1 = 2 * math.pi * (i + 1) / n + math.pi / 8
-            p0 = (x + r * math.cos(a0), zc + r * math.sin(a0))
-            p1 = (x + r * math.cos(a1), zc + r * math.sin(a1))
-            circ = 2 * math.pi * r / n
-            u0, u1 = i * circ / 2.0, (i + 1) * circ / 2.0
-            self.quad(mat, [(p1[0], y0 + 24, p1[1]), (p0[0], y0 + 24, p0[1]), (p0[0], y1 - 24, p0[1]),
-                            (p1[0], y1 - 24, p1[1])], collide=SURF['wall'],
-                      uv=[(u1, 0), (u0, 0), (u0, -(y1 - y0 - 48) / 2.0), (u1, -(y1 - y0 - 48) / 2.0)])
+        tot_shaft(self, x, zc, r, y0 + 24, y1 - 24)
 
     # Stairs rising along +z or -z (dz sign) from (x0..x1, z_start) by `rise` over `run`; a ramp for collision
     def stairs(self, mat, x0, x1, z_start, run, rise, steps, dz, side_mat='stone_band'):
@@ -443,6 +436,71 @@ class LitBuilder(Builder):
                       at(i / nu, (j + 1) / nv)]
                 self.add_face(mat, [vert(q, t) for q, t in cs], uv is None)
 
+# ---- The game's own models, placed by a matrix (drawn from the player's oot.o2r: nothing of theirs is copied) ----
+TOT_SCENE = 'scenes/shared/tokinoma_scene/'
+TOT_PILLAR_DL = TOT_SCENE + 'tokinoma_room_1DL_0010E0'    # a pillar of the Temple of Time's nave
+TOT_PILLAR = ((-400.0, 0.0, 1761.0), 40.0, 638.0)         # (its foot's middle, half its width, its height)
+TOT_WINDOW_DL = TOT_SCENE + 'tokinoma_room_0DL_003988'    # the temple's lancet window (its tracery), facing +z
+TOT_WINDOW = ((-10.0, 960.0, -768.0), 96.0, 640.0)        # (its foot's middle, half its width, its height)
+
+
+def tot_shaft(B, x, z, r, y0, y1):
+    """The Temple of Time's pillar (the game's model) as a shaft r wide either side, from y0 to y1, with collision"""
+    o, h, top = TOT_PILLAR
+    k = r / h
+    place(B, TOT_PILLAR_DL, o, (x, y0, z), ex=(k, 0, 0), ey=(0, (y1 - y0) / top, 0), ez=(0, 0, k))
+    for a, b in (((-r, -r), (r, -r)), ((r, -r), (r, r)), ((r, r), (-r, r)), ((-r, r), (-r, -r))):
+        col_quad(B, [(x + b[0], y0, z + b[1]), (x + a[0], y0, z + a[1]), (x + a[0], y1, z + a[1]),
+                     (x + b[0], y1, z + b[1])], 'wall')
+
+
+def place(B, dl, origin, pos, ex=(1, 0, 0), ey=(0, 1, 0), ez=(0, 0, 1)):
+    """Places one of the game's display lists: its point `origin` goes to `pos`, and its x, y and z axes to ex, ey,
+    ez (scaled and turned; never mirrored, so its faces keep facing out)."""
+    L = np.array([ex, ey, ez], float)
+    assert np.linalg.det(L) > 0, 'a mirrored placement would turn its faces inside out'
+    M = np.eye(4)
+    M[:3, :3] = L
+    M[3, :3] = np.asarray(pos, float) - np.asarray(origin, float) @ L
+    B.placed.append((dl, M, GROUP['id']))
+
+
+def placed_matrix(M, g):
+    """A placement's matrix at the castle's scale (only the building's own parts are placed so far)"""
+    assert g == 0, 'placed models in furniture are not scaled yet'
+    S = np.eye(4) * SCALE
+    S[3] = [*(ANCHOR * (1 - SCALE)), 1]
+    return M @ S
+
+
+def placed_preview(B, mat_of):
+    """The placed models as faces of a Builder (for the offline views only: never written out)"""
+    import otr
+    P = Builder()
+    for dl, M, g in B.placed:
+        Mt = placed_matrix(M, g)
+        buf = [None] * 64
+        tex = None
+        for c in otr.dl(dl):
+            if c[0] == 0x32:
+                n = (c[1] >> 12) & 0xFF
+                v0 = ((c[1] >> 1) & 0x7F) - n
+                V = otr.vtx(HASH[(c[3] << 32) | c[4]])
+                for i in range(n):
+                    buf[v0 + i] = V[c[2] // 16 + i]
+            elif c[0] == 0x20:
+                tex = mat_of.get(HASH.get((c[3] << 32) | c[4], ''), 'plaster')
+            elif c[0] in (0x05, 0x06):
+                for w in ((c[1],), (c[1], c[2]))[c[0] == 0x06]:
+                    vs = [buf[((w >> sh) & 0xFF) // 2] for sh in (16, 8, 0)]
+                    f = []
+                    for v in vs:
+                        q = np.array([v[0], v[1], v[2], 1.0]) @ Mt
+                        f.append((q[0], q[1], q[2], 0, 0, v[3], v[4], v[5], 255))
+                    P.faces.setdefault(tex, []).append(f)
+    return P
+
+
 def tot_window(B, wall, pos, w, y_lo, y_hi):
     """The Temple of Time's window (tokinoma_room_0DL_003988): a pointed arch of its white tracery (the lattice
     texture, mapped as the temple maps it: two repeats across, the arch's point at the top) over pale glass, in a
@@ -470,9 +528,10 @@ def tot_window(B, wall, pos, w, y_lo, y_hi):
     # pale glass behind the tracery, then the tracery itself
     face('plaster', [P(-w, y_lo, 3), P(w, y_lo, 3), P(w, y_mid, 3), P(-w, y_mid, 3)], color=glass)
     face('plaster', [P(-w, y_mid, 3), P(w, y_mid, 3), P(0, y_hi, 3)], color=glass)
-    face('lattice', [P(-w, y_lo, 6), P(w, y_lo, 6), P(w, y_mid, 6), P(-w, y_mid, 6)],
-         uv=[(0, 64), (64, 64), (64, 16), (0, 16)])
-    face('lattice', [P(-w, y_mid, 6), P(w, y_mid, 6), P(0, y_hi, 6)], uv=[(0, 16), (64, 16), (32, 0)])
+    # the tracery: the temple's own window (its model), across the wall's face (turned to face the room)
+    o, hw, ht = TOT_WINDOW
+    kx, ky = w / hw, (y_hi - y_lo) / ht
+    place(B, TOT_WINDOW_DL, o, P(0, y_lo, 6), ex=tuple(-along * kx), ey=(0, ky, 0), ez=tuple(inward))
     # the surround: jambs, the two sides of the arch and a sill, standing a little out of the wall
     t, d = 9, 9
     for s in (-1, 1):
@@ -1121,7 +1180,7 @@ def arcade(B, axis, fixed, a, b, y0, h, bays, r=12, facing=1, roof=None, depth=1
         offs = (-9, 9) if paired and 0 < i < bays else (0,)
         for o in offs:
             px, pz = (fixed, u + o) if axis == 'x' else (u + o, fixed)
-            prism(B, mat, px, pz, r, y0 + 18, spring, 8, color=color, collide=True)
+            tot_shaft(B, px, pz, r * 0.6, y0 + 18, spring - 14)
             prism(B, 'stone_band', px, pz, r + 6, y0, y0 + 18, 8, color=TRIM)
             prism(B, 'stone_band', px, pz, r + 3, spring - 14, spring, 8, color=GOLD, r1=r + 8)
     for i in range(bays):
@@ -2303,6 +2362,17 @@ def emit(B, W, beams):
     water_path = BASE + f'{SCENE}_room_0DL_water'
     emit_dl(W, water_path, BASE + f'{SCENE}_room_0Vtx_water', files)
     dl_path = BASE + f'{SCENE}_room_0DL_castle'
+    # the game's own models placed about the castle: each a matrix pushed, the model's display list called, popped
+    vanilla_path = BASE + f'{SCENE}_room_0DL_vanilla'
+    vd = G.DL(vanilla_path)
+    for i, (dl, Mp, g) in enumerate(B.placed):
+        mp = BASE + f'{SCENE}_room_0Mtx_{i}'
+        files[mp] = G.mtx_file(placed_matrix(Mp, g))
+        vd.matrix(mp)
+        vd.call(dl)
+        vd.pop()
+    vd.end()
+    files[vanilla_path] = vd.data()
 
     bridge, doorway = build_drawbridge()
     emit_dl(bridge, 'objects/gdf_castle/gGdfDrawbridgeDL', 'objects/gdf_castle/gGdfDrawbridgeVtx', files, obj=True)
@@ -2356,7 +2426,7 @@ def emit(B, W, beams):
     for pos, sc, kind, g in sorted(B.flames, key=lambda f: (0, 2, 1).index(f[2])):
         sc = sc * (SCALE if g == 0 else 1.0)
         actors.append(G.actor_entry(EN_LIGHT, tuple(M(g)(pos)), (kind, 0, max(1, round(sc * 10000))), 0x0000))
-    files[room_path] = G.room_file([(dl_path, water_path), (court_opa.path, court_xlu.path)],
+    files[room_path] = G.room_file([(dl_path, water_path), (vanilla_path, ''), (court_opa.path, court_xlu.path)],
                                    objects=(0x0097, 0x0191, OBJECT_TOKI_OBJECTS),
                                    actors=actors,
                                    echo=10, behavior=(0, 0), skymod=(0, 1))
