@@ -737,12 +737,20 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
 
         if (showCredit) {
             s32 creditLeft = copyrightLeft + COPYRIGHT_TEX_WIDTH + 40;
+            s32 preLeft = creditLeft + (GDF_CREDIT_WIDTH - GDF_PRERELEASE_WIDTH) / 2;
 
             gDPLoadTextureBlock(gfx++, sGdfCreditTex, G_IM_FMT_IA, G_IM_SIZ_8b, GDF_CREDIT_WIDTH, GDF_CREDIT_HEIGHT, 0,
                                 G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
                                 G_TX_NOLOD, G_TX_NOLOD);
             gSPTextureRectangle(gfx++, creditLeft << 2, 198 << 2, (creditLeft + GDF_CREDIT_WIDTH) << 2,
                                 (198 + GDF_CREDIT_HEIGHT) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
+
+            // "Pre-Release" centred under it
+            gDPLoadTextureBlock(gfx++, sGdfPreReleaseTex, G_IM_FMT_IA, G_IM_SIZ_8b, GDF_PRERELEASE_WIDTH,
+                                GDF_PRERELEASE_HEIGHT, 0, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP,
+                                G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+            gSPTextureRectangle(gfx++, preLeft << 2, 212 << 2, (preLeft + GDF_PRERELEASE_WIDTH) << 2,
+                                (212 + GDF_PRERELEASE_HEIGHT) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
         }
     }
 
