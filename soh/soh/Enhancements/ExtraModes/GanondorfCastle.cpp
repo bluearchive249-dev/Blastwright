@@ -31,6 +31,12 @@ extern PlayState* gPlayState;
 
 #define CASTLE_SCENE SCENE_TESTROOM
 #define CASTLE_ENTRANCE ENTR_TESTROOM_0
+// The front doors, out onto the drawbridge (castle.py builds the interior SCALE = 2.5 times its first size about the
+// throne room's window at (-575, 84, 0): the doors' threshold, first at z 2300 by x -960, is here)
+#define CASTLE_EXIT_Z 5750.0f
+#define CASTLE_EXIT_X (-1537.5f)
+#define CASTLE_EXIT_HALF 275.0f
+#define CASTLE_EXIT_TOP 174.0f
 
 static const char sBridgeDL[] = "__OTR__objects/gdf_castle/gGdfDrawbridgeDL";
 static const char sDoorwayDL[] = "__OTR__objects/gdf_castle/gGdfDoorwayDL";
@@ -237,8 +243,9 @@ static void OnPlayerUpdate() {
             ScaleBeams(play);
         }
         if ((play->transitionTrigger == TRANS_TRIGGER_OFF) && (play->msgCtx.msgMode == MSGMODE_NONE) &&
-            (player->actor.world.pos.z > 2300.0f) && (fabsf(player->actor.world.pos.x + 960.0f) < 110.0f) &&
-            (player->actor.world.pos.y < 120.0f)) {
+            (player->actor.world.pos.z > CASTLE_EXIT_Z) &&
+            (fabsf(player->actor.world.pos.x - CASTLE_EXIT_X) < CASTLE_EXIT_HALF) &&
+            (player->actor.world.pos.y < CASTLE_EXIT_TOP)) {
             Warp(play, ENTR_CASTLE_GROUNDS_SOUTH_EXIT);
         }
         return;

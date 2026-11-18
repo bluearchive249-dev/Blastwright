@@ -128,6 +128,55 @@ L = np.array([0.35, 0.85, 0.4])
 L /= np.linalg.norm(L)
 
 
+# ---- The castle's scale ----
+# The castle is laid out at the size it was first drawn, then built SCALE times bigger about the throne room's window
+# (its east wall stays where the courtyard's window looks in), so its halls are as vast as the castle seen from outside.
+# Furniture (anything a body uses: tables, chairs, beds, shelves, hearths, statues, candles...) keeps its own size and
+# only moves with the room; railings grow along their length but keep their height. Each piece of geometry is tagged
+# with the group it was made in (0: the building itself), and emit() applies the scale.
+SCALE = 2.5
+ANCHOR = np.array([-575.0, 84.0, 0.0])
+GROUP = {'id': 0, 'uv': (1.0, 1.0)}
+GROUP_MODE = {0: 'scale'}
+_GROUPS = [0]
+
+
+def furniture(mode='keep'):
+    """Marks a helper as making one piece of furniture ('keep': its size kept; 'xz': along the floor it grows with
+    the room, upward it keeps its height). Nested calls belong to the outermost piece."""
+    def deco(fn):
+        def wrapped(*a, **kw):
+            if GROUP['id'] != 0:
+                return fn(*a, **kw)
+            _GROUPS[0] += 1
+            gid = _GROUPS[0]
+            GROUP_MODE[gid] = mode
+            GROUP['id'] = gid
+            try:
+                return fn(*a, **kw)
+            finally:
+                GROUP['id'] = 0
+        wrapped.__name__ = fn.__name__
+        return wrapped
+    return deco
+
+
+def uv_scaled(su, sv):
+    """Marks a helper whose own texture coordinates should grow with the room (a rug's pattern repeats more, rather
+    than stretching): su across, sv along."""
+    def deco(fn):
+        def wrapped(*a, **kw):
+            prev = GROUP['uv']
+            GROUP['uv'] = (su, sv)
+            try:
+                return fn(*a, **kw)
+            finally:
+                GROUP['uv'] = prev
+        wrapped.__name__ = fn.__name__
+        return wrapped
+    return deco
+
+
 class Builder:
     def __init__(self):
         self.faces = {}   # material -> list of (verts[4 or 3] of (x,y,z,u,v,r,g,b,a))
@@ -137,6 +186,12 @@ class Builder:
         self.fades = []
         self.wall_faces = set()   # (material, index) of every wall face, for prune_buried()
         self.wall_rects = []      # (axis, facing sign, plane, low corner, high corner) of every piece of wall
+        self.face_meta = {}       # material -> per face: (group, texture by world position?, its uv growth)
+        self.col_gid = []         # per collision vertex: its group
+
+    def add_face(self, mat, verts, world_uv):
+        self.faces.setdefault(mat, []).append(verts)
+        self.face_meta.setdefault(mat, []).append((GROUP['id'], world_uv, GROUP['uv']))
 
     def fade_to_black(self, start, end, box):
         """A passage that fades into darkness (the way OoT's corridors look as they lead out of a room): inside
@@ -178,17 +233,19 @@ class Builder:
             k = shade * (1.0 - 0.12 * min(1.0, max(0.0, (y - FLOOR) / 520.0))) * self.dim((x, y, zz))
             verts.append((x, y, zz, u, v, int(min(255, color[0] * k)), int(min(255, color[1] * k * 0.97)),
                           int(min(255, color[2] * k * 0.92)), 255))
-        self.faces.setdefault(mat, []).append(verts)
+        self.add_face(mat, verts, uv is None)
         if collide is not None:
             idx = [self.cv(p) for p in P]
             for tri in ((0, 1, 2), (0, 2, 3)) if len(idx) == 4 else ((0, 1, 2),):
                 self.col_polys.append((collide, idx[tri[0]], idx[tri[1]], idx[tri[2]], 0, 0))
 
     def cv(self, p):
-        key = tuple(int(round(c)) for c in p)
+        pos = tuple(int(round(c)) for c in p)
+        key = (pos, GROUP['id'])
         if key not in self.col_index:
             self.col_index[key] = len(self.col_verts)
-            self.col_verts.append(key)
+            self.col_verts.append(pos)
+            self.col_gid.append(GROUP['id'])
         return self.col_index[key]
 
     # Floor rectangle (facing up)
@@ -372,7 +429,7 @@ class LitBuilder(Builder):
             c = np.asarray(color, float) * (self.lum(q, n) if light else 1.0) * self.dim(q)
             return (q[0], q[1], q[2], t[0], t[1], int(min(255, c[0])), int(min(255, c[1])), int(min(255, c[2])), 255)
         if len(P) != 4:
-            self.faces.setdefault(mat, []).append([vert(P[i], UV[i]) for i in range(len(P))])
+            self.add_face(mat, [vert(P[i], UV[i]) for i in range(len(P))], uv is None)
             return
         nu = max(1, int(np.ceil(np.linalg.norm(P[1] - P[0]) / self.CELL)))
         nv = max(1, int(np.ceil(np.linalg.norm(P[3] - P[0]) / self.CELL)))
@@ -384,7 +441,7 @@ class LitBuilder(Builder):
             for j in range(nv):
                 cs = [at(i / nu, j / nv), at((i + 1) / nu, j / nv), at((i + 1) / nu, (j + 1) / nv),
                       at(i / nu, (j + 1) / nv)]
-                self.faces.setdefault(mat, []).append([vert(q, t) for q, t in cs])
+                self.add_face(mat, [vert(q, t) for q, t in cs], uv is None)
 
 def tot_window(B, wall, pos, w, y_lo, y_hi):
     """The Temple of Time's window (tokinoma_room_0DL_003988): a pointed arch of its white tracery (the lattice
@@ -464,7 +521,7 @@ def flame(B, pos, scale, kind=1):
     Returns False when the builder takes no flames (the Sacred Realm's), so the caller draws its painted flame."""
     if getattr(B, 'flames', None) is None:
         return False
-    B.flames.append((tuple(float(c) for c in pos), scale, kind))
+    B.flames.append((tuple(float(c) for c in pos), scale, kind, GROUP['id']))
     return True   # the tint over the game's own wood textures (they carry their colour)
 COZY = (1.0, 0.62, 0.32)  # candle and firelight (about 2000-2700K)
 TERRACOTTA = (205, 125, 85)
@@ -1324,6 +1381,116 @@ def roundel(B, mat, wall, x, z, yc, r=60, color=(255, 255, 255)):
         oriented(B, 'stone_band', q, inward, color=GOLD)
 
 
+# Furniture keeps its size (see SCALE); railings grow along their length only; rugs and runners repeat their pattern
+for _name in ('potted', 'bed', 'candelabra', 'statue', 'table', 'chair', 'tree', 'fireplace', 'long_table', 'pew',
+              'chest', 'wardrobe'):
+    globals()[_name] = furniture()(globals()[_name])
+# (bookcases line their walls end to end and railings their galleries: longer with the room, no taller)
+bookcase = furniture('xz')(bookcase)
+Builder.railing = furniture('xz')(Builder.railing)
+rug = uv_scaled(SCALE, SCALE)(rug)
+runner = uv_scaled(1.0, SCALE)(runner)
+
+
+def scaled_point(p):
+    """A point of the building at the castle's scale."""
+    return ANCHOR + SCALE * (np.asarray(p, float) - ANCHOR)
+
+
+def apply_scale(B):
+    """Builds B at the castle's scale (SCALE): the building grows about ANCHOR; each piece of furniture keeps its size,
+    moved with the room (its middle, or the wall it stands against, and its height over the floor it stands on).
+    Returns the mapping of a group's points, for the flames placed with them."""
+    k = SCALE
+    # every group's extent
+    lo, hi = {}, {}
+    def grow(g, q):
+        q = np.asarray(q[:3], float)
+        lo[g] = np.minimum(lo.get(g, q), q)
+        hi[g] = np.maximum(hi.get(g, q), q)
+    for mat, faces in B.faces.items():
+        for f, (g, _, _) in zip(faces, B.face_meta[mat]):
+            if g:
+                for v in f:
+                    grow(g, v)
+    for q, g in zip(B.col_verts, B.col_gid):
+        if g:
+            grow(g, q)
+    # the building's floors (to keep furniture at its height over the floor it stands on)
+    V = np.array(B.col_verts, float)
+    floors = []
+    for poly, (a, b, c) in ((p, p[1:4]) for p in B.col_polys):
+        if B.col_gid[a] or B.col_gid[b] or B.col_gid[c]:
+            continue
+        P = V[[a, b, c]]
+        n = np.cross(P[1] - P[0], P[2] - P[0])
+        if np.linalg.norm(n) and n[1] / np.linalg.norm(n) > 0.7:
+            floors.append((P, n))
+    def floor_under(x, z, y):
+        best = None
+        for P, n in floors:
+            if x < P[:, 0].min() - 1 or x > P[:, 0].max() + 1 or z < P[:, 2].min() - 1 or z > P[:, 2].max() + 1:
+                continue
+            d = lambda p, q: (q[0] - p[0]) * (z - p[2]) - (q[2] - p[2]) * (x - p[0])
+            sg = [d(P[0], P[1]), d(P[1], P[2]), d(P[2], P[0])]
+            if all(t >= -1e-6 for t in sg) or all(t <= 1e-6 for t in sg):
+                fy = P[0][1] - (n[0] * (x - P[0][0]) + n[2] * (z - P[0][2])) / n[1]
+                if fy <= y + 2 and (best is None or fy > best):
+                    best = fy
+        return best
+    walls_x = [(r[2], r[3][1], r[4][1]) for r in B.wall_rects if r[0] == 0]   # (x, z0, z1)
+    walls_z = [(r[2], r[3][0], r[4][0]) for r in B.wall_rects if r[0] == 2]   # (z, x0, x1)
+    def snap(a0, a1, b0, b1, walls):
+        for plane, c0, c1 in walls:
+            if min(c0, c1) < b1 and max(c0, c1) > b0 and (abs(plane - a0) < 15 or abs(plane - a1) < 15):
+                return plane
+        return (a0 + a1) / 2
+    anchor = {}
+    for g in lo:
+        ax = snap(lo[g][0], hi[g][0], lo[g][2], hi[g][2], walls_x)
+        az = snap(lo[g][2], hi[g][2], lo[g][0], hi[g][0], walls_z)
+        # (its height kept over the floor it stands on, when that's near below it; a railing stands on its own foot)
+        fy = None if GROUP_MODE[g] == 'xz' else floor_under(ax, az, lo[g][1])
+        anchor[g] = np.array([ax, lo[g][1] if (fy is None or lo[g][1] - fy > 150) else fy, az])
+    def mapper(g):
+        if g == 0:
+            return lambda q: ANCHOR + k * (np.asarray(q, float) - ANCHOR)
+        c = anchor[g]
+        c2 = ANCHOR + k * (c - ANCHOR)
+        if GROUP_MODE[g] == 'xz':
+            return lambda q: np.array([ANCHOR[0] + k * (q[0] - ANCHOR[0]), c2[1] + (q[1] - c[1]),
+                                       ANCHOR[2] + k * (q[2] - ANCHOR[2])])
+        return lambda q: c2 + (np.asarray(q, float) - c)
+    maps = {}
+    def M(g):
+        if g not in maps:
+            maps[g] = mapper(g)
+        return maps[g]
+    for mat in B.faces:
+        out = []
+        for f, (g, world_uv, (su, sv)) in zip(B.faces[mat], B.face_meta[mat]):
+            m = M(g)
+            if g == 0:
+                fu, fv = (k, k) if world_uv else (su, sv)
+            elif GROUP_MODE[g] == 'xz' and world_uv:
+                # (its texture keeps its size: along the floor it repeats more, upward as before)
+                Q = np.array([v[:3] for v in f[:3]], float)
+                n = np.cross(Q[1] - Q[0], Q[2] - Q[0])
+                flat = np.linalg.norm(n) > 0 and abs(n[1]) / np.linalg.norm(n) > 0.7
+                fu, fv = (k, k) if flat else (k, 1.0)
+            else:
+                fu = fv = 1.0
+            nf = []
+            for v in f:
+                q = m(v[:3])
+                nf.append((q[0], q[1], q[2], v[3] * fu, v[4] * fv) + tuple(v[5:]))
+            out.append(nf)
+        B.faces[mat] = out
+    B.col_verts = [tuple(int(round(c)) for c in M(g)(q)) for q, g in zip(B.col_verts, B.col_gid)]
+    assert all(abs(c) < 32000 for q in B.col_verts for c in q)
+    return M
+
+
 def build(fixed_lights=None):
     """The castle, redone (14 Nov 2026) after real castles: a medieval great hall with a screens passage, minstrels'
     gallery, dais, hammerbeam roof and fireplace; a vaulted processional gallery up to the throne room; a chapel
@@ -1349,6 +1516,7 @@ def build(fixed_lights=None):
     def win(wall, pos, y0, scale=CASTLE_BEAM, floor=FLOOR):
         window(B, lights, beams, wall, pos, y0, scale, floor=floor)
 
+    @furniture()
     def sconce(x, z, y, wall):
         ix, iz = {'W': (1, 0), 'E': (-1, 0), 'N': (0, 1), 'S': (0, -1)}[wall]
         B.box('stone_band', x - 8 + ix * 8, x + 8 + ix * 8, y - 14, y + 14, z - 8 + iz * 8, z + 8 + iz * 8,
@@ -1357,6 +1525,7 @@ def build(fixed_lights=None):
         flame(B, (x + ix * 10, y + 34, z + iz * 10), 0.0014, 2)
         light((x + ix * 40, y, z + iz * 40), 340, 0.6, LAMP)
 
+    @furniture()
     def candle(x, z, y, n=3, inten=0.42, radius=300):
         """A cluster of candles on a brass dish: a small warm pool of light low down, where people sit."""
         disc(B, 'stone_band', x, z, 11, y + 1, 8, color=GOLD)
@@ -1368,6 +1537,7 @@ def build(fixed_lights=None):
             flame(B, (cx, y + hh, cz), 0.0007)
         light((x, y + 40, z), radius, inten, COZY)
 
+    @furniture()
     def portrait(wall, fixed, u, y, m, w=70, h=70):
         if wall in 'WE':
             s = 1 if wall == 'W' else -1
@@ -1523,6 +1693,8 @@ def build(fixed_lights=None):
              (TCX + TR * math.cos(b), UP, TCZ + TR * math.sin(b)), (TCX + 30 * math.cos(b), UP, TCZ + 30 * math.sin(b))]
         oriented(B, 'marble', q, (0, 1, 0))
         col_quad(B, q)
+    # a threshold under the north door, where the round floor and the presence chamber's square one meet
+    B.floor('marble', TCX - 80, TCX + 80, TCZ - TR - 25, TCZ - TR + 20, y=UP)
     # a parapet along the landing's open edge, over the stairwell (past it the stair is a turn below)
     a = t_end + 0.9
     ca, sa = math.cos(a), math.sin(a)
@@ -1807,10 +1979,12 @@ def build(fixed_lights=None):
 
     # -- the great stair: two flights round a stone spine, up to a gallery that opens onto the cloister's --
     ux0 = 180                       # the upper landing's edge
-    flight(B, 300, 410, 2240, 1990, F, F + 150, 10, sides=(False, False))
+    flight(B, 300, 420, 2240, 1990, F, F + 150, 10, sides=(False, False))     # (up against the east wall)
     B.box(('marble2', 'stone_band'), ux0, 420, F, F + 150, KS, 1990, color=TRIM, back='z0')        # the half landing
+    B.railing(ux0, ux0, KS + 10, 1990, F + 150, h=70, posts=6)                # (its open side, over the hall)
     flight(B, ux0, 290, 1990, 2240, F + 150, UPG, 10, sides=(True, False))
-    B.box(('marble', 'stone_band'), 290, 300, F, F + 230, 1990, 2240, color=TRIM)                  # the spine
+    # the spine, standing a balustrade's height over the upper flight all the way up
+    B.box(('marble', 'stone_band'), 290, 300, F, UPG + 80, 1990, 2240, color=TRIM)
     # the upper landing and the gallery at the stair head, on timber, a balustrade round the well
     for (a, b, c, d) in ((ex0, ux0, KS, ez1), (ux0, ex1, 2240, ez1)):
         B.box(('wood_planks', 'stone_band'), a, b, UPG - 12, UPG, c, d, color=TRIM)
@@ -2089,6 +2263,8 @@ def prune_buried(B, tol=0.6):
     removed = 0
     for mat, fl in B.faces.items():
         keep = []
+        meta = B.face_meta.get(mat, [])
+        keep_meta = []
         for i, f in enumerate(fl):
             if (mat, i) not in B.wall_faces:
                 P = np.array([v[:3] for v in f], float)
@@ -2110,12 +2286,18 @@ def prune_buried(B, tol=0.6):
                             removed += 1
                             continue
             keep.append(f)
+            if i < len(meta):
+                keep_meta.append(meta[i])
         B.faces[mat] = keep
+        B.face_meta[mat] = keep_meta
     return removed
 
 
 def emit(B, W, beams):
     print('faces hidden in walls, taken out:', prune_buried(B))
+    M = apply_scale(B)
+    apply_scale(W)
+    P = scaled_point
     files = {}
     emit_dl(B, BASE + f'{SCENE}_room_0DL_castle', BASE + f'{SCENE}_room_0Vtx_castle', files)
     water_path = BASE + f'{SCENE}_room_0DL_water'
@@ -2161,23 +2343,26 @@ def emit(B, W, beams):
               (-520, FLOOR, 2000, 0x4000),                                         # the cloister's west walk
               (-1420, FLOOR, 1500, -0x4000),                                       # the library
               (-1350, UP, 950, -0x8000)]                                           # the presence chamber
-    actors = [G.actor_entry(HEISHI3, (x, y, z), (0, yaw, 0), 0) for x, y, z, yaw in guards]
+    actors = [G.actor_entry(HEISHI3, tuple(P((x, y, z))), (0, yaw, 0), 0) for x, y, z, yaw in guards]
     # Zelda at the courtyard window, peering in (her own spot and facing in the courtyard: her peeking animation
     # turns her about, so it is the same 0x4000 the courtyard gives her)
     actors.append(G.actor_entry(ZL4, (-485, 84, 0), (0, 0x4000, 0), 0))
     # the windows' sunbeams (the Temple of Time's light plane, scaled to the castle by GanondorfCastle.cpp)
     # (each one's scale in its x rotation, x10000: GanondorfCastle.cpp reads it, sets the scale, and clears it)
-    actors += [G.actor_entry(DEMO_KANKYO, pos, (int(sc * 10000), yaw, 0), LIGHT_PLANE) for pos, yaw, sc in beams]
+    actors += [G.actor_entry(DEMO_KANKYO, tuple(P(pos)), (int(sc * SCALE * 10000), yaw, 0), LIGHT_PLANE)
+               for pos, yaw, sc in beams]
     # the game's flames (En_Light): fires first, then lamps, so they get the scene's few point lights
-    for pos, sc, kind in sorted(B.flames, key=lambda f: (0, 2, 1).index(f[2])):
-        actors.append(G.actor_entry(EN_LIGHT, pos, (kind, 0, max(1, round(sc * 10000))), 0x0000))
+    # (a flame on a piece of furniture moves with it and keeps its size; one on the building grows with it)
+    for pos, sc, kind, g in sorted(B.flames, key=lambda f: (0, 2, 1).index(f[2])):
+        sc = sc * (SCALE if g == 0 else 1.0)
+        actors.append(G.actor_entry(EN_LIGHT, tuple(M(g)(pos)), (kind, 0, max(1, round(sc * 10000))), 0x0000))
     files[room_path] = G.room_file([(dl_path, water_path), (court_opa.path, court_xlu.path)],
                                    objects=(0x0097, 0x0191, OBJECT_TOKI_OBJECTS),
                                    actors=actors,
                                    echo=10, behavior=(0, 0), skymod=(0, 1))
     spawns = [
-        G.actor_entry(0, (-960, FLOOR, 2280), (0, -0x8000, 0), 0x0FFF),   # inside the front doors, facing north
-        G.actor_entry(0, (-700, THRONE_FLOOR, 0), (0, -0x4000, 0), 0x0FFF),  # the throne room, by the window
+        G.actor_entry(0, tuple(P((-960, FLOOR, 2260))), (0, -0x8000, 0), 0x0FFF),   # inside the front doors, facing north
+        G.actor_entry(0, tuple(P((-700, THRONE_FLOOR, 0))), (0, -0x4000, 0), 0x0FFF),  # the throne room, by the window
     ]
     # Lighting from the courtyard (its fog and colours)
     lighting = [(100, 70, 70, -74, 100, -21, -1, -6, -6, -74, -100, 21, 20, 20, 60, 0, 0, 0, 2020, 12800),
