@@ -6385,14 +6385,6 @@ static void BossGanon_Player_KeepFloatRoot(BossGanon* this);
 static s32 BossGanon_Player_UsesSpear(void);
 static s32 BossGanon_Player_HasTrident(void);
 static s32 BossGanon_Player_ApplyTridentAttack(BossGanon* this);
-// His dagger stance (D-Pad Left's fourth): the dagger drawn from the sheath on his leg into his right fist
-static u8 sGdfDagger = false;        // in the stance (persists across areas, like the stance itself)
-static u8 sGdfDaggerPending = false; // into it once the trident has come apart
-static s32 BossGanon_Player_DaggerOut(void);
-static void BossGanon_Player_EnterDagger(BossGanon* this, PlayState* play);
-static void BossGanon_Player_ApplyDaggerStance(BossGanon* this);
-static void BossGanon_Player_DrawDagger(BossGanon* this, PlayState* play);
-static void BossGanon_Player_SetBlade(BossGanon* this, Vec3f* base, Vec3f* tip);
 static void BossGanon_Player_ApplyClipRoot(BossGanon* this, const Vec3s* root, s32 count, f32 frame, f32 weight);
 static void BossGanon_Player_ApplyClip(BossGanon* this, const Vec3s (*clip)[13], s32 count, f32 frame, s32 loop,
                                        f32 weight, f32 body);
@@ -6713,180 +6705,6 @@ static void BossGanon_Player_FindKnife(void) {
     sGdfKnifeState = 1;
 }
 
-// ---- The dagger, drawn ----
-// Made when first needed from the game's own models (in the player's ROM; nothing of them is in our files):
-//  - the sheath: the young Ganondorf's knife with its hilt's triangles (the Gerudo cloth and the jewelled guard) taken
-//    out; the hilt: those triangles alone
-//  - the blade: the Kokiri Sword's (its first, mirror-bright part, without its hilt), its vertices copied and bent into
-//    a curved blade along the sheath's own curve, so it would slide home into it: the sheath curves on an arc (fitted
-//    to it: radius 1634, leaving the mouth along the hilt's line); the blade runs 90% of the way down it
-// Knife space: x across the blade's thickness, the curve in y and z.
-#define GDF_DAGGER_GFX 400
-#define GDF_BLADE_VTX 24
-static Gfx sGdfSheathGfx[GDF_DAGGER_GFX];
-static Gfx sGdfHiltGfx[GDF_DAGGER_GFX];
-static Gfx sGdfBladeGfx[GDF_DAGGER_GFX];
-static Vtx sGdfBladeVtx[GDF_BLADE_VTX];
-static s8 sGdfDaggerBuilt = 0; // 0 not yet, 1 built, -1 couldn't be
-
-#define GDF_KSWORD_A0 (-5.66f)      // the Kokiri blade's foot, along it ((x + y) / sqrt 2)
-#define GDF_KSWORD_LEN 45.3f        // its foot to its point
-#define GDF_DAGGER_MOUTH_Y (-3.0f)  // the sheath's mouth (knife space)
-#define GDF_DAGGER_MOUTH_Z (-52.0f)
-#define GDF_DAGGER_MID_X 107.0f     // the middle of its thickness
-#define GDF_DAGGER_T0_Y (-0.9353f)  // the blade's way out of the mouth (down the hilt's line)
-#define GDF_DAGGER_T0_Z (-0.3539f)
-#define GDF_DAGGER_N_Y 0.3539f      // the way the sheath curves from there
-#define GDF_DAGGER_N_Z (-0.9353f)
-#define GDF_DAGGER_RADIUS 1634.0f
-#define GDF_DAGGER_S_PER_A 30.06f   // knife units of curve per unit of Kokiri blade (90% of the sheath's 1513)
-#define GDF_DAGGER_WIDTH 22.0f      // across the blade (its half width 7.8 to 172, inside the sheath)
-#define GDF_DAGGER_THICK 10.0f
-#define GDF_DAGGER_HILT_Y 520.0f    // the middle of the hilt, where his fist closes
-#define GDF_DAGGER_HILT_Z 150.0f
-#define GDF_DAGGER_HILT_X 106.0f
-
-static s32 BossGanon_Player_TwoSlot(u8 op) {
-    return (op == 0x20) || (op == 0x31) || (op == 0x32) || (op == 0x33) || (op == 0x35) || (op == 0x36) ||
-           (op == 0x42);
-}
-
-// A point along the curved blade: `a` along the Kokiri blade from its foot, `w` across it, `t` through it
-static void BossGanon_Player_DaggerPoint(f32 a, f32 w, f32 t, Vec3f* out, f32* ty, f32* tz, f32* ny, f32* nz) {
-    f32 th = a * GDF_DAGGER_S_PER_A / GDF_DAGGER_RADIUS;
-    f32 sn = sinf(th);
-    f32 cs = cosf(th);
-
-    *ty = cs * GDF_DAGGER_T0_Y + sn * GDF_DAGGER_N_Y;
-    *tz = cs * GDF_DAGGER_T0_Z + sn * GDF_DAGGER_N_Z;
-    *ny = -sn * GDF_DAGGER_T0_Y + cs * GDF_DAGGER_N_Y;
-    *nz = -sn * GDF_DAGGER_T0_Z + cs * GDF_DAGGER_N_Z;
-    out->x = GDF_DAGGER_MID_X + t * GDF_DAGGER_THICK;
-    out->y = GDF_DAGGER_MOUTH_Y + GDF_DAGGER_RADIUS * (sn * GDF_DAGGER_T0_Y + (1.0f - cs) * GDF_DAGGER_N_Y) +
-             *ny * w * GDF_DAGGER_WIDTH;
-    out->z = GDF_DAGGER_MOUTH_Z + GDF_DAGGER_RADIUS * (sn * GDF_DAGGER_T0_Z + (1.0f - cs) * GDF_DAGGER_N_Z) +
-             *nz * w * GDF_DAGGER_WIDTH;
-}
-
-static void BossGanon_Player_BendBladeVtx(Vtx* out, const Vtx* in) {
-    f32 x = in->v.ob[0];
-    f32 y = in->v.ob[1];
-    f32 nx = (s8)in->n.n[0];
-    f32 ny = (s8)in->n.n[1];
-    f32 nz = (s8)in->n.n[2];
-    f32 na = (nx + ny) * 0.70710678f;
-    f32 nw = (nx - ny) * 0.70710678f;
-    f32 ty, tz, cy, cz;
-    Vec3f p;
-
-    *out = *in;
-    BossGanon_Player_DaggerPoint((x + y) * 0.70710678f - GDF_KSWORD_A0, (x - y) * 0.70710678f, in->v.ob[2], &p, &ty,
-                                 &tz, &cy, &cz);
-    out->v.ob[0] = (s16)p.x;
-    out->v.ob[1] = (s16)p.y;
-    out->v.ob[2] = (s16)p.z;
-    // its normal turned with it (lit by his scene's lights, like his own)
-    out->n.n[0] = (s8)CLAMP(nz, -127.0f, 127.0f);
-    out->n.n[1] = (s8)CLAMP(na * ty + nw * cy, -127.0f, 127.0f);
-    out->n.n[2] = (s8)CLAMP(na * tz + nw * cz, -127.0f, 127.0f);
-}
-
-static s32 BossGanon_Player_BuildDagger(void) {
-    Gfx* knife;
-    Gfx* sword;
-    Vtx* swordVtx;
-    void* fabric;
-    void* jewel;
-    s32 i, ns = 0, nh = 0, nb = 0, hilt = false, seenTri = false;
-
-    if (sGdfDaggerBuilt != 0) {
-        return sGdfDaggerBuilt > 0;
-    }
-    sGdfDaggerBuilt = -1;
-    knife = (Gfx*)ResourceGetDataByName(sGdfKnifeDL);
-    sword = (Gfx*)ResourceGetDataByName("__OTR__objects/object_gi_sword_1/gGiKokiriSwordDL");
-    swordVtx = (Vtx*)ResourceGetDataByName("__OTR__objects/object_gi_sword_1/object_gi_sword_1Vtx_000000");
-    fabric = ResourceGetDataByName(gYoungGanondorfGerudoFabricTex);
-    jewel = ResourceGetDataByName(gYoungGanondorfChestAndKnifeJewelTex);
-    if ((knife == NULL) || (sword == NULL) || (swordVtx == NULL) || (fabric == NULL) || (jewel == NULL)) {
-        return false;
-    }
-    // The knife: its triangles sorted by the texture they're drawn with; everything else to both
-    for (i = 0; i < 4 * GDF_DAGGER_GFX; i++) {
-        u8 op = (u8)(knife[i].words.w0 >> 24);
-        s32 two = BossGanon_Player_TwoSlot(op);
-        s32 tri = (op == G_TRI1) || (op == G_TRI2) || (op == G_QUAD);
-        s32 k;
-
-        if (op == G_ENDDL) {
-            break;
-        }
-        if ((ns + 3 > GDF_DAGGER_GFX) || (nh + 3 > GDF_DAGGER_GFX)) {
-            return false;
-        }
-        if (op == 0x20) {
-            u64 h = ((u64)(u32)knife[i + 1].words.w0 << 32) | (u32)knife[i + 1].words.w1;
-            void* tex = ResourceGetDataByCrc(h);
-
-            hilt = (tex == fabric) || (tex == jewel);
-        }
-        for (k = 0; k <= two; k++) {
-            if (!tri || !hilt) {
-                sGdfSheathGfx[ns++] = knife[i + k];
-            }
-            if (!tri || hilt) {
-                sGdfHiltGfx[nh++] = knife[i + k];
-            }
-        }
-        i += two;
-    }
-    gSPEndDisplayList(&sGdfSheathGfx[ns]);
-    gSPEndDisplayList(&sGdfHiltGfx[nh]);
-    // The blade: the Kokiri Sword's first part (up to its second change of material), its vertices bent
-    for (i = 0; i < 4 * GDF_DAGGER_GFX; i++) {
-        u8 op = (u8)(sword[i].words.w0 >> 24);
-        s32 two = BossGanon_Player_TwoSlot(op);
-
-        if ((op == G_ENDDL) || ((op == G_RDPPIPESYNC) && seenTri)) {
-            break;
-        }
-        if (nb + 3 > GDF_DAGGER_GFX) {
-            return false;
-        }
-        if (op == 0x32) {
-            s32 n = (s32)((sword[i].words.w0 >> 12) & 0xFF);
-            s32 v0 = (s32)((sword[i].words.w0 >> 1) & 0x7F) - n;
-            uintptr_t off = (uintptr_t)sword[i].words.w1;
-            s32 idx = (off > 0xFFFFF) ? (s32)((Vtx*)off - swordVtx) : (s32)(off / sizeof(Vtx));
-            s32 k;
-
-            if ((idx < 0) || (idx + n > GDF_BLADE_VTX) || (v0 < 0)) {
-                return false;
-            }
-            for (k = 0; k < n; k++) {
-                BossGanon_Player_BendBladeVtx(&sGdfBladeVtx[idx + k], &swordVtx[idx + k]);
-            }
-            gSPVertex(&sGdfBladeGfx[nb++], &sGdfBladeVtx[idx], n, v0);
-            i += two;
-            continue;
-        }
-        if ((op == G_TRI1) || (op == G_TRI2) || (op == G_QUAD)) {
-            seenTri = true;
-        }
-        sGdfBladeGfx[nb++] = sword[i];
-        if (two) {
-            sGdfBladeGfx[nb++] = sword[i + 1];
-        }
-        i += two;
-    }
-    if (!seenTri) {
-        return false;
-    }
-    gSPEndDisplayList(&sGdfBladeGfx[nb]);
-    sGdfDaggerBuilt = 1;
-    return true;
-}
-
 static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 limbIndex) {
     if (sGdfKnifeState == 0) {
         BossGanon_Player_FindKnife();
@@ -6899,10 +6717,7 @@ static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 lim
     Matrix_TranslateRotateZYX(&sGdfKnifePos, &sGdfKnifeRot);
     Matrix_Scale(sGdfKnifeScale, sGdfKnifeScale, sGdfKnifeScale, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    // (drawn, only the sheath stays on his leg: the hilt is in his hand)
-    gSPDisplayList(POLY_OPA_DISP++, (BossGanon_Player_DaggerOut() && BossGanon_Player_BuildDagger())
-                                        ? (Gfx*)sGdfSheathGfx
-                                        : (Gfx*)sGdfKnifeDL);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sGdfKnifeDL);
     Matrix_Pop();
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -8245,10 +8060,6 @@ static const GdfSwordBodyKey sGdfSwordBody[][6] = {
 // Persists across areas (the player Ganondorf is spawned again in every scene)
 static u8 sPlayerSwordState = GDF_SWORD_OFF;
 
-static s32 BossGanon_Player_DaggerOut(void) {
-    return sGdfDagger && (sPlayerSwordState == GDF_SWORD_DRAWN);
-}
-
 // His sword or trident is out: the C-buttons are its moves, not Link's items
 s32 BossGanon_Player_InStance(void) {
     return sPlayerSwordState != GDF_SWORD_OFF;
@@ -8943,21 +8754,12 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
         return true;
     }
     if (sPlayerSwordState == GDF_SWORD_OFF) {
-        // (no trident chosen: straight on to the dagger)
-        BossGanon_Player_EnterDagger(this, play);
+        sPlayerSwordState = GDF_SWORD_SHEATHED;
+        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+        BossGanon_Player_SetupSwordIdle(this, play);
         return true;
     }
     return false;
-}
-
-// Into the dagger stance: drawn from the sheath on his leg, the hilt into his right fist
-static void BossGanon_Player_EnterDagger(BossGanon* this, PlayState* play) {
-    sGdfDagger = true;
-    sGdfDaggerPending = false;
-    sPlayerDarkAuraMode = false;
-    sPlayerSwordState = GDF_SWORD_DRAWN;
-    Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PICKOUT);
-    BossGanon_Player_SetupSwordIdle(this, play);
 }
 
 void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
@@ -8983,12 +8785,8 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
 
     this->playerSwordGuard = (sPlayerSwordState == GDF_SWORD_DRAWN) && CHECK_BTN_ALL(input->cur.button, BTN_R) &&
                              (BossGanon_Player_StickYaw(play) < 0) && BossGanon_Player_CanStartAttack(this, play);
-    if (BossGanon_Player_DaggerOut()) {
-        BossGanon_Player_ApplyDaggerStance(this);
-    } else {
-        BossGanon_Player_ApplyStanceArms(this);
-        BossGanon_Player_ApplyTridentRun(this);
-    }
+    BossGanon_Player_ApplyStanceArms(this);
+    BossGanon_Player_ApplyTridentRun(this);
     BossGanon_Player_ApplyJump(this, play);
 
     if (!BossGanon_Player_CanStartAttack(this, play)) {
@@ -9045,19 +8843,10 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
     // hand; in the air it's simply gone
     if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
         sPlayerDarkAuraMode = false;
-        if (!sGdfDagger) {
-            // On to the dagger (the trident comes apart in his raised hand first, on the ground)
-            if ((sPlayerSwordState == GDF_SWORD_DRAWN) && BossGanon_Player_HasTrident() && this->playerGrounded) {
-                sGdfDaggerPending = true;
-                BossGanon_Player_SetupUnsummonTrident(this, play);
-                return;
-            }
-            BossGanon_Player_EnterDagger(this, play);
+        if ((sPlayerSwordState == GDF_SWORD_DRAWN) && BossGanon_Player_HasTrident() && this->playerGrounded) {
+            BossGanon_Player_SetupUnsummonTrident(this, play);
             return;
         }
-        // The dagger back into its sheath: normal again
-        sGdfDagger = false;
-        Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PUTAWAY);
         sPlayerSwordState = GDF_SWORD_OFF;
         Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
         BossGanon_Player_SetupFloat(this, play);
@@ -9132,8 +8921,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     }
 
     // Left arm keeps the sheath, right arm follows the attack, and his whole body moves with it
-    Math_ApproachF(&this->playerSheathArmWeight, (BossGanon_Player_IsPhantom() || sGdfDagger) ? 0.0f : 1.0f, 1.0f,
-                   0.2f);
+    Math_ApproachF(&this->playerSheathArmWeight, BossGanon_Player_IsPhantom() ? 0.0f : 1.0f, 1.0f, 0.2f);
     BossGanon_Player_ApplyAttackBody(this, this->playerSwordTimer);
     BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
                               this->playerSheathArmWeight);
@@ -9203,8 +8991,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
         BossGanon_Player_CanStartAttack(this, play)) {
         // Phantom Ganon finishes the combo with a stab of the spear instead of the overhead slam
         BossGanon_Player_SetupSwordAttack(this, play,
-                                          ((BossGanon_Player_UsesSpear() || sGdfDagger) &&
-                                           (atk->next == GDF_SWORD_ATK_COMBO3))
+                                          (BossGanon_Player_UsesSpear() && (atk->next == GDF_SWORD_ATK_COMBO3))
                                               ? GDF_SWORD_ATK_THRUST
                                               : atk->next);
         return;
@@ -9304,7 +9091,7 @@ s32 BossGanon_Player_IsPhantom(void) {
 
 // A trident in his hands (the weapon menu): the spear's moveset (the combo ends in a stab) and no sheath
 static s32 BossGanon_Player_HasTrident(void) {
-    return !BossGanon_Player_IsPhantom() && !sGdfDagger && (GanondorfTrident_GetSelected() != 0);
+    return !BossGanon_Player_IsPhantom() && (GanondorfTrident_GetSelected() != 0);
 }
 
 static s32 BossGanon_Player_UsesSpear(void) {
@@ -11073,8 +10860,6 @@ static void BossGanon_Player_ApplyRunLegs(BossGanon* this, f32 weight) {
 #define GDF_SUMMON_BURST_FRAME 9
 
 static void BossGanon_Player_SetupSummonTrident(BossGanon* this, PlayState* play) {
-    sGdfDagger = false;
-    sGdfDaggerPending = false;
     BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
     Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -6.0f);
     this->actionFunc = BossGanon_Player_SummonTrident;
@@ -11297,10 +11082,6 @@ void BossGanon_Player_UnsummonTrident(BossGanon* this, PlayState* play) {
     this->playerSwordTimer++;
     if (this->playerSwordTimer >= GDF_SUMMON_FRAMES) {
         sGdfSummonBurst = 0;
-        if (sGdfDaggerPending) {
-            BossGanon_Player_EnterDagger(this, play);
-            return;
-        }
         BossGanon_Player_SetupFloat(this, play);
     }
 }
@@ -11909,7 +11690,7 @@ static s32 BossGanon_Player_ApplyTridentAttack(BossGanon* this) {
     f32 length = sGdfSwordAttacks[this->playerSwordAttack].length;
     f32 weight = CLAMP(t / 2.0f, 0.0f, 1.0f) * CLAMP((length - t) / 4.0f, 0.0f, 1.0f);
 
-    if (!BossGanon_Player_HasTrident() && !sGdfDagger) {
+    if (!BossGanon_Player_HasTrident()) {
         return false;
     }
     switch (this->playerSwordAttack) {
@@ -11963,167 +11744,6 @@ static void BossGanon_Player_ApplyTridentRun(BossGanon* this) {
                                    17.0f + phase * ARRAY_COUNT(sGdfClipRun), true,
                                    this->playerWalkWeight * (1.0f - walk), 1.0f);
     }
-}
-
-// Mixamo "Knife Idle" (every other frame of its 172): his dagger stance, a low ready crouch turned side-on, the blade
-// held forward in his right fist, swaying as he breathes. Loops cleanly (its last frame meets its first).
-static const Vec3s sGdfClipKnifeIdle[86][13] = {
-    { { -4514, -20366, 21561 }, { 10258, -28177, -917 }, { -16556, -24943, 1931 }, { 13416, -23428, -13082 }, { 6670, -21848, 19447 }, { -18478, -7328, 22469 }, { -20692, -19298, 9973 }, { 662, -1735, 29942 }, { -7084, 760, -15186 }, { 7402, 612, 15854 }, { 16663, -14356, 16157 }, { 9849, 28154, 3216 }, { -20371, 21864, 2646 } },
-    { { -4600, -20441, 21471 }, { 10330, -28144, -1099 }, { -16556, -24955, 1778 }, { 13363, -23438, -13119 }, { 6456, -21999, 19349 }, { -18603, -7219, 22401 }, { -20983, -18999, 9937 }, { 800, -1809, 29935 }, { -7019, 679, -15266 }, { 7327, 650, 15764 }, { 16491, -14369, 16331 }, { 10604, 27824, 3661 }, { -20302, 21998, 1982 } },
-    { { -4701, -20695, 21204 }, { 10331, -28137, -1261 }, { -16476, -25031, 1417 }, { 13109, -23602, -13080 }, { 6238, -22022, 19393 }, { -18756, -7119, 22305 }, { -21354, -18588, 9926 }, { 761, -1687, 29943 }, { -6922, 648, -15305 }, { 7220, 667, 15686 }, { 16200, -14378, 16591 }, { 11192, 27561, 3891 }, { -19938, 22368, 1472 } },
-    { { -4798, -21065, 20815 }, { 10273, -28153, -1376 }, { -16339, -25145, 892 }, { 12707, -23886, -12962 }, { 6099, -21901, 19574 }, { -18912, -7004, 22210 }, { -21604, -18275, 9965 }, { 637, -1325, 29964 }, { -6813, 661, -15289 }, { 7142, 658, 15663 }, { 16035, -14372, 16760 }, { 11424, 27466, 3886 }, { -19674, 22623, 1067 } },
-    { { -4938, -21385, 20452 }, { 10224, -28164, -1499 }, { -16232, -25227, 372 }, { 12302, -24148, -12865 }, { 5979, -21711, 19822 }, { -19014, -6826, 22178 }, { -21657, -18187, 10011 }, { 625, -1045, 29975 }, { -6720, 697, -15226 }, { 7111, 634, 15684 }, { 15817, -14345, 16950 }, { 11383, 27518, 3628 }, { -19502, 22783, 787 } },
-    { { -5203, -21560, 20202 }, { 10230, -28148, -1739 }, { -16241, -25223, -72 }, { 11983, -24313, -12856 }, { 5791, -21523, 20081 }, { -19123, -6621, 22147 }, { -21675, -18145, 10048 }, { 617, -858, 29981 }, { -6649, 739, -15148 }, { 7100, 616, 15724 }, { 15625, -14324, 17145 }, { 11370, 27557, 3368 }, { -19420, 22859, 559 } },
-    { { -5491, -21562, 20122 }, { 10288, -28102, -2103 }, { -16341, -25157, -356 }, { 11807, -24340, -12969 }, { 5676, -21409, 20234 }, { -19241, -6596, 22051 }, { -21596, -18194, 10129 }, { 665, -888, 29979 }, { -6602, 738, -15106 }, { 7120, 624, 15748 }, { 15461, -14324, 17278 }, { 11322, 27595, 3212 }, { -19396, 22879, 593 } },
-    { { -5746, -21393, 20232 }, { 10375, -28034, -2535 }, { -16505, -25049, -402 }, { 11766, -24229, -13210 }, { 5648, -21354, 20301 }, { -19311, -6689, 21962 }, { -21430, -18300, 10289 }, { 682, -1171, 29969 }, { -6582, 748, -15076 }, { 7142, 618, 15780 }, { 15484, -14340, 17286 }, { 11263, 27612, 3277 }, { -19103, 23118, 789 } },
-    { { -5921, -21145, 20442 }, { 10453, -27963, -2970 }, { -16697, -24921, -339 }, { 11862, -24028, -13489 }, { 5675, -21381, 20264 }, { -19269, -6932, 21923 }, { -21176, -18485, 10483 }, { 718, -1466, 29956 }, { -6605, 712, -15084 }, { 7164, 624, 15793 }, { 15434, -14384, 17364 }, { 11048, 27680, 3428 }, { -18932, 23245, 1115 } },
-    { { -6007, -20882, 20685 }, { 10518, -27902, -3296 }, { -16866, -24809, -188 }, { 12034, -23809, -13722 }, { 5724, -21514, 20109 }, { -19212, -7142, 21907 }, { -20954, -18606, 10712 }, { 782, -1709, 29941 }, { -6640, 672, -15105 }, { 7199, 620, 15796 }, { 15634, -14437, 17205 }, { 11110, 27619, 3705 }, { -18781, 23344, 1533 } },
-    { { -5964, -20688, 20891 }, { 10523, -27882, -3440 }, { -16950, -24753, -18 }, { 12221, -23637, -13855 }, { 5792, -21673, 19918 }, { -19027, -7329, 22006 }, { -20861, -18571, 10951 }, { 814, -1739, 29939 }, { -6700, 631, -15146 }, { 7238, 624, 15788 }, { 15851, -14471, 16999 }, { 11096, 27600, 3886 }, { -18564, 23502, 1738 } },
-    { { -5847, -20594, 21017 }, { 10489, -27905, -3364 }, { -16942, -24758, 137 }, { 12370, -23550, -13870 }, { 5875, -21794, 19761 }, { -18828, -7527, 22110 }, { -20886, -18431, 11138 }, { 931, -1503, 29948 }, { -6776, 625, -15172 }, { 7289, 623, 15787 }, { 16050, -14475, 16781 }, { 11152, 27594, 3765 }, { -18508, 23556, 1606 } },
-    { { -5607, -20707, 20971 }, { 10370, -27994, -2969 }, { -16798, -24855, 271 }, { 12393, -23634, -13706 }, { 5994, -21877, 19633 }, { -18632, -7426, 22310 }, { -20989, -18242, 11255 }, { 1088, -1102, 29960 }, { -6827, 649, -15167 }, { 7331, 597, 15779 }, { 16357, -14480, 16468 }, { 11315, 27557, 3545 }, { -18416, 23645, 1334 } },
-    { { -5330, -20916, 20836 }, { 10216, -28107, -2368 }, { -16599, -24985, 462 }, { 12328, -23806, -13465 }, { 6147, -21884, 19578 }, { -18512, -7207, 22480 }, { -21083, -18092, 11321 }, { 1242, -733, 29965 }, { -6850, 726, -15107 }, { 7368, 571, 15789 }, { 16514, -14464, 16298 }, { 11412, 27545, 3323 }, { -18270, 23765, 1192 } },
-    { { -5009, -21160, 20668 }, { 10025, -28225, -1697 }, { -16356, -25140, 677 }, { 12245, -23992, -13209 }, { 6277, -21790, 19642 }, { -18358, -6914, 22698 }, { -21148, -18016, 11323 }, { 1368, -382, 29966 }, { -6884, 804, -15053 }, { 7391, 554, 15808 }, { 16606, -14403, 16168 }, { 11355, 27617, 2889 }, { -18206, 23815, 1177 } },
-    { { -4711, -21342, 20550 }, { 9868, -28310, -1090 }, { -16175, -25250, 907 }, { 12227, -24124, -12982 }, { 6377, -21718, 19689 }, { -18246, -6522, 22903 }, { -21224, -18012, 11185 }, { 1358, -193, 29969 }, { -6911, 840, -15026 }, { 7401, 552, 15808 }, { 16752, -14350, 15996 }, { 11386, 27640, 2530 }, { -18202, 23818, 1184 } },
-    { { -4500, -21358, 20582 }, { 9783, -28353, -652 }, { -16122, -25272, 1184 }, { 12328, -24145, -12846 }, { 6481, -21635, 19746 }, { -18193, -6116, 23057 }, { -21200, -18133, 11034 }, { 1229, -181, 29974 }, { -6947, 857, -15015 }, { 7402, 563, 15818 }, { 16720, -14329, 16019 }, { 11371, 27671, 2241 }, { -18370, 23687, 1205 } },
-    { { -4398, -21207, 20759 }, { 9775, -28359, -443 }, { -16205, -25204, 1466 }, { 12546, -24063, -12789 }, { 6569, -21583, 19775 }, { -18197, -5890, 23112 }, { -21111, -18343, 10856 }, { 988, -394, 29981 }, { -6990, 860, -15028 }, { 7384, 575, 15831 }, { 16758, -14318, 15999 }, { 11282, 27729, 1959 }, { -18647, 23467, 1270 } },
-    { { -4350, -20943, 21034 }, { 9821, -28344, -441 }, { -16361, -25085, 1747 }, { 12845, -23895, -12807 }, { 6580, -21580, 19773 }, { -18314, -6037, 22982 }, { -20970, -18587, 10714 }, { 678, -845, 29980 }, { -7030, 835, -15080 }, { 7367, 586, 15844 }, { 16837, -14334, 15958 }, { 11155, 27777, 2006 }, { -18825, 23301, 1635 } },
-    { { -4332, -20662, 21314 }, { 9878, -28321, -569 }, { -16534, -24961, 1889 }, { 13154, -23709, -12840 }, { 6536, -21631, 19733 }, { -18446, -6353, 22790 }, { -20815, -18813, 10622 }, { 402, -1466, 29961 }, { -7086, 770, -15153 }, { 7351, 602, 15843 }, { 16767, -14344, 16092 }, { 10933, 27836, 2370 }, { -18996, 23112, 2231 } },
-    { { -4329, -20439, 21530 }, { 9933, -28298, -730 }, { -16657, -24873, 1960 }, { 13385, -23548, -12898 }, { 6417, -21700, 19696 }, { -18590, -6670, 22581 }, { -20704, -18958, 10579 }, { 237, -1998, 29932 }, { -7135, 711, -15218 }, { 7334, 621, 15835 }, { 16579, -14363, 16337 }, { 10738, 27867, 2851 }, { -19267, 22841, 2662 } },
-    { { -4389, -20359, 21593 }, { 9996, -28273, -864 }, { -16715, -24837, 1930 }, { 13467, -23474, -12947 }, { 6311, -21782, 19640 }, { -18720, -6794, 22437 }, { -20690, -19016, 10502 }, { 169, -2267, 29914 }, { -7150, 667, -15253 }, { 7312, 636, 15823 }, { 16395, -14407, 16561 }, { 10751, 27822, 3219 }, { -19444, 22662, 2896 } },
-    { { -4502, -20466, 21468 }, { 10051, -28251, -935 }, { -16697, -24862, 1761 }, { 13382, -23514, -12962 }, { 6234, -21906, 19526 }, { -18803, -6791, 22368 }, { -20770, -18988, 10394 }, { 185, -2248, 29915 }, { -7137, 636, -15247 }, { 7285, 637, 15817 }, { 16343, -14448, 16613 }, { 10861, 27753, 3438 }, { -19453, 22672, 2745 } },
-    { { -4605, -20706, 21214 }, { 10053, -28249, -965 }, { -16595, -24949, 1461 }, { 13134, -23681, -12911 }, { 6179, -21917, 19531 }, { -18904, -6890, 22252 }, { -20909, -18898, 10282 }, { 200, -2007, 29932 }, { -7083, 664, -15223 }, { 7250, 616, 15814 }, { 16245, -14485, 16689 }, { 10858, 27729, 3635 }, { -19446, 22706, 2509 } },
-    { { -4678, -20997, 20911 }, { 10008, -28262, -1038 }, { -16463, -25058, 1032 }, { 12821, -23900, -12823 }, { 6130, -21866, 19604 }, { -18960, -6909, 22199 }, { -21037, -18816, 10168 }, { 212, -1682, 29952 }, { -7023, 713, -15183 }, { 7214, 602, 15820 }, { 16091, -14521, 16830 }, { 10879, 27704, 3759 }, { -19383, 22790, 2222 } },
-    { { -4766, -21267, 20615 }, { 9969, -28271, -1170 }, { -16350, -25147, 568 }, { 12491, -24113, -12749 }, { 6107, -21770, 19717 }, { -18985, -6751, 22226 }, { -21164, -18720, 10083 }, { 149, -1377, 29968 }, { -6949, 750, -15134 }, { 7183, 582, 15818 }, { 15972, -14561, 16955 }, { 10917, 27687, 3774 }, { -19323, 22867, 1926 } },
-    { { -4895, -21463, 20381 }, { 9959, -28264, -1396 }, { -16280, -25198, 144 }, { 12202, -24263, -12744 }, { 6113, -21623, 19877 }, { -18951, -6554, 22314 }, { -21260, -18655, 9999 }, { 196, -1056, 29981 }, { -6872, 775, -15086 }, { 7156, 576, 15817 }, { 15846, -14564, 17040 }, { 10901, 27720, 3569 }, { -19339, 22870, 1726 } },
-    { { -5060, -21530, 20270 }, { 9995, -28234, -1706 }, { -16282, -25196, -174 }, { 12004, -24323, -12818 }, { 6142, -21464, 20039 }, { -18919, -6413, 22382 }, { -21288, -18625, 9997 }, { 307, -791, 29988 }, { -6807, 782, -15057 }, { 7133, 576, 15819 }, { 15891, -14536, 16978 }, { 10866, 27752, 3425 }, { -19407, 22823, 1574 } },
-    { { -5263, -21468, 20283 }, { 10107, -28171, -2063 }, { -16382, -25130, -352 }, { 11941, -24288, -12942 }, { 6226, -21293, 20195 }, { -18897, -6344, 22420 }, { -21280, -18562, 10129 }, { 441, -702, 29989 }, { -6739, 762, -15050 }, { 7103, 597, 15815 }, { 15915, -14521, 16915 }, { 10729, 27847, 3074 }, { -19184, 23021, 1417 } },
-    { { -5523, -21306, 20385 }, { 10289, -28077, -2413 }, { -16584, -24996, -407 }, { 12002, -24177, -13093 }, { 6270, -21161, 20320 }, { -18915, -6240, 22434 }, { -21232, -18502, 10338 }, { 456, -758, 29987 }, { -6674, 746, -15027 }, { 7102, 600, 15830 }, { 15867, -14520, 16927 }, { 10617, 27913, 2858 }, { -18795, 23343, 1369 } },
-    { { -5691, -21086, 20567 }, { 10428, -27995, -2739 }, { -16793, -24856, -392 }, { 12156, -24030, -13221 }, { 6326, -21103, 20363 }, { -18874, -5994, 22535 }, { -21178, -18492, 10467 }, { 300, -987, 29982 }, { -6633, 720, -15044 }, { 7118, 607, 15835 }, { 16036, -14512, 16766 }, { 10659, 27910, 2728 }, { -18741, 23373, 1563 } },
-    { { -5778, -20882, 20750 }, { 10552, -27927, -2958 }, { -16954, -24748, -323 }, { 12352, -23874, -13322 }, { 6396, -21101, 20343 }, { -18766, -5711, 22698 }, { -21115, -18561, 10472 }, { 154, -1338, 29970 }, { -6627, 688, -15081 }, { 7142, 621, 15829 }, { 16290, -14508, 16521 }, { 10733, 27907, 2453 }, { -18900, 23224, 1845 } },
-    { { -5746, -20745, 20895 }, { 10599, -27901, -3029 }, { -17027, -24699, -211 }, { 12534, -23750, -13373 }, { 6433, -21128, 20303 }, { -18728, -5343, 22819 }, { -21050, -18626, 10487 }, { 118, -1561, 29959 }, { -6651, 647, -15122 }, { 7178, 652, 15821 }, { 16549, -14497, 16272 }, { 11041, 27782, 2502 }, { -19215, 22931, 2224 } },
-    { { -5644, -20723, 20945 }, { 10606, -27912, -2904 }, { -16982, -24731, -43 }, { 12645, -23682, -13389 }, { 6509, -21185, 20219 }, { -18600, -5455, 22897 }, { -20985, -18686, 10510 }, { 214, -1643, 29954 }, { -6699, 621, -15145 }, { 7212, 685, 15816 }, { 16622, -14475, 16202 }, { 10979, 27816, 2393 }, { -19260, 22876, 2396 } },
-    { { -5500, -20822, 20886 }, { 10552, -27964, -2579 }, { -16847, -24823, 118 }, { 12651, -23715, -13326 }, { 6580, -21277, 20100 }, { -18429, -5883, 22930 }, { -20919, -18714, 10591 }, { 341, -1533, 29959 }, { -6754, 616, -15142 }, { 7237, 708, 15822 }, { 16649, -14447, 16183 }, { 10771, 27902, 2341 }, { -19161, 22974, 2241 } },
-    { { -5245, -21016, 20756 }, { 10366, -28076, -2074 }, { -16648, -24955, 312 }, { 12564, -23838, -13187 }, { 6650, -21459, 19881 }, { -18266, -6161, 22987 }, { -20897, -18735, 10599 }, { 382, -1322, 29968 }, { -6811, 639, -15098 }, { 7266, 702, 15839 }, { 16400, -14429, 16422 }, { 10748, 27898, 2486 }, { -19058, 23070, 2136 } },
-    { { -5003, -21227, 20601 }, { 10172, -28185, -1463 }, { -16459, -25076, 549 }, { 12446, -23996, -13011 }, { 6676, -21667, 19646 }, { -18142, -6377, 23026 }, { -20963, -18698, 10532 }, { 417, -1094, 29977 }, { -6850, 690, -15020 }, { 7293, 677, 15868 }, { 16306, -14387, 16495 }, { 10859, 27851, 2535 }, { -19075, 23073, 1945 } },
-    { { -4713, -21412, 20477 }, { 9948, -28290, -846 }, { -16286, -25182, 800 }, { 12374, -24139, -12814 }, { 6667, -21808, 19493 }, { -18105, -6550, 23006 }, { -21036, -18702, 10379 }, { 425, -879, 29984 }, { -6898, 702, -14974 }, { 7309, 665, 15894 }, { 16234, -14361, 16519 }, { 11007, 27786, 2604 }, { -19186, 22981, 1941 } },
-    { { -4455, -21475, 20469 }, { 9743, -28372, -336 }, { -16182, -25237, 1106 }, { 12371, -24212, -12678 }, { 6679, -21886, 19401 }, { -18126, -6709, 22944 }, { -21062, -18755, 10228 }, { 331, -757, 29989 }, { -6966, 737, -14944 }, { 7318, 644, 15918 }, { 16188, -14350, 16554 }, { 10971, 27798, 2625 }, { -19429, 22775, 1954 } },
-    { { -4215, -21390, 20609 }, { 9571, -28432, -38 }, { -16153, -25241, 1411 }, { 12486, -24190, -12607 }, { 6673, -21895, 19393 }, { -18144, -6747, 22919 }, { -21018, -18862, 10123 }, { 281, -797, 29988 }, { -7054, 751, -14994 }, { 7316, 646, 15917 }, { 16070, -14345, 16669 }, { 10841, 27856, 2547 }, { -19585, 22635, 2017 } },
-    { { -4108, -21223, 20801 }, { 9524, -28448, 99 }, { -16275, -25147, 1656 }, { 12711, -24095, -12565 }, { 6596, -21922, 19388 }, { -18301, -6856, 22761 }, { -20939, -18974, 10077 }, { 198, -991, 29983 }, { -7118, 711, -15045 }, { 7323, 661, 15922 }, { 16046, -14357, 16742 }, { 10787, 27855, 2781 }, { -19749, 22478, 2173 } },
-    { { -4132, -20970, 21052 }, { 9584, -28428, 107 }, { -16446, -25018, 1908 }, { 12938, -23968, -12575 }, { 6507, -21931, 19409 }, { -18455, -6952, 22607 }, { -20891, -19031, 10070 }, { 83, -1274, 29973 }, { -7133, 713, -15074 }, { 7315, 652, 15929 }, { 15990, -14377, 16877 }, { 10708, 27860, 3026 }, { -19814, 22397, 2408 } },
-    { { -4168, -20794, 21218 }, { 9644, -28407, 47 }, { -16554, -24935, 2046 }, { 13107, -23865, -12596 }, { 6426, -21904, 19466 }, { -18579, -7050, 22475 }, { -20877, -19061, 10040 }, { -63, -1529, 29961 }, { -7150, 689, -15121 }, { 7297, 656, 15922 }, { 15834, -14374, 17118 }, { 10531, 27905, 3224 }, { -19852, 22337, 2633 } },
-    { { -4200, -20737, 21268 }, { 9692, -28391, -34 }, { -16582, -24918, 2037 }, { 13169, -23825, -12607 }, { 6282, -21820, 19607 }, { -18713, -7061, 22360 }, { -20968, -19046, 9879 }, { -168, -1662, 29953 }, { -7152, 656, -15168 }, { 7264, 660, 15894 }, { 15711, -14370, 17314 }, { 10284, 27981, 3364 }, { -20076, 22124, 2733 } },
-    { { -4210, -20795, 21210 }, { 9694, -28390, -144 }, { -16536, -24960, 1881 }, { 13117, -23854, -12606 }, { 6111, -21641, 19858 }, { -18785, -7068, 22297 }, { -21131, -18987, 9642 }, { -277, -1744, 29948 }, { -7143, 624, -15207 }, { 7202, 657, 15859 }, { 15607, -14384, 17465 }, { 10149, 28039, 3284 }, { -20199, 22019, 2680 } },
-    { { -4241, -20976, 21024 }, { 9665, -28399, -236 }, { -16428, -25051, 1594 }, { 12909, -23986, -12571 }, { 5979, -21510, 20040 }, { -18900, -6930, 22244 }, { -21264, -18965, 9391 }, { -435, -1737, 29947 }, { -7096, 650, -15196 }, { 7138, 641, 15849 }, { 15646, -14402, 17447 }, { 10288, 27952, 3581 }, { -20197, 22050, 2425 } },
-    { { -4327, -21241, 20738 }, { 9625, -28412, -343 }, { -16297, -25160, 1169 }, { 12594, -24189, -12502 }, { 5892, -21407, 20175 }, { -18995, -6795, 22204 }, { -21384, -18920, 9207 }, { -485, -1605, 29953 }, { -7028, 684, -15166 }, { 7088, 630, 15845 }, { 15547, -14396, 17499 }, { 10252, 27976, 3503 }, { -20246, 22040, 2089 } },
-    { { -4502, -21502, 20430 }, { 9609, -28415, -523 }, { -16167, -25262, 674 }, { 12222, -24396, -12468 }, { 5821, -21293, 20316 }, { -19089, -6681, 22158 }, { -21466, -18877, 9104 }, { -519, -1400, 29963 }, { -6974, 727, -15130 }, { 7043, 616, 15855 }, { 15504, -14383, 17504 }, { 10221, 28005, 3351 }, { -20264, 22040, 1895 } },
-    { { -4738, -21701, 20165 }, { 9665, -28389, -798 }, { -16136, -25290, 233 }, { 11909, -24542, -12484 }, { 5762, -21191, 20439 }, { -19163, -6490, 22151 }, { -21625, -18739, 9013 }, { -505, -1127, 29975 }, { -6869, 741, -15088 }, { 7014, 612, 15857 }, { 15424, -14354, 17547 }, { 10227, 28013, 3265 }, { -20153, 22151, 1780 } },
-    { { -4910, -21760, 20060 }, { 9740, -28348, -1237 }, { -16158, -25276, -126 }, { 11728, -24587, -12567 }, { 5751, -21084, 20552 }, { -19180, -6465, 22143 }, { -21818, -18500, 9041 }, { -533, -921, 29981 }, { -6761, 721, -15114 }, { 6978, 644, 15824 }, { 15578, -14329, 17359 }, { 10431, 27956, 3102 }, { -19753, 22514, 1716 } },
-    { { -5150, -21672, 20094 }, { 9888, -28271, -1735 }, { -16320, -25170, -379 }, { 11684, -24544, -12693 }, { 5821, -21022, 20596 }, { -19162, -6468, 22159 }, { -21950, -18318, 9092 }, { -467, -716, 29988 }, { -6647, 683, -15113 }, { 6952, 671, 15802 }, { 15782, -14328, 17108 }, { 10355, 28009, 2878 }, { -19545, 22704, 1588 } },
-    { { -5367, -21467, 20258 }, { 10046, -28179, -2244 }, { -16522, -25035, -508 }, { 11758, -24405, -12889 }, { 5875, -20982, 20621 }, { -19183, -6571, 22110 }, { -21945, -18294, 9150 }, { -379, -705, 29989 }, { -6595, 654, -15123 }, { 6953, 697, 15771 }, { 15906, -14330, 16996 }, { 10359, 28014, 2815 }, { -19544, 22700, 1647 } },
-    { { -5586, -21196, 20482 }, { 10209, -28083, -2672 }, { -16769, -24871, -483 }, { 11915, -24209, -13113 }, { 5923, -20995, 20595 }, { -19144, -6889, 22046 }, { -21902, -18338, 9167 }, { -247, -858, 29987 }, { -6567, 615, -15132 }, { 6970, 715, 15757 }, { 15932, -14325, 16968 }, { 10148, 28081, 2914 }, { -19549, 22683, 1817 } },
-    { { -5749, -20947, 20693 }, { 10327, -28013, -2938 }, { -16966, -24739, -342 }, { 12081, -24027, -13295 }, { 6011, -21029, 20534 }, { -18994, -7339, 22031 }, { -21865, -18386, 9158 }, { -135, -1132, 29978 }, { -6565, 592, -15139 }, { 6993, 715, 15754 }, { 15951, -14327, 16943 }, { 9787, 28203, 2968 }, { -19555, 22656, 2074 } },
-    { { -5772, -20780, 20853 }, { 10348, -27998, -3004 }, { -17054, -24680, -178 }, { 12211, -23915, -13378 }, { 6087, -21128, 20410 }, { -18690, -7676, 22176 }, { -21868, -18378, 9169 }, { 42, -1306, 29972 }, { -6596, 587, -15153 }, { 7028, 693, 15746 }, { 16014, -14340, 16872 }, { 9220, 28424, 2661 }, { -19548, 22645, 2257 } },
-    { { -5659, -20736, 20928 }, { 10283, -28041, -2818 }, { -17008, -24713, 26 }, { 12286, -23901, -13334 }, { 6203, -21229, 20269 }, { -18463, -7837, 22309 }, { -21868, -18337, 9249 }, { 336, -1240, 29972 }, { -6644, 607, -15151 }, { 7074, 670, 15749 }, { 16023, -14370, 16854 }, { 8968, 28518, 2504 }, { -19498, 22688, 2248 } },
-    { { -5417, -20874, 20855 }, { 10134, -28137, -2363 }, { -16823, -24838, 238 }, { 12259, -23997, -13185 }, { 6322, -21306, 20151 }, { -18371, -7776, 22406 }, { -21818, -18304, 9430 }, { 660, -970, 29977 }, { -6706, 644, -15117 }, { 7125, 661, 15771 }, { 16035, -14379, 16817 }, { 9030, 28489, 2611 }, { -19430, 22760, 2105 } },
-    { { -5121, -21087, 20716 }, { 9928, -28256, -1741 }, { -16570, -25004, 487 }, { 12148, -24147, -13014 }, { 6415, -21319, 20109 }, { -18270, -7636, 22536 }, { -21778, -18252, 9621 }, { 940, -590, 29979 }, { -6769, 717, -15054 }, { 7177, 635, 15805 }, { 16108, -14349, 16698 }, { 9054, 28491, 2511 }, { -19243, 22923, 2061 } },
-    { { -4822, -21279, 20590 }, { 9727, -28359, -1083 }, { -16353, -25139, 771 }, { 12064, -24288, -12827 }, { 6420, -21382, 20040 }, { -18246, -7193, 22701 }, { -21806, -18191, 9675 }, { 1184, -191, 29976 }, { -6817, 803, -14981 }, { 7233, 597, 15829 }, { 16093, -14314, 16638 }, { 9350, 28414, 2285 }, { -19143, 23028, 1806 } },
-    { { -4544, -21379, 20550 }, { 9564, -28430, -518 }, { -16227, -25210, 1067 }, { 12091, -24362, -12662 }, { 6302, -21488, 19964 }, { -18207, -6597, 22913 }, { -21675, -18339, 9689 }, { 1318, 144, 29971 }, { -6867, 867, -14930 }, { 7278, 575, 15853 }, { 16205, -14297, 16486 }, { 9742, 28303, 2008 }, { -19273, 22942, 1496 } },
-    { { -4319, -21311, 20668 }, { 9470, -28466, -155 }, { -16201, -25209, 1422 }, { 12263, -24315, -12586 }, { 6398, -21495, 19925 }, { -18178, -6000, 23099 }, { -21463, -18613, 9637 }, { 1279, 293, 29971 }, { -6935, 908, -14928 }, { 7314, 567, 15868 }, { 16425, -14272, 16267 }, { 9982, 28226, 1908 }, { -19573, 22699, 1294 } },
-    { { -4211, -21064, 20942 }, { 9489, -28460, -36 }, { -16295, -25124, 1801 }, { 12564, -24147, -12611 }, { 6581, -21435, 19931 }, { -18048, -5775, 23258 }, { -21322, -18824, 9540 }, { 1225, 52, 29975 }, { -7000, 919, -14966 }, { 7333, 577, 15876 }, { 16664, -14235, 16092 }, { 9753, 28338, 1357 }, { -19934, 22372, 1470 } },
-    { { -4183, -20712, 21296 }, { 9607, -28420, -122 }, { -16449, -25000, 2108 }, { 12940, -23903, -12697 }, { 6652, -21472, 19868 }, { -17980, -5991, 23256 }, { -21215, -18984, 9463 }, { 1079, -449, 29977 }, { -7066, 879, -15055 }, { 7352, 598, 15867 }, { 16677, -14208, 16124 }, { 9344, 28485, 1133 }, { -20302, 22002, 1935 } },
-    { { -4239, -20413, 21572 }, { 9788, -28357, -295 }, { -16624, -24865, 2311 }, { 13287, -23660, -12793 }, { 6624, -21643, 19690 }, { -17985, -6562, 23097 }, { -21102, -19129, 9423 }, { 971, -1054, 29966 }, { -7099, 825, -15132 }, { 7371, 602, 15863 }, { 16660, -14207, 16189 }, { 9065, 28566, 1346 }, { -20653, 21649, 2187 } },
-    { { -4352, -20227, 21724 }, { 9959, -28294, -491 }, { -16741, -24780, 2383 }, { 13507, -23479, -12896 }, { 6654, -21834, 19468 }, { -17989, -7208, 22901 }, { -20973, -19264, 9435 }, { 870, -1511, 29949 }, { -7118, 784, -15174 }, { 7361, 613, 15862 }, { 16696, -14210, 16206 }, { 8811, 28620, 1811 }, { -20671, 21611, 2381 } },
-    { { -4424, -20203, 21732 }, { 10074, -28250, -669 }, { -16737, -24792, 2286 }, { 13563, -23418, -12947 }, { 6675, -21966, 19312 }, { -18025, -7687, 22716 }, { -20939, -19324, 9388 }, { 837, -1668, 29942 }, { -7105, 749, -15215 }, { 7333, 630, 15834 }, { 16726, -14227, 16190 }, { 8643, 28642, 2227 }, { -20680, 21595, 2441 } },
-    { { -4486, -20377, 21556 }, { 10141, -28223, -800 }, { -16621, -24893, 2015 }, { 13428, -23496, -12947 }, { 6721, -22015, 19240 }, { -18148, -7794, 22581 }, { -20993, -19318, 9280 }, { 816, -1531, 29950 }, { -7058, 737, -15225 }, { 7287, 629, 15793 }, { 16687, -14252, 16238 }, { 8773, 28577, 2523 }, { -20943, 21348, 2383 } },
-    { { -4551, -20648, 21283 }, { 10152, -28215, -910 }, { -16475, -25018, 1641 }, { 13161, -23661, -12921 }, { 6714, -21866, 19411 }, { -18179, -7746, 22573 }, { -21164, -19182, 9173 }, { 816, -1199, 29965 }, { -7002, 772, -15196 }, { 7230, 602, 15787 }, { 16510, -14286, 16410 }, { 8763, 28590, 2414 }, { -21086, 21245, 2005 } },
-    { { -4628, -20934, 20984 }, { 10122, -28222, -1041 }, { -16329, -25138, 1213 }, { 12809, -23877, -12877 }, { 6646, -21591, 19740 }, { -18239, -7484, 22613 }, { -21407, -18953, 9084 }, { 729, -772, 29981 }, { -6918, 852, -15135 }, { 7175, 556, 15796 }, { 16271, -14317, 16640 }, { 8742, 28625, 2047 }, { -20864, 21482, 1784 } },
-    { { -4778, -21177, 20705 }, { 10119, -28214, -1256 }, { -16238, -25215, 733 }, { 12459, -24074, -12852 }, { 6542, -21263, 20127 }, { -18306, -7122, 22675 }, { -21571, -18777, 9062 }, { 596, -345, 29992 }, { -6822, 899, -15072 }, { 7133, 525, 15807 }, { 16071, -14341, 16858 }, { 8767, 28647, 1573 }, { -20652, 21708, 1511 } },
-    { { -5047, -21310, 20504 }, { 10191, -28171, -1595 }, { -16259, -25210, 324 }, { 12178, -24183, -12918 }, { 6394, -20910, 20540 }, { -18403, -6885, 22670 }, { -21671, -18631, 9124 }, { 590, -79, 29994 }, { -6707, 930, -15005 }, { 7122, 508, 15830 }, { 16104, -14344, 16798 }, { 8736, 28676, 1179 }, { -20631, 21741, 1298 } },
-    { { -5374, -21315, 20416 }, { 10350, -28084, -2041 }, { -16378, -25135, -16 }, { 12037, -24180, -13055 }, { 6259, -20666, 20826 }, { -18440, -6874, 22643 }, { -21685, -18573, 9207 }, { 563, -9, 29995 }, { -6611, 907, -14955 }, { 7131, 523, 15858 }, { 16402, -14326, 16517 }, { 8705, 28695, 909 }, { -20636, 21734, 1346 } },
-    { { -5689, -21174, 20476 }, { 10544, -27968, -2569 }, { -16558, -25015, -238 }, { 12043, -24063, -13264 }, { 6118, -20497, 21034 }, { -18465, -7069, 22562 }, { -21695, -18530, 9273 }, { 576, -292, 29993 }, { -6546, 856, -14947 }, { 7152, 551, 15868 }, { 16474, -14317, 16436 }, { 8657, 28712, 813 }, { -20533, 21818, 1546 } },
-    { { -5950, -20951, 20631 }, { 10750, -27837, -3093 }, { -16753, -24884, -352 }, { 12163, -23869, -13503 }, { 6175, -20477, 21037 }, { -18424, -7238, 22542 }, { -21586, -18591, 9402 }, { 531, -732, 29986 }, { -6518, 790, -14980 }, { 7153, 583, 15858 }, { 16547, -14339, 16359 }, { 8656, 28708, 976 }, { -20411, 21909, 1840 } },
-    { { -6123, -20724, 20809 }, { 10927, -27719, -3502 }, { -16911, -24777, -382 }, { 12342, -23658, -13711 }, { 6252, -20575, 20918 }, { -18338, -7461, 22540 }, { -21366, -18795, 9499 }, { 454, -1134, 29975 }, { -6522, 730, -15028 }, { 7152, 609, 15836 }, { 16435, -14355, 16469 }, { 8532, 28731, 1319 }, { -20320, 21961, 2194 } },
-    { { -6151, -20562, 20961 }, { 11006, -27657, -3740 }, { -17002, -24715, -351 }, { 12512, -23495, -13836 }, { 6298, -20751, 20730 }, { -18262, -7557, 22569 }, { -21197, -18897, 9675 }, { 424, -1269, 29970 }, { -6548, 700, -15066 }, { 7160, 617, 15820 }, { 16335, -14362, 16548 }, { 8476, 28726, 1723 }, { -20212, 22030, 2481 } },
-    { { -6084, -20485, 21056 }, { 11003, -27656, -3755 }, { -17015, -24707, -249 }, { 12644, -23395, -13885 }, { 6333, -20906, 20563 }, { -18139, -7517, 22682 }, { -21116, -18829, 9979 }, { 378, -1152, 29975 }, { -6611, 698, -15071 }, { 7180, 613, 15823 }, { 16258, -14356, 16588 }, { 8579, 28678, 1995 }, { -19908, 22299, 2532 } },
-    { { -5881, -20567, 21033 }, { 10900, -27729, -3504 }, { -16874, -24804, -131 }, { 12671, -23421, -13816 }, { 6328, -21023, 20445 }, { -18088, -7500, 22728 }, { -21085, -18745, 10201 }, { 465, -754, 29987 }, { -6691, 713, -15079 }, { 7220, 612, 15831 }, { 16375, -14345, 16456 }, { 8648, 28658, 1985 }, { -19827, 22411, 2153 } },
-    { { -5636, -20797, 20873 }, { 10742, -27851, -2992 }, { -16654, -24953, 23 }, { 12584, -23571, -13640 }, { 6330, -21087, 20379 }, { -18066, -7357, 22792 }, { -21131, -18629, 10316 }, { 579, -283, 29993 }, { -6741, 740, -15039 }, { 7270, 607, 15848 }, { 16491, -14331, 16332 }, { 8766, 28628, 1888 }, { -19769, 22495, 1777 } },
-    { { -5309, -21064, 20691 }, { 10525, -27995, -2349 }, { -16363, -25143, 263 }, { 12443, -23757, -13444 }, { 6423, -21094, 20341 }, { -18039, -6966, 22936 }, { -21204, -18534, 10338 }, { 742, 85, 29991 }, { -6790, 826, -14973 }, { 7309, 571, 15879 }, { 16554, -14310, 16258 }, { 8920, 28593, 1700 }, { -19672, 22599, 1514 } },
-    { { -4975, -21287, 20545 }, { 10293, -28129, -1675 }, { -16116, -25298, 507 }, { 12327, -23940, -13225 }, { 6554, -21093, 20301 }, { -18001, -6409, 23128 }, { -21263, -18508, 10263 }, { 753, 221, 29990 }, { -6842, 897, -14916 }, { 7336, 538, 15915 }, { 16467, -14301, 16254 }, { 9215, 28512, 1474 }, { -19632, 22640, 1419 } },
-    { { -4683, -21399, 20497 }, { 10090, -28231, -1099 }, { -15970, -25384, 775 }, { 12305, -24055, -13037 }, { 6717, -21112, 20228 }, { -17979, -5924, 23274 }, { -21235, -18622, 10115 }, { 681, 166, 29992 }, { -6897, 963, -14873 }, { 7366, 514, 15949 }, { 16301, -14305, 16334 }, { 9457, 28441, 1289 }, { -19894, 22392, 1669 } },
-    { { -4486, -21338, 20605 }, { 9961, -28290, -687 }, { -15960, -25379, 1101 }, { 12415, -24062, -12919 }, { 6976, -21147, 20103 }, { -18012, -5759, 23289 }, { -21089, -18891, 9918 }, { 460, -194, 29996 }, { -6960, 1012, -14851 }, { 7403, 491, 15984 }, { 16460, -14296, 16174 }, { 9469, 28441, 1210 }, { -20091, 22205, 1815 } },
-    { { -4365, -21097, 20877 }, { 9934, -28303, -515 }, { -16048, -25305, 1452 }, { 12660, -23939, -12909 }, { 7167, -21222, 19956 }, { -18187, -6107, 23064 }, { -20880, -19167, 9830 }, { 271, -765, 29989 }, { -7043, 997, -14906 }, { 7423, 500, 15991 }, { 16610, -14281, 16033 }, { 9092, 28543, 1621 }, { -20288, 21988, 2216 } },
-    { { -4390, -20688, 21277 }, { 10055, -28257, -638 }, { -16289, -25130, 1778 }, { 13063, -23671, -13002 }, { 6978, -21483, 19743 }, { -18289, -6841, 22775 }, { -20712, -19325, 9878 }, { 205, -1455, 29964 }, { -7106, 888, -15039 }, { 7425, 550, 15944 }, { 16609, -14295, 16098 }, { 9116, 28499, 2167 }, { -20291, 21942, 2609 } },
-    { { -4477, -20427, 21510 }, { 10199, -28201, -826 }, { -16493, -24985, 1924 }, { 13339, -23481, -13066 }, { 6751, -21745, 19534 }, { -18411, -7254, 22548 }, { -20668, -19333, 9954 }, { 493, -1693, 29948 }, { -7103, 799, -15140 }, { 7417, 593, 15888 }, { 16631, -14338, 16158 }, { 9568, 28284, 2909 }, { -20342, 21888, 2668 } },
-};
-
-// The dagger stance: Mixamo's knife idle over his whole body, looping; walking, the plain walk takes his legs, torso
-// and left arm (in step with his walk, as the trident's does) while his right fist keeps the dagger where the stance
-// holds it
-static f32 sGdfKnifeIdleFrame = 0.0f;
-
-static void BossGanon_Player_ApplyDaggerStance(BossGanon* this) {
-    f32 phase;
-
-    // (86 rows, every other frame of a 30-frames-a-second clip: 0.75 of a row a game frame)
-    sGdfKnifeIdleFrame += 0.75f;
-    if (sGdfKnifeIdleFrame >= ARRAY_COUNT(sGdfClipKnifeIdle)) {
-        sGdfKnifeIdleFrame -= ARRAY_COUNT(sGdfClipKnifeIdle);
-    }
-    BossGanon_Player_ApplyClip(this, sGdfClipKnifeIdle, ARRAY_COUNT(sGdfClipKnifeIdle), sGdfKnifeIdleFrame, true, 1.0f,
-                               1.0f);
-    if (this->playerGrounded && (this->playerWalkWeight > 0.0f)) {
-        phase = (this->playerWalkFrame - 1.0f) / GDF_WALK_CYCLE_FRAMES;
-        phase -= floorf(phase);
-        sGdfClipKeepArm = 1;
-        BossGanon_Player_ApplyClip(this, sGdfClipWalk, ARRAY_COUNT(sGdfClipWalk),
-                                   31.0f + phase * ARRAY_COUNT(sGdfClipWalk), true, this->playerWalkWeight, 1.0f);
-        sGdfClipKeepArm = -1;
-    }
-}
-
-// The dagger in his right fist: its hilt (his fist closed round the middle of it) and the curved blade going on from
-// the hilt's line, the hilt's line laid along his grip as the sword's is. (Knife space to the sword frame: x stays
-// across, the blade's way out of the hilt becomes the sword's +z.)
-#define GDF_DAGGER_ROLL_DEG 0.0f // turned about the blade (0: its curve's plane across his fist)
-
-static void BossGanon_Player_DrawDagger(BossGanon* this, PlayState* play) {
-    static MtxF sToFrame = { {
-        { 1.0f, 0.0f, 0.0f, 0.0f },
-        { 0.0f, -0.3539f, -0.9353f, 0.0f },
-        { 0.0f, 0.9353f, -0.3539f, 0.0f },
-        { 0.0f, 0.0f, 0.0f, 1.0f },
-    } };
-    Vec3f foot;
-    Vec3f point;
-    Vec3f base;
-    Vec3f tip;
-    f32 ty, tz, ny, nz;
-
-    if ((sPlayerSwordState != GDF_SWORD_DRAWN) || !this->playerHandMtxValid || (sGdfKnifeState != 1) ||
-        !BossGanon_Player_BuildDagger()) {
-        this->playerBladeValid = false;
-        return;
-    }
-    OPEN_DISPS(play->state.gfxCtx);
-    Matrix_Push();
-    Matrix_Put(&this->playerRightHandMtx);
-    Matrix_Translate(GDF_GRIP_X, GDF_GRIP_Y, GDF_GRIP_Z, MTXMODE_APPLY);
-    Matrix_RotateX(M_PI, MTXMODE_APPLY);
-    Matrix_RotateZ(DEG_TO_RAD(GDF_DAGGER_ROLL_DEG), MTXMODE_APPLY);
-    Matrix_Mult(&sToFrame, MTXMODE_APPLY);
-    Matrix_Scale(sGdfKnifeScale, sGdfKnifeScale, sGdfKnifeScale, MTXMODE_APPLY);
-    Matrix_Translate(-GDF_DAGGER_HILT_X, -GDF_DAGGER_HILT_Y, -GDF_DAGGER_HILT_Z, MTXMODE_APPLY);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, sGdfHiltGfx);
-    gSPDisplayList(POLY_OPA_DISP++, sGdfBladeGfx);
-    // Its edge for hits: from the hilt's mouth to the point
-    BossGanon_Player_DaggerPoint(0.0f, 0.0f, 0.0f, &foot, &ty, &tz, &ny, &nz);
-    BossGanon_Player_DaggerPoint(GDF_KSWORD_LEN, 0.0f, 0.0f, &point, &ty, &tz, &ny, &nz);
-    Matrix_MultVec3f(&foot, &base);
-    Matrix_MultVec3f(&point, &tip);
-    BossGanon_Player_SetBlade(this, &base, &tip);
-    Matrix_Pop();
-    CLOSE_DISPS(play->state.gfxCtx);
 }
 
 // The opening in Link's house: instead of lying in Link's bed, Ganondorf leans against the wall beside it, arms crossed
@@ -12256,10 +11876,6 @@ static void BossGanon_Player_DrawSword(BossGanon* this, PlayState* play) {
     Gfx* swordDL;
     Gfx* sheathDL;
 
-    if (sGdfDagger) {
-        BossGanon_Player_DrawDagger(this, play);
-        return;
-    }
     // Phantom Ganon: his spear is part of his model
     if (BossGanon_Player_IsPhantom()) {
         if (!this->playerSpearValid || (sPlayerSwordState != GDF_SWORD_DRAWN)) {
@@ -12588,10 +12204,6 @@ void BossGanon_PlayerProjectile_Init(BossGanon* this, PlayState* play) {
 static u8 sGdfPgSpearForced = false;
 
 void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play) {
-    if (sPlayerSwordState == GDF_SWORD_OFF) {
-        sGdfDagger = false;
-        sGdfDaggerPending = false;
-    }
     if (BossGanon_Player_IsPhantom()) {
         sPlayerSwordState = GDF_SWORD_DRAWN;
         sGdfPgSpearForced = true;
