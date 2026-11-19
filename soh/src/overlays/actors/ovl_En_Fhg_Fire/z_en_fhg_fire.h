@@ -64,6 +64,10 @@ typedef struct EnFhgFire {
     /* 0x01FC */ u8 lensFlareOn;
     /* 0x01FE */ s16 lensFlareTimer;
     /* 0x0200 */ f32 lensFlareScale;
-} EnFhgFire; // size = 0x0204
+    u8 gdf; // SoH: "Play as Ganondorf", his trident's lightning: strikes enemies, never Link
+} EnFhgFire;
+
+// SoH: "Play as Ganondorf", turns a lightning strike (and what it spawns) into his
+void EnFhgFire_GdfArm(EnFhgFire* this);
 
 #endif

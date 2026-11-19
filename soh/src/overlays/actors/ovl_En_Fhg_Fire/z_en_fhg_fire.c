@@ -10,6 +10,32 @@
 #include "overlays/actors/ovl_Boss_Ganondrof/z_boss_ganondrof.h"
 #include "overlays/actors/ovl_En_fHG/z_en_fhg.h"
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
+#include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h" // SoH: DMG_GANONDORF_PLAYER
+
+#define GDF_SHOCK_FRAMES 22 // his shocks run this far along the ground (vanilla: to the arena's wall)
+
+// SoH: "Play as Ganondorf", his lightning: hits enemies with every damage type (as his other attacks), passes Link
+void EnFhgFire_GdfArm(EnFhgFire* this) {
+    this->gdf = true;
+    if ((this->actor.params == FHGFIRE_LIGHTNING_SHOCK) || (this->actor.params == FHGFIRE_LIGHTNING_BURST)) {
+        this->collider.base.atFlags = AT_ON | AT_TYPE_PLAYER;
+        this->collider.base.acFlags = 0;
+        this->collider.base.ocFlags1 = 0;
+        this->collider.info.toucher.dmgFlags = DMG_GANONDORF_PLAYER;
+        this->collider.info.toucher.damage = 4;
+        this->collider.info.bumperFlags = 0;
+        this->collider.info.ocElemFlags = 0;
+    }
+    if (this->actor.params == FHGFIRE_LIGHTNING_SHOCK) {
+        this->work[FHGFIRE_KILL_TIMER] = GDF_SHOCK_FRAMES;
+    }
+}
+
+static void EnFhgFire_GdfPass(EnFhgFire* this, Actor* child) {
+    if ((child != NULL) && this->gdf) {
+        EnFhgFire_GdfArm((EnFhgFire*)child);
+    }
+}
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -197,9 +223,10 @@ void EnFhgFire_LightningStrike(EnFhgFire* this, PlayState* play) {
                 this->work[FHGFIRE_TIMER] = 37;
                 this->actor.world.pos.y -= 200.0f;
 
-                Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
-                                   this->actor.world.pos.y, this->actor.world.pos.z, 500, 0, 0,
-                                   FHGFIRE_LIGHTNING_BURST);
+                EnFhgFire_GdfPass(this, Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE,
+                                                           this->actor.world.pos.x, this->actor.world.pos.y,
+                                                           this->actor.world.pos.z, 500, 0, 0,
+                                                           FHGFIRE_LIGHTNING_BURST));
                 {
                     Vec3f sp7C;
                     Vec3f sp70 = { 0.0f, -1.0f, 0.0f };
@@ -226,15 +253,17 @@ void EnFhgFire_LightningStrike(EnFhgFire* this, PlayState* play) {
                 s16 randY = (Rand_ZeroOne() < 0.5f) ? 0x1000 : 0;
 
                 for (i = 0; i < 8; i++) {
-                    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
-                                       this->actor.world.pos.y, this->actor.world.pos.z, 0, (i * 0x2000) + randY,
-                                       0x4000, FHGFIRE_LIGHTNING_TRAIL + i);
+                    EnFhgFire_GdfPass(this, Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE,
+                                                               this->actor.world.pos.x, this->actor.world.pos.y,
+                                                               this->actor.world.pos.z, 0, (i * 0x2000) + randY,
+                                                               0x4000, FHGFIRE_LIGHTNING_TRAIL + i));
                 }
 
                 for (i = 0; i < 8; i++) {
-                    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
-                                       this->actor.world.pos.y, this->actor.world.pos.z, 0, (i * 0x2000) + randY, 0,
-                                       FHGFIRE_LIGHTNING_SHOCK);
+                    EnFhgFire_GdfPass(this, Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE,
+                                                               this->actor.world.pos.x, this->actor.world.pos.y,
+                                                               this->actor.world.pos.z, 0, (i * 0x2000) + randY, 0,
+                                                               FHGFIRE_LIGHTNING_SHOCK));
                 }
             }
 
@@ -298,12 +327,16 @@ void EnFhgFire_LightningShock(EnFhgFire* this, PlayState* play) {
 
     Actor_MoveXZGravity(&this->actor);
     Collider_UpdateCylinder(&this->actor, &this->collider);
-    if (player->invincibilityTimer == 0) {
+    if (this->gdf || (player->invincibilityTimer == 0)) {
         CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
     }
 
     Actor_UpdateBgCheckInfo(play, &this->actor, 50.0f, 50.0f, 100.0f, 1);
     if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
+        Actor_Kill(&this->actor);
+    }
+    // SoH: Ganondorf's run out after a while (there may be no wall to stop them)
+    if (this->gdf && (this->work[FHGFIRE_KILL_TIMER] != 0) && (--this->work[FHGFIRE_KILL_TIMER] == 0)) {
         Actor_Kill(&this->actor);
     }
 }
@@ -344,7 +377,7 @@ void EnFhgFire_LightningBurst(EnFhgFire* this, PlayState* play) {
     Actor_SetScale(&this->actor, this->fwork[FHGFIRE_SCALE]);
     if (this->fwork[FHGFIRE_BURST_SCALE] > 3.0f) {
         Collider_UpdateCylinder(&this->actor, &this->collider);
-        if (player->invincibilityTimer == 0) {
+        if (this->gdf || (player->invincibilityTimer == 0)) {
             CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
         }
     }
