@@ -131,6 +131,8 @@ static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play);
 static s16 sGdfBreakTimer = 0; // kicking in a locked door, bars or a grate
 static Actor* sGdfBreakTarget = NULL;
 static s16 sGdfBreakYaw;        // the way to it (he turns to it as he steps in)
+static u8 sGdfTridentWhirring = false; // its flying sound is playing
+void EnGanonMant_SetWear(f32 wear);
 static s16 sGdfRoamHold = 0;     // frames left to leave him standing on his own where he is (the Door of Time)
 static const Vec3s sGdfClipSwdKick[53][13];
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
@@ -13604,6 +13606,23 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     this->playerHidden = BossGanon_Player_ShouldHide(this, play) || GdfInvasion_IsVanished();
+
+    // His cape wears with Link's health: torn as he's hurt, mended as he heals. (Not while the Ganondorf of the
+    // tower is fighting him: that cape is torn by his own hits.)
+    if ((sVanillaGanondorf == NULL) || (sVanillaGanondorf->actor.update == NULL)) {
+        f32 wear = 0.0f;
+
+        if (CVarGetInteger(CVAR_PLAY_AS_GDF("CapeWear"), 1) && (gSaveContext.healthCapacity > 0)) {
+            wear = 1.0f - (f32)gSaveContext.health / gSaveContext.healthCapacity;
+        }
+        EnGanonMant_SetWear(wear);
+    }
+
+    // The trident's whirring as it flies: stopped once it's back in his hand (or the throw is cut short)
+    if (sGdfTridentWhirring && (this->actionFunc != BossGanon_Player_TridentThrow)) {
+        Audio_StopSfxByPosAndId(&this->actor.projectedPos, NA_SE_IT_BOOMERANG_FLY);
+        sGdfTridentWhirring = false;
+    }
     if (sCape->actor.update != NULL) {
         sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
     }
@@ -15579,6 +15598,7 @@ void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play) {
     sGdfTridentSpin += 0x2400;
     if ((sGdfTridentTimer % 6) == 0) {
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_BOOMERANG_FLY);
+        sGdfTridentWhirring = true;
     }
 
     if (sGdfTridentState == GDF_TRIDENT_OUT) {
@@ -15610,6 +15630,8 @@ void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play) {
         if ((dist < 35.0f) || (sGdfTridentTimer > 120)) {
             // Caught
             sGdfTridentState = GDF_TRIDENT_IN_HAND;
+            Audio_StopSfxByPosAndId(&this->actor.projectedPos, NA_SE_IT_BOOMERANG_FLY);
+            sGdfTridentWhirring = false;
             Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PICKOUT);
             BossGanon_Player_SetupSwordIdle(this, play);
             return;

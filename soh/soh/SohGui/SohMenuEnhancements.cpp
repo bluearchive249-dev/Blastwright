@@ -2286,6 +2286,10 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "A hood of his cape's cloth. Its shadow falls over his brow and eyes; his nose and mouth stay in the "
             "light."));
+    AddWidget(path, "Cape Wears With Health", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CapeWear"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "His cape tears as Link loses hearts, in tatters near the end, and mends as he heals."));
     AddWidget(path, "Phantom Ganon Skin", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"))
         .PreFunc([](WidgetInfo& info) {

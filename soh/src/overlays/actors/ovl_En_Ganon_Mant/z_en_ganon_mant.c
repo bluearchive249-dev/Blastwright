@@ -102,6 +102,7 @@ static u16 sVerticesMap[GANON_MANT_NUM_STRANDS * GANON_MANT_NUM_JOINTS] = {
 #define MANT_TEX_HEIGHT 64
 
 static u8 sMaskTex[MANT_TEX_WIDTH * MANT_TEX_HEIGHT] = { { 0 } };
+static s16 sGdfCapeTears = 0; // SoH: tears worn into the player Ganondorf's cape (EnGanonMant_SetWear)
 
 #include "overlays/ovl_En_Ganon_Mant/ovl_En_Ganon_Mant.h"
 
@@ -197,11 +198,76 @@ void EnGanonMant_Init(Actor* thisx, PlayState* play) {
     for (int i = 0; i < ARRAY_COUNT(sMaskTex); i++) {
         sMaskTex[i] = 0;
     }
+    sGdfCapeTears = 0; // (worn in again from his update)
 
     Gfx_RegisterBlendedTexture(gMantTex, sMaskTex, NULL);
 }
 
 void EnGanonMant_Destroy(Actor* thisx, PlayState* play) {
+}
+
+/**
+ * SoH: "Play as Ganondorf": his cape wears with Link's health. Each tear always lands in the same place (a fixed
+ * sequence), so losing hearts adds tears one by one and healing mends the last ones first.
+ */
+#define GDF_CAPE_MAX_TEARS 14
+
+static u32 EnGanonMant_GdfNext(u32* seed) {
+    *seed = *seed * 1664525u + 1013904223u;
+    return *seed >> 8;
+}
+
+static f32 EnGanonMant_GdfRand(u32* seed, f32 max) {
+    return (EnGanonMant_GdfNext(seed) & 0xFFFF) * (max / 65536.0f);
+}
+
+static void EnGanonMant_TearMask(f32 tx, f32 ty, f32 tearAngle, s16 shapeIdx) {
+    TearShape* shape = &sTearShapes[shapeIdx];
+    f32 tearDirX = sinf(tearAngle);
+    f32 tearDirY = cosf(tearAngle);
+    s16 i;
+    s16 areaX;
+    s16 areaY;
+    s32 texIdx;
+
+    for (i = 0; i < shape->count; i++) {
+        if ((0 <= tx && tx < MANT_TEX_WIDTH) && (0 <= ty && ty < MANT_TEX_HEIGHT)) {
+            for (areaX = 0; areaX <= shape->tearAreaSizes[i]; areaX++) {
+                for (areaY = 0; areaY <= shape->tearAreaSizes[i]; areaY++) {
+                    texIdx = ((s16)tx + ((s16)ty * MANT_TEX_WIDTH)) + (areaX + (areaY * MANT_TEX_WIDTH));
+                    if (texIdx < MANT_TEX_WIDTH * MANT_TEX_HEIGHT) {
+                        sMaskTex[texIdx] = 1;
+                    }
+                }
+            }
+        }
+        tx += tearDirX;
+        ty += tearDirY;
+    }
+}
+
+// wear: 0 (whole) to 1 (in tatters)
+void EnGanonMant_SetWear(f32 wear) {
+    s16 want = (s16)(CLAMP(wear, 0.0f, 1.0f) * GDF_CAPE_MAX_TEARS + 0.5f);
+    u32 seed = 0x6A11F00Du;
+    s16 n;
+    s32 i;
+
+    if (want == sGdfCapeTears) {
+        return;
+    }
+    for (i = 0; i < ARRAY_COUNT(sMaskTex); i++) {
+        sMaskTex[i] = 0;
+    }
+    for (n = 0; n < want; n++) {
+        f32 tx = EnGanonMant_GdfRand(&seed, MANT_TEX_WIDTH);
+        f32 ty = EnGanonMant_GdfRand(&seed, MANT_TEX_HEIGHT);
+        f32 angle = EnGanonMant_GdfRand(&seed, 2 * M_PI);
+        s16 shapeIdx = (s16)EnGanonMant_GdfRand(&seed, ARRAY_COUNT(sTearShapes) - 0.01f);
+
+        EnGanonMant_TearMask(tx, ty, angle, shapeIdx);
+    }
+    sGdfCapeTears = want;
 }
 
 /**
