@@ -130,6 +130,9 @@ static void BossGanon_Player_ApplyDoorKick(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play);
 static s16 sGdfBreakTimer = 0; // kicking in a locked door, bars or a grate
 static Actor* sGdfBreakTarget = NULL;
+static s16 sGdfBreakYaw;        // the way to it (he turns to it as he steps in)
+static u8 sGdfCamInside = false; // a scene's camera (placed for Link) is inside him: he isn't drawn
+static const Vec3s sGdfClipSwdKick[53][13];
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyIntroCs(BossGanon* this, PlayState* play);
@@ -525,7 +528,7 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
         sGdfCapelet[0]->linked[0] = sGdfCapelet[1];
         sGdfCapelet[0]->linked[1] = sGdfCapelet[2];
         sGdfCapelet[0]->linkedCount = GANON_MANT_MAX_LINKED;
-        sGdfCapelet[0]->actor.draw = this->playerHidden ? NULL : sGdfCapeletDraw;
+        sGdfCapelet[0]->actor.draw = (this->playerHidden || sGdfCamInside) ? NULL : sGdfCapeletDraw;
     }
 }
 
@@ -4690,7 +4693,7 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     void* shadowTex;
 
     // SoH: "Play as Ganondorf", hidden in first person and while Link is shown instead
-    if (GDF_IS_PLAYER(this) && this->playerHidden) {
+    if (GDF_IS_PLAYER(this) && (this->playerHidden || sGdfCamInside)) {
         BossGanon_Player_DrawCrawlFlame(this, play);
         BossGanon_DrawEffects(play);
         BossGanon_Player_DrawIntroProps(this, play);
@@ -9547,41 +9550,14 @@ static void BossGanon_Player_DrawPhantom(BossGanon* this, PlayState* play, MtxF*
 // the hip) and leans back, timed so the foot lands on the frame the door flies off (z_en_door.c)
 #define GDF_KICK_LIFT_DEG 80.0f
 
-// Raises his right leg straight out by `deg` (scaled by the weight `w`, 0 to 1) and leans back
-static void BossGanon_Player_KickPose(BossGanon* this, f32 w, f32 deg) {
-    Vec3s* joints = this->skelAnime.jointTable;
-    GdfMat3 root;
-    GdfMat3 pelvis;
-    GdfMat3 hip;
-    GdfMat3 thigh;
-    GdfMat3 lift;
-    GdfMat3 tmp;
-    GdfMat3 tmp2;
-    f32 a;
-
-    w = w * w * (3.0f - 2.0f * w);
-    BossGanon_Pg_FromRot(&joints[1 + 0], root);
-    BossGanon_Pg_FromRot(&joints[1 + 18], tmp);
-    BossGanon_Pg_Mul(root, tmp, pelvis, false);
-    a = -deg * w * (M_PI / 180.0f);
-    lift[0][0] = 1.0f; lift[0][1] = 0.0f;     lift[0][2] = 0.0f;
-    lift[1][0] = 0.0f; lift[1][1] = cosf(a);  lift[1][2] = -sinf(a);
-    lift[2][0] = 0.0f; lift[2][1] = sinf(a);  lift[2][2] = cosf(a);
-    BossGanon_Pg_FromRot(&joints[1 + 22], thigh);
-    BossGanon_Pg_Mul(pelvis, thigh, hip, false);
-    BossGanon_Pg_Mul(lift, hip, tmp, false);
-    BossGanon_Pg_Mul(pelvis, tmp, tmp2, true);
-    BossGanon_Pg_ToRot(tmp2, &joints[1 + 22]);
-
-    BossGanon_Player_TwistLean(this, 0.0f, -0x0C00 * w);
-}
-
 // ---- No door holds him ----
 // Locked doors (small key or boss key), chained doors, barred doors waiting on a switch or a cleared room, the
 // Gerudo cells, gates, grates and breakable walls: A in front of one and he kicks it in. A door he unlocks or unbars
 // (and then kicks open as he goes through, like any door); a cell, gate, grate or wall he smashes to pieces.
-#define GDF_BREAK_KICK_FRAMES 22
-#define GDF_BREAK_KICK_IMPACT 8
+// The kick: Mixamo's "Great Sword Kick" (as for the Master Sword): a step in and a high front kick, then back
+#define GDF_BREAK_KICK_FRAMES 35 // its 53 rows at 1.5 a frame
+#define GDF_BREAK_KICK_IMPACT 13 // his foot meets it (the clip's row 20)
+#define GDF_BREAK_REACH 55.0f    // his kick lands this far ahead: he steps in to it for a door
 #define GDF_BREAK_RANGE 95.0f
 
 static s32 BossGanon_Player_IsSmashable(s16 id) {
@@ -9697,8 +9673,8 @@ s32 BossGanon_Player_TryBreakKick(Actor* thisx, PlayState* play) {
     }
     sGdfBreakTarget = door;
     sGdfBreakTimer = 1;
-    // Square up to it
-    player->actor.shape.rot.y = player->actor.world.rot.y = Math_Vec3f_Yaw(&player->actor.world.pos, &door->world.pos);
+    // He turns to it as he steps in (ApplyBreakKick)
+    sGdfBreakYaw = Math_Vec3f_Yaw(&player->actor.world.pos, &door->world.pos);
     player->linearVelocity = 0.0f;
     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW)); // (one grunt, not a loop)
     return true;
@@ -9764,22 +9740,36 @@ static void BossGanon_Player_BreakDoor(BossGanon* this, PlayState* play, Actor* 
 }
 
 static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Actor* a = sGdfBreakTarget;
+    f32 clip;
     f32 w;
 
     if (sGdfBreakTimer <= 0) {
         return;
     }
-    if (sGdfBreakTimer < GDF_BREAK_KICK_IMPACT) {
-        w = sGdfBreakTimer / (f32)GDF_BREAK_KICK_IMPACT;
-    } else if (sGdfBreakTimer < GDF_BREAK_KICK_IMPACT + 5) {
-        w = 1.0f;
-    } else {
-        w = (GDF_BREAK_KICK_FRAMES - sGdfBreakTimer) / (f32)(GDF_BREAK_KICK_FRAMES - GDF_BREAK_KICK_IMPACT - 5);
+    // Turned to it over his step in, and (a door) closer if he's further off than his kick reaches
+    if (sGdfBreakTimer <= GDF_BREAK_KICK_IMPACT) {
+        Math_SmoothStepToS(&player->actor.shape.rot.y, sGdfBreakYaw, 3, 0x1800, 0x100);
+        player->actor.world.rot.y = player->actor.shape.rot.y;
+        if ((a != NULL) && (a->update != NULL) && (sGdfBreakTimer < GDF_BREAK_KICK_IMPACT - 2) &&
+            ((a->id == ACTOR_EN_DOOR) || (a->id == ACTOR_DOOR_SHUTTER) || (a->id == ACTOR_DOOR_TOKI))) {
+            f32 d = Math_Vec3f_DistXZ(&player->actor.world.pos, &a->world.pos);
+            f32 step = CLAMP(d - GDF_BREAK_REACH, 0.0f, 4.0f);
+
+            player->actor.world.pos.x += Math_SinS(sGdfBreakYaw) * step;
+            player->actor.world.pos.z += Math_CosS(sGdfBreakYaw) * step;
+        }
     }
-    BossGanon_Player_KickPose(this, CLAMP(w, 0.0f, 1.0f), GDF_KICK_LIFT_DEG);
-    if ((sGdfBreakTimer == GDF_BREAK_KICK_IMPACT) && (sGdfBreakTarget != NULL) &&
-        (sGdfBreakTarget->update != NULL)) {
-        BossGanon_Player_BreakDoor(this, play, sGdfBreakTarget);
+    player->linearVelocity = 0.0f;
+
+    clip = CLAMP(sGdfBreakTimer * 1.5f, 0.0f, ARRAY_COUNT(sGdfClipSwdKick) - 1);
+    w = CLAMP(sGdfBreakTimer / 3.0f, 0.0f, 1.0f) * CLAMP((ARRAY_COUNT(sGdfClipSwdKick) - 1 - clip) / 4.0f, 0.0f, 1.0f);
+    if (w > 0.0f) {
+        BossGanon_Player_ApplyClip(this, sGdfClipSwdKick, ARRAY_COUNT(sGdfClipSwdKick), clip, false, w, 1.0f);
+    }
+    if ((sGdfBreakTimer == GDF_BREAK_KICK_IMPACT) && (a != NULL) && (a->update != NULL)) {
+        BossGanon_Player_BreakDoor(this, play, a);
     }
     if (++sGdfBreakTimer > GDF_BREAK_KICK_FRAMES) {
         sGdfBreakTimer = 0;
@@ -13559,8 +13549,19 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     this->playerHidden = BossGanon_Player_ShouldHide(this, play) || GdfInvasion_IsVanished();
+    // A scene's camera is placed for Link, close to him (the Door of Time's, the Master Sword's): where it would be
+    // inside Ganondorf (twice his size), he isn't drawn for those shots rather than fill them with his cape
+    sGdfCamInside = false;
+    if (play->csCtx.state != CS_STATE_IDLE) {
+        Vec3f* eye = &play->view.eye;
+        f32 dx = eye->x - this->actor.world.pos.x;
+        f32 dz = eye->z - this->actor.world.pos.z;
+        f32 dy = eye->y - this->actor.world.pos.y;
+
+        sGdfCamInside = ((SQ(dx) + SQ(dz)) < SQ(70.0f)) && (dy > -30.0f) && (dy < 230.0f);
+    }
     if (sCape->actor.update != NULL) {
-        sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
+        sCape->actor.draw = (this->playerHidden || sGdfCamInside) ? NULL : sPlayerCapeDraw;
     }
     if (this->playerHidden && (sCape != NULL)) {
         sCape->linkedCount = 0; // (sewn on again from his draw)
