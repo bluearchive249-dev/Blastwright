@@ -279,7 +279,9 @@ void BossGanon_Player_Float(BossGanon* this, PlayState* play);
 static MtxF sGdfHairTorso;
 static u8 sGdfHairTorsoValid = false;
 static void BossGanon_Player_HairOverride(BossGanon* this, Vec3s* rot);
-static void BossGanon_Player_SwdKeepBack(PlayState* play, Vec3f* target);
+static s32 BossGanon_Player_SwdKeepBack(PlayState* play, Vec3f* target);
+static f32 sGdfSwdWalk = -1.0f; // the pull: how far he walked this frame (-1: not then)
+static s16 sGdfSwdWalkYaw;
 // First person (C-Up): his body stays, seen from his eyes, with his head left out (the view is from inside it)
 static u8 sGdfFpBodyQuery = false;
 static s32 BossGanon_Player_FpBodyOn(void) {
@@ -7548,8 +7550,11 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     u8 moving;
 
     // In cutscenes the scene often moves Link itself (up the steps to the Master Sword, say) with no speed of his
-    // own: he walks as far as Link went (a jump of more than a stride is a cut, not a step)
-    if (inCs) {
+    // own: he walks as far as Link went (a jump of more than a stride is a cut, not a step). For the Master Sword's
+    // pull he walks to his own place: as far as he went himself.
+    if (sGdfSwdWalk >= 0.0f) {
+        speed = sGdfSwdWalk;
+    } else if (inCs) {
         f32 moved = Math_Vec3f_DistXZ(&player->actor.world.pos, &player->actor.prevPos);
 
         if (moved < 15.0f) {
@@ -7892,9 +7897,12 @@ static void BossGanon_Player_SnapToLink(BossGanon* this, PlayState* play) {
     this->actor.shape.rot.y = this->actor.world.rot.y = player->actor.shape.rot.y;
 }
 
+#define GDF_SWD_WALK_SPEED 2.5f // his walk to his place for the Master Sword's pull, a frame
+
 static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 controlY) {
     Player* player = GET_PLAYER(play);
     Vec3f target;
+    s32 swdWalk;
     f32 dx;
     f32 dy;
     f32 dz;
@@ -7927,7 +7935,7 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
     target.x = player->actor.world.pos.x;
     target.y = player->actor.world.pos.y + BossGanon_Player_GetHeightAboveLink(this);
     target.z = player->actor.world.pos.z;
-    BossGanon_Player_SwdKeepBack(play, &target);
+    swdWalk = BossGanon_Player_SwdKeepBack(play, &target);
 
     dx = target.x - this->actor.world.pos.x;
     dy = target.y - this->actor.world.pos.y;
@@ -7939,8 +7947,24 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
         return;
     }
 
-    this->actor.world.pos.x += dx * 0.5f;
-    this->actor.world.pos.z += dz * 0.5f;
+    if (swdWalk) {
+        // The Master Sword: the scene sets Link down by the stone, and Ganondorf walks to his own place behind him
+        // (at a walk, his walk cycle following, not sliding there)
+        f32 d = sqrtf(SQ(dx) + SQ(dz));
+        f32 step = MIN(d, GDF_SWD_WALK_SPEED);
+
+        if (d > 0.01f) {
+            this->actor.world.pos.x += dx / d * step;
+            this->actor.world.pos.z += dz / d * step;
+            if (step > 0.5f) {
+                sGdfSwdWalkYaw = Math_Atan2S(dz, dx);
+            }
+        }
+        sGdfSwdWalk = step;
+    } else {
+        this->actor.world.pos.x += dx * 0.5f;
+        this->actor.world.pos.z += dz * 0.5f;
+    }
 
     if (controlY) {
         // Keeps up with Link's jumps
@@ -10686,15 +10710,16 @@ void BossGanon_Player_DrawMasterSword(BossGanon* this, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// The pull: he stands back from the stone, so his kick reaches the hilt (Link steps right up to it)
-static void BossGanon_Player_SwdKeepBack(PlayState* play, Vec3f* target) {
+// The pull: he stands back from the stone, so his kick reaches the hilt (Link steps right up to it). True while it
+// applies (he walks to his place then, see Follow)
+static s32 BossGanon_Player_SwdKeepBack(PlayState* play, Vec3f* target) {
     f32 dx;
     f32 dz;
     f32 d;
 
     if ((play->sceneNum != SCENE_TEMPLE_OF_TIME) || (sGdfSwd == NULL) || LINK_IS_ADULT ||
         ((play->csCtx.state == CS_STATE_IDLE) && (sGdfSwdShow < 0))) {
-        return;
+        return false;
     }
     dx = target->x - sGdfSwd->world.pos.x;
     dz = target->z - sGdfSwd->world.pos.z;
@@ -10703,6 +10728,7 @@ static void BossGanon_Player_SwdKeepBack(PlayState* play, Vec3f* target) {
         target->x = sGdfSwd->world.pos.x + dx / d * GDF_SWD_STAND_DIST;
         target->z = sGdfSwd->world.pos.z + dz / d * GDF_SWD_STAND_DIST;
     }
+    return true;
 }
 
 // The cutscene's camera while the sword flies (PlayAsGanondorf_AdjustCutsceneView): from the side of its flight, the
@@ -13769,6 +13795,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Math_ApproachZeroF(&this->playerAuraAlpha, 1.0f, 20.0f);
         Math_ApproachZeroF(&this->playerAuraScale, 1.0f, 0.02f);
     }
+    sGdfSwdWalk = -1.0f;
     if (sGdfRoaming) {
         // Where he walked to, standing on the floor there (the ground offset is relative to Link's height)
         this->actor.world.pos.y = player->actor.world.pos.y + this->playerGroundOffset;
@@ -13781,6 +13808,10 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         // facing first, as below, and then toward his own way, the two pulls met halfway: he could only face within
         // a half circle around Link's facing.)
         Math_ApproachS(&this->actor.shape.rot.y, sGdfRoamYaw, 3, 0x1800);
+        this->actor.yawTowardsPlayer = this->actor.shape.rot.y;
+    } else if (sGdfSwdWalk > 0.5f) {
+        // Walking to his place for the Master Sword: he faces his way (then the stone, below, as Link does)
+        Math_ApproachS(&this->actor.shape.rot.y, sGdfSwdWalkYaw, 3, 0x1800);
         this->actor.yawTowardsPlayer = this->actor.shape.rot.y;
     } else if ((this->actionFunc == BossGanon_Player_SwordAttack) && (this->playerSwordAttack == GDF_SWORD_ATK_SPIN) &&
         (this->playerSpinYaw != 0)) {
