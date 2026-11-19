@@ -9331,6 +9331,23 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
         BossGanon_Player_SetAT(this, play);
     }
 
+    // The fists: no cooldown. A press is kept, and the next punch comes as soon as this one's strike is out (about
+    // 0.2 s); after the uppercut the combo starts over; R held makes it the Warlock Punch
+    if (sGdfFists && (this->playerSwordAttack != GDF_SWORD_ATK_WARLOCK)) {
+        if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+            this->playerSwordQueued = true;
+        }
+        if (this->playerSwordQueued && (sGdfPunchStop == 0) &&
+            (this->playerSwordTimer >= MAX(4, atk->activeStart + 1))) {
+            this->playerSwordQueued = false;
+            BossGanon_Player_SetupSwordAttack(this, play,
+                                              CHECK_BTN_ALL(input->cur.button, BTN_R) ? GDF_SWORD_ATK_WARLOCK
+                                              : (atk->next != 0)                       ? atk->next
+                                                                                        : GDF_SWORD_ATK_FIST1);
+            return;
+        }
+    }
+
     // Next hit of the combo
     if ((atk->comboFrom >= 0) && (this->playerSwordTimer >= atk->comboFrom) &&
         CHECK_BTN_ALL(input->press.button, BTN_B)) {
