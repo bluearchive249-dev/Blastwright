@@ -135,6 +135,7 @@ static u8 sGdfTridentWhirring = false; // its flying sound is playing
 void EnGanonMant_SetWear(f32 wear);
 static s16 sGdfRoamHold = 0;     // frames left to leave him standing on his own where he is (the Door of Time)
 static const Vec3s sGdfClipSwdKick[53][13];
+static void BossGanon_Player_DrawWarlockFire(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyIntroCs(BossGanon* this, PlayState* play);
@@ -4749,6 +4750,7 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     // SoH: "Play as Ganondorf", sword stance
     if (GDF_IS_PLAYER(this)) {
         BossGanon_Player_DrawSword(this, play);
+        BossGanon_Player_DrawWarlockFire(this, play);
         // His lowest point, for the ground offset
         sGdfMeshLowValid = sGdfMeshLowYNext < 1.0e8f;
         if (sGdfMeshLowValid) {
@@ -6405,6 +6407,11 @@ static void BossGanon_Player_EnterFists(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyFistStance(BossGanon* this);
 static s32 BossGanon_Player_ApplyFistAttack(BossGanon* this);
 static void BossGanon_Player_WarlockImpact(BossGanon* this, PlayState* play);
+static void BossGanon_Player_DrawWarlockFire(BossGanon* this, PlayState* play);
+static s16 sGdfWarlockBurst = 0; // frames into the Warlock Punch's burst of fire (0: none)
+#define GDF_WARLOCK_BURST_FRAMES 14
+static Vec3f sGdfWarlockBurstPos;
+static s16 sGdfWarlockBurstYaw;
 static s32 BossGanon_Player_DaggerOut(void);
 static void BossGanon_Player_DrawDagger(BossGanon* this, PlayState* play);
 static void BossGanon_Player_SetBlade(BossGanon* this, Vec3f* base, Vec3f* tip);
@@ -9242,7 +9249,8 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, atk->swingSfx);
         if (BossGanon_Player_IsPhantom() && (this->playerSwordAttack == GDF_SWORD_ATK_THRUST)) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_ATTACK);
-        } else if (this->playerSwordAttack != GDF_SWORD_ATK_DRAW) {
+        } else if ((this->playerSwordAttack != GDF_SWORD_ATK_DRAW) &&
+                   (this->playerSwordAttack != GDF_SWORD_ATK_WARLOCK)) { // (it has its own cry)
             Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
         }
     }
@@ -12474,9 +12482,13 @@ static void BossGanon_Player_WarlockImpact(BossGanon* this, PlayState* play) {
 
     Actor_RequestQuakeAndRumble(&this->actor, play, 10, 22);
     Rumble_Request(0.0f, 255, 25, 10);
+    sGdfWarlockBurst = 1;
+    sGdfWarlockBurstPos = pos;
+    sGdfWarlockBurstYaw = this->actor.shape.rot.y;
+    Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_FRAME); // (the fire arrow's burst)
     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_THUNDER));
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_BOMB_EXPLOSION);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_BIG)); // his big shout
     EffectSsBlast_SpawnWhiteShockwave(play, &pos, &zero, &zero);
     BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
     for (i = 0; i < 12; i++) {
@@ -12495,6 +12507,108 @@ static void BossGanon_Player_WarlockImpact(BossGanon* this, PlayState* play) {
     this->collider.dim.pos.y = (s16)(this->playerFloorY - 5.0f);
     this->collider.dim.pos.z = (s16)(pos.z + Math_CosS(this->actor.shape.rot.y) * 40.0f);
     BossGanon_Player_SetAT(this, play);
+}
+
+// The Warlock Punch's purple fire, made from the game's own fire: Din's Fire's ball of flame (small, round his fist,
+// growing through the wind-up) and the fire arrow's flame (bursting forward off his fist as it lands), recoloured
+static const ALIGN_ASSET(2) char sGdfDinTex[] = "__OTR__overlays/ovl_Magic_Fire/sTex";
+static const ALIGN_ASSET(2) char sGdfDinSphereVtx[] = "__OTR__overlays/ovl_Magic_Fire/sSphereVtx";
+static const ALIGN_ASSET(2) char sGdfDinMaterialDL[] = "__OTR__overlays/ovl_Magic_Fire/sMaterialDL";
+static const ALIGN_ASSET(2) char sGdfDinModelDL[] = "__OTR__overlays/ovl_Magic_Fire/sModelDL";
+static const ALIGN_ASSET(2) char sGdfArrowFireMaterialDL[] = "__OTR__overlays/ovl_Arrow_Fire/sMaterialDL";
+static const ALIGN_ASSET(2) char sGdfArrowFireModelDL[] = "__OTR__overlays/ovl_Arrow_Fire/sModelDL";
+// (Din's Fire's sphere: its outer and inner vertices, whose alpha the spell sets as it draws)
+static const u8 sGdfDinVertices[] = {
+    3,  4,  5,  6,  7,  8,  9,  10, 16, 17, 18, 19, 25, 26, 27, 32, 35, 36, 37, 38,
+    39, 45, 46, 47, 52, 53, 54, 59, 60, 61, 67, 68, 69, 70, 71, 72, 0,  1,  11, 12,
+    14, 20, 21, 23, 28, 30, 33, 34, 40, 41, 43, 48, 50, 55, 57, 62, 64, 65, 73, 74,
+};
+
+static void BossGanon_Player_DrawDinBall(PlayState* play, Vec3f* pos, f32 radius, u8 alpha) {
+    u32 frames = play->gameplayFrames;
+    f32 k = radius / 2000.0f; // (the sphere's model is 2000 across its radius)
+    Vtx* vertices = ResourceMgr_LoadVtxByName(sGdfDinSphereVtx);
+    s32 i;
+
+    for (i = 0; i < 36; i++) {
+        vertices[sGdfDinVertices[i]].n.a = alpha;
+    }
+    for (i = 36; i < 60; i++) {
+        vertices[sGdfDinVertices[i]].n.a = (u8)(alpha * 76 / 255);
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 210, 140, 255, alpha);
+    gDPSetEnvColor(POLY_XLU_DISP++, 110, 0, 190, alpha);
+    Matrix_Translate(pos->x, pos->y, pos->z, MTXMODE_NEW);
+    Matrix_Scale(k, k, k, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gDPPipeSync(POLY_XLU_DISP++);
+    gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPSetTextureLUT(POLY_XLU_DISP++, G_TT_NONE);
+    gDPLoadTextureBlock(POLY_XLU_DISP++, sGdfDinTex, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                        G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 15, G_TX_NOLOD);
+    gDPSetTile(POLY_XLU_DISP++, G_IM_FMT_I, G_IM_SIZ_8b, 8, 0, 1, 0, G_TX_NOMIRROR | G_TX_WRAP, 6, 14,
+               G_TX_NOMIRROR | G_TX_WRAP, 6, 14);
+    gDPSetTileSize(POLY_XLU_DISP++, 1, 0, 0, 252, 252);
+    gSPDisplayList(POLY_XLU_DISP++, sGdfDinMaterialDL);
+    gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, (frames * 2) % 512,
+                                                       511 - ((frames * 5) % 512), 64, 64, 1, (frames * 2) % 256,
+                                                       255 - ((frames * 20) % 256), 32, 32, 2, -5, 2, -20));
+    gSPDisplayList(POLY_XLU_DISP++, sGdfDinModelDL);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// The fire arrow's flame from pos, pointing along yaw (level), length and width in world units
+static void BossGanon_Player_DrawArrowFlame(PlayState* play, Vec3f* pos, s16 yaw, f32 length, f32 width, u8 alpha) {
+    u32 frames = play->state.frames;
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 220, 150, 255, alpha);
+    gDPSetEnvColor(POLY_XLU_DISP++, 120, 0, 200, 128);
+    Matrix_Translate(pos->x, pos->y, pos->z, MTXMODE_NEW);
+    Matrix_RotateY(BINANG_TO_RAD(yaw), MTXMODE_APPLY);
+    Matrix_RotateX(M_PI / 2, MTXMODE_APPLY); // (its flame runs up its +y: turned to run ahead)
+    Matrix_Scale(width / 431.0f, length / 700.0f, width / 431.0f, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, sGdfArrowFireMaterialDL);
+    gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 255 - (frames * 2) % 256, 0, 64, 32, 1,
+                                                       255 - frames % 256, 511 - (frames * 10) % 512, 64, 64, -2, 0,
+                                                       -1, -10));
+    gSPDisplayList(POLY_XLU_DISP++, sGdfArrowFireModelDL);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+static void BossGanon_Player_DrawWarlockFire(BossGanon* this, PlayState* play) {
+    const GdfSwordAttack* atk = &sGdfSwordAttacks[GDF_SWORD_ATK_WARLOCK];
+
+    Matrix_Push();
+    // The wind-up: purple fire wrapped round his fist, growing as he holds it back, and licking ahead of it
+    if ((this->actionFunc == BossGanon_Player_SwordAttack) && (this->playerSwordAttack == GDF_SWORD_ATK_WARLOCK) &&
+        (this->playerSwordTimer >= 2) && (this->playerSwordTimer <= atk->impactFrame + 1) && this->playerBladeValid &&
+        !this->playerHidden) {
+        f32 t = (this->playerSwordTimer - 2) / (f32)(atk->impactFrame - 2);
+        Vec3f fist = { (this->playerBladeBase.x + this->playerBladeTip.x) * 0.5f,
+                       (this->playerBladeBase.y + this->playerBladeTip.y) * 0.5f,
+                       (this->playerBladeBase.z + this->playerBladeTip.z) * 0.5f };
+
+        t = CLAMP(t, 0.0f, 1.0f);
+        BossGanon_Player_DrawDinBall(play, &fist, 14.0f + 16.0f * t, (u8)(150 + 105 * t));
+        BossGanon_Player_DrawArrowFlame(play, &fist, this->actor.shape.rot.y + 0x8000, 20.0f + 25.0f * t,
+                                        12.0f + 10.0f * t, 200);
+    }
+    // The landing: a ball of purple fire bursting out where his fist met, and a great tongue of flame thrown ahead
+    if (sGdfWarlockBurst > 0) {
+        f32 u = sGdfWarlockBurst / (f32)GDF_WARLOCK_BURST_FRAMES;
+        f32 grow = 1.0f - SQ(1.0f - MIN(u * 2.0f, 1.0f));
+        u8 alpha = (u8)(255 * CLAMP((1.0f - u) * 1.6f, 0.0f, 1.0f));
+
+        BossGanon_Player_DrawDinBall(play, &sGdfWarlockBurstPos, 25.0f + 85.0f * grow, alpha);
+        BossGanon_Player_DrawArrowFlame(play, &sGdfWarlockBurstPos, sGdfWarlockBurstYaw, 40.0f + 140.0f * grow,
+                                        30.0f + 50.0f * grow, alpha);
+    }
+    Matrix_Pop();
 }
 
 // Into the fists stance: hands free, guard up
@@ -14212,6 +14326,11 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
             wear = 1.0f - (f32)gSaveContext.health / gSaveContext.healthCapacity;
         }
         EnGanonMant_SetWear(wear);
+    }
+
+    // The Warlock Punch's burst of fire runs its course (drawn in BossGanon_Player_DrawWarlockFire)
+    if ((sGdfWarlockBurst > 0) && (++sGdfWarlockBurst > GDF_WARLOCK_BURST_FRAMES)) {
+        sGdfWarlockBurst = 0;
     }
 
     // The trident's whirring as it flies: stopped once it's back in his hand (or the throw is cut short)
