@@ -131,6 +131,7 @@ static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play);
 static s16 sGdfBreakTimer = 0; // kicking in a locked door, bars or a grate
 static Actor* sGdfBreakTarget = NULL;
 static s16 sGdfBreakYaw;        // the way to it (he turns to it as he steps in)
+#define GDF_BOSS_BODY_GAP 75.0f // the closest he can stand to the tower's Ganondorf
 static u8 sGdfTridentWhirring = false; // its flying sound is playing
 void EnGanonMant_SetWear(f32 wear);
 static s16 sGdfRoamHold = 0;     // frames left to leave him standing on his own where he is (the Door of Time)
@@ -13717,6 +13718,27 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
             wear = 1.0f - (f32)gSaveContext.health / gSaveContext.healthCapacity;
         }
         EnGanonMant_SetWear(wear);
+    }
+
+    // The Ganondorf of the tower (the boss): Link is kept out of his body. Link is small enough to walk right into
+    // him when he's down (struck by a ball of light, vulnerable), and the two Ganondorfs were drawn one inside the
+    // other, as if a clone moved with him.
+    if ((sVanillaGanondorf != NULL) && (sVanillaGanondorf->actor.update != NULL) &&
+        (sVanillaGanondorf->actor.draw != NULL) && !this->playerHidden) {
+        f32 dx = player->actor.world.pos.x - sVanillaGanondorf->actor.world.pos.x;
+        f32 dz = player->actor.world.pos.z - sVanillaGanondorf->actor.world.pos.z;
+        f32 dy = player->actor.world.pos.y - sVanillaGanondorf->actor.world.pos.y;
+        f32 d = sqrtf(SQ(dx) + SQ(dz));
+
+        if ((d < GDF_BOSS_BODY_GAP) && (fabsf(dy) < 200.0f)) {
+            if (d < 0.5f) {
+                dx = -Math_SinS(player->actor.shape.rot.y);
+                dz = -Math_CosS(player->actor.shape.rot.y);
+                d = 1.0f;
+            }
+            player->actor.world.pos.x = sVanillaGanondorf->actor.world.pos.x + dx / d * GDF_BOSS_BODY_GAP;
+            player->actor.world.pos.z = sVanillaGanondorf->actor.world.pos.z + dz / d * GDF_BOSS_BODY_GAP;
+        }
     }
 
     // The trident's whirring as it flies: stopped once it's back in his hand (or the throw is cut short)
