@@ -17920,10 +17920,14 @@ void BossGanon_Reset(void) {
     sPlayerCape = NULL;
 }
 
-// For the HUD's B button (z_parameter.c): 0 his ball of light, 1 the trident (its stance), 2 the dark aura
+// For the HUD's B button (z_parameter.c): 0 his ball of light, 1 the trident (its stance), 2 the dark aura, 3 his
+// fists
 s32 BossGanon_Player_BMode(void) {
     if (sPlayerDarkAuraMode) {
         return 2;
+    }
+    if (sGdfFists && (sPlayerSwordState != GDF_SWORD_OFF)) {
+        return 3;
     }
     if ((sPlayerSwordState != GDF_SWORD_OFF) && BossGanon_Player_HasTrident()) {
         return 1;

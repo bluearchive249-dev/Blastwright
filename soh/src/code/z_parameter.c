@@ -2785,6 +2785,78 @@ extern u8 gGdfBIconLightTex[];
 extern u8 gGdfBIconTridentTex[];
 extern u8 gGdfBIconAuraTex[];
 s32 BossGanon_Player_BMode(void);
+
+// SoH: "Play as Ganondorf": the fists stance's B button, "Punch" in the game's own lettering: its letters taken from
+// the game's own button labels (P and u of "Put Away", n of "Enter", c and h of "Check"), put together once
+static u8* Interface_GdfPunchIcon(void) {
+    static const struct {
+        const char* tex;
+        s8 from; // its columns in that 48x16 label (each letter's outline column shared with the next)
+        s8 to;
+    } sLetters[] = {
+        { gPutAwayDoActionENGTex, 6, 11 }, { gPutAwayDoActionENGTex, 11, 16 }, { gEnterDoActionENGTex, 17, 22 },
+        { gCheckDoActionENGTex, 26, 31 },  { gCheckDoActionENGTex, 16, 21 },
+    };
+    static u64 sIconWords[32 * 32 * 4 / 8]; // (8-byte aligned)
+    u8* sIcon = (u8*)sIconWords;
+    static u8 sBuilt = false;
+    u8 nib[16][32];
+    s32 x = 0;
+    s32 width = -(s32)ARRAY_COUNT(sLetters) + 1;
+    s32 i;
+    s32 r;
+    s32 c;
+
+    if (sBuilt) {
+        return sIcon;
+    }
+    memset(nib, 0, sizeof(nib));
+    for (i = 0; i < ARRAY_COUNT(sLetters); i++) {
+        width += sLetters[i].to - sLetters[i].from + 1;
+    }
+    x = (32 - width) / 2;
+    for (i = 0; i < ARRAY_COUNT(sLetters); i++) {
+        const char* path = sLetters[i].tex;
+        u8* data;
+
+        if (strncmp(path, "__OTR__", 7) == 0) {
+            path += 7;
+        }
+        data = (u8*)ResourceMgr_LoadTexOrDListByName(path);
+        if (data == NULL) {
+            return gGdfBIconLightTex;
+        }
+        for (c = sLetters[i].from; c <= sLetters[i].to; c++) {
+            for (r = 0; r < 16; r++) {
+                s32 at = r * 48 + c;
+                u8 v = (at & 1) ? (data[at / 2] & 0xF) : (data[at / 2] >> 4);
+                u8* to = &nib[r][x + c - sLetters[i].from];
+
+                // (its edge columns are only the outline, and only beside the letter: not its neighbours' strokes)
+                if ((c == sLetters[i].from) || (c == sLetters[i].to)) {
+                    s32 in = r * 48 + ((c == sLetters[i].from) ? (c + 1) : (c - 1));
+                    u8 w = (in & 1) ? (data[in / 2] & 0xF) : (data[in / 2] >> 4);
+
+                    v = v & w & 1;
+                }
+                *to = MAX(*to, v);
+            }
+        }
+        x += sLetters[i].to - sLetters[i].from;
+    }
+    memset(sIcon, 0, sizeof(sIcon));
+    for (r = 0; r < 16; r++) {
+        for (c = 0; c < 32; c++) {
+            u8* px = &sIcon[((r + 8) * 32 + c) * 4];
+            u8 inten = (nib[r][c] >> 1) * 255 / 7;
+
+            px[0] = px[1] = px[2] = inten;
+            px[3] = (nib[r][c] & 1) ? 255 : 0;
+        }
+    }
+    sBuilt = true;
+    return sIcon;
+}
 u8* GanondorfTrident_GetBIcon(void); // GanondorfTrident.cpp
 
 static u8 sGdfRunDoActionTex[] ALIGNED8 = {
@@ -5600,8 +5672,8 @@ void Interface_Draw(PlayState* play) {
             // SoH: "Play as Ganondorf", his B button shows what B does in his mode: his ball of thunderous light, the
             // trident's spearhead, or the dark aura
             static u8* const sGdfBIcons[] = { gGdfBIconLightTex, gGdfBIconTridentTex, gGdfBIconAuraTex };
-            s32 mode = CLAMP(BossGanon_Player_BMode(), 0, 2);
-            u8* icon = sGdfBIcons[mode];
+            s32 mode = CLAMP(BossGanon_Player_BMode(), 0, 3);
+            u8* icon = (mode == 3) ? Interface_GdfPunchIcon() : sGdfBIcons[mode];
 
             // The trident's own, made from the player's model (gdf_bicon_trident.bin), when there is one
             if ((mode == 1) && (GanondorfTrident_GetBIcon() != NULL)) {
