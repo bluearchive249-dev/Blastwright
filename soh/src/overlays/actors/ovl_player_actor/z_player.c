@@ -14997,6 +14997,13 @@ void Player_Action_8084FBF4(Player* this, PlayState* play) {
     }
 
     this->bodyShockTimer = 40;
+    // SoH: "Play as Ganondorf", his voice instead of Link's held scream: one cry as the shock hits
+    if (PlayAsGanondorf_ShouldHideLink(play, this)) {
+        if (this->av2.actionVar2 == 19) {
+            Player_PlayVoiceSfx(this, NA_SE_VO_LI_TAKEN_AWAY);
+        }
+        return;
+    }
     Actor_PlaySfx_Flagged2(&this->actor, NA_SE_VO_LI_TAKEN_AWAY - SFX_FLAG + this->ageProperties->unk_92);
 }
 
