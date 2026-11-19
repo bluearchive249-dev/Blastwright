@@ -12923,8 +12923,8 @@ static void BossGanon_Player_SetBlade(BossGanon* this, Vec3f* base, Vec3f* tip) 
     this->playerBladeTip = *tip;
     this->playerBladeValid = true;
 
-    // Trail while swinging
-    swinging = (this->actionFunc == BossGanon_Player_SwordAttack) &&
+    // Trail while swinging (not for the fists: their purple fire is all that shows)
+    swinging = !sGdfFists && (this->actionFunc == BossGanon_Player_SwordAttack) &&
                (this->playerSwordTimer >= atk->activeStart - 1) && (this->playerSwordTimer <= atk->activeEnd + 1);
     if ((this->playerSwordBlure >= 0) && (this->playerSwordBlure < TOTAL_EFFECT_COUNT)) {
         if (swinging) {
