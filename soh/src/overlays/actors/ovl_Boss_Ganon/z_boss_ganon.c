@@ -131,6 +131,7 @@ static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play);
 static s16 sGdfBreakTimer = 0; // kicking in a locked door, bars or a grate
 static Actor* sGdfBreakTarget = NULL;
 static s16 sGdfBreakYaw;        // the way to it (he turns to it as he steps in)
+static s16 sGdfRoamHold = 0;     // frames left to leave him standing on his own where he is (the Door of Time)
 static const Vec3s sGdfClipSwdKick[53][13];
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
@@ -7176,7 +7177,24 @@ static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play) {
     if (!BossGanon_Player_CanRoam(this, play)) {
         sGdfRoaming = false;
         sGdfRoamSpeed = 0.0f;
+        if (sGdfRoamHold > 0) {
+            sGdfRoamHold--; // (the scene not begun yet)
+        }
         return;
+    }
+    if (sGdfRoamHold > 0) {
+        // Left where he stands as the scene begins, on the floor there
+        sGdfRoamHold = 0;
+        if (!sGdfRoaming) {
+            probe = this->actor.world.pos;
+            probe.y += 50.0f;
+            floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &probe);
+            sGdfRoaming = true;
+            sGdfRoamSpeed = 0.0f;
+            sGdfRoamYaw = this->actor.shape.rot.y;
+            sGdfRoamFloorY = (floorY > BGCHECK_Y_MIN) ? floorY : this->playerFloorY;
+            this->playerFloorY = sGdfRoamFloorY;
+        }
     }
     func_80077D10(&mag, &angle, &play->state.input[0]);
     if (mag < 8.0f) {
@@ -9694,6 +9712,8 @@ static void BossGanon_Player_BreakDoor(BossGanon* this, PlayState* play, Actor* 
         if (GameInteractor_Should(VB_PLAY_DOOR_OF_TIME_CS, true, a)) {
             play->csCtx.segment = D_80ABFB40;
             gSaveContext.cutsceneTrigger = 1;
+            // He stays where he kicked it (the scene puts Link at the altar, and its cameras are close round him there)
+            sGdfRoamHold = 20;
         }
         return;
     }
