@@ -131,7 +131,6 @@ static void BossGanon_Player_ApplyBreakKick(BossGanon* this, PlayState* play);
 static s16 sGdfBreakTimer = 0; // kicking in a locked door, bars or a grate
 static Actor* sGdfBreakTarget = NULL;
 static s16 sGdfBreakYaw;        // the way to it (he turns to it as he steps in)
-static u8 sGdfCamInside = false; // a scene's camera (placed for Link) is inside him: he isn't drawn
 static const Vec3s sGdfClipSwdKick[53][13];
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
@@ -528,7 +527,7 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
         sGdfCapelet[0]->linked[0] = sGdfCapelet[1];
         sGdfCapelet[0]->linked[1] = sGdfCapelet[2];
         sGdfCapelet[0]->linkedCount = GANON_MANT_MAX_LINKED;
-        sGdfCapelet[0]->actor.draw = (this->playerHidden || sGdfCamInside) ? NULL : sGdfCapeletDraw;
+        sGdfCapelet[0]->actor.draw = this->playerHidden ? NULL : sGdfCapeletDraw;
     }
 }
 
@@ -4693,7 +4692,7 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     void* shadowTex;
 
     // SoH: "Play as Ganondorf", hidden in first person and while Link is shown instead
-    if (GDF_IS_PLAYER(this) && (this->playerHidden || sGdfCamInside)) {
+    if (GDF_IS_PLAYER(this) && this->playerHidden) {
         BossGanon_Player_DrawCrawlFlame(this, play);
         BossGanon_DrawEffects(play);
         BossGanon_Player_DrawIntroProps(this, play);
@@ -13549,19 +13548,8 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     this->playerHidden = BossGanon_Player_ShouldHide(this, play) || GdfInvasion_IsVanished();
-    // A scene's camera is placed for Link, close to him (the Door of Time's, the Master Sword's): where it would be
-    // inside Ganondorf (twice his size), he isn't drawn for those shots rather than fill them with his cape
-    sGdfCamInside = false;
-    if (play->csCtx.state != CS_STATE_IDLE) {
-        Vec3f* eye = &play->view.eye;
-        f32 dx = eye->x - this->actor.world.pos.x;
-        f32 dz = eye->z - this->actor.world.pos.z;
-        f32 dy = eye->y - this->actor.world.pos.y;
-
-        sGdfCamInside = ((SQ(dx) + SQ(dz)) < SQ(70.0f)) && (dy > -30.0f) && (dy < 230.0f);
-    }
     if (sCape->actor.update != NULL) {
-        sCape->actor.draw = (this->playerHidden || sGdfCamInside) ? NULL : sPlayerCapeDraw;
+        sCape->actor.draw = this->playerHidden ? NULL : sPlayerCapeDraw;
     }
     if (this->playerHidden && (sCape != NULL)) {
         sCape->linkedCount = 0; // (sewn on again from his draw)
