@@ -11572,6 +11572,87 @@ static const Vec3s sGdfClipLadderTop[34][13] = {
     { { 7754, -27078, 10327 }, { 6394, -29294, -991 }, { -6894, -27206, 10598 }, { -1135, -28522, -9231 }, { 16794, -23306, -8650 }, { 8974, -24090, 15465 }, { -12194, -27072, -4294 }, { -3819, -17798, 23846 }, { -16412, 3423, -15963 }, { 17200, -1993, 16937 }, { -21639, -11989, -9177 }, { 22034, 19897, 4313 }, { 19984, -20531, 8893 } },
 };
 
+// His toes (the foot's local +z) pitched down by at least minDeg below level (by `weight`), their heading kept: a foot
+// the clip had tipped up rolls down about its own side to side axis
+static void BossGanon_Player_FeetDown(BossGanon* this, f32 weight, f32 minDeg) {
+    static const s8 sLegChains[2][5] = { { 0, 18, 19, 20, 21 }, { 0, 18, 22, 23, 24 } };
+    Vec3s* joints = this->skelAnime.jointTable;
+    f32 maxY = -sinf(minDeg * (M_PI / 180.0f));
+    s32 leg;
+    s32 k;
+
+    if (weight <= 0.0f) {
+        return;
+    }
+    for (leg = 0; leg < 2; leg++) {
+        f32 parent[3][3];
+        f32 m[3][3];
+        f32 r[3][3];
+        f32 toe[3];
+        f32 want[3];
+        f32 ax[3];
+        f32 h;
+        f32 len;
+        f32 angle;
+        f32 c;
+        f32 s;
+        f32 v;
+        s32 i;
+        s32 j;
+
+        BossGanon_Player_RotToMtx(&joints[1 + sLegChains[leg][0]], parent);
+        for (k = 1; k < 4; k++) {
+            BossGanon_Player_RotToMtx(&joints[1 + sLegChains[leg][k]], m);
+            BossGanon_Player_Mul3(parent, m, parent, false);
+        }
+        BossGanon_Player_RotToMtx(&joints[1 + sLegChains[leg][4]], m);
+        BossGanon_Player_Mul3(parent, m, m, false); // the foot in his model's space
+        toe[0] = m[0][2];
+        toe[1] = m[1][2];
+        toe[2] = m[2][2];
+        if (toe[1] <= maxY) {
+            continue; // already pointing down enough
+        }
+        h = sqrtf(SQ(toe[0]) + SQ(toe[2]));
+        if (h < 0.01f) {
+            continue; // (straight up or down: no heading to keep)
+        }
+        // The same heading, pitched down to the limit (part way, by weight)
+        want[1] = toe[1] + (maxY - toe[1]) * weight;
+        v = sqrtf(MAX(1.0f - SQ(want[1]), 0.0f)) / h;
+        want[0] = toe[0] * v;
+        want[2] = toe[2] * v;
+        // The turn that takes toe to want, about their common perpendicular
+        ax[0] = toe[1] * want[2] - toe[2] * want[1];
+        ax[1] = toe[2] * want[0] - toe[0] * want[2];
+        ax[2] = toe[0] * want[1] - toe[1] * want[0];
+        len = sqrtf(SQ(ax[0]) + SQ(ax[1]) + SQ(ax[2]));
+        if (len < 1e-5f) {
+            continue;
+        }
+        for (i = 0; i < 3; i++) {
+            ax[i] /= len;
+        }
+        angle = acosf(CLAMP(toe[0] * want[0] + toe[1] * want[1] + toe[2] * want[2], -1.0f, 1.0f));
+        c = cosf(angle);
+        s = sinf(angle);
+        for (i = 0; i < 3; i++) {
+            for (j = 0; j < 3; j++) {
+                r[i][j] = ax[i] * ax[j] * (1.0f - c) + ((i == j) ? c : 0.0f);
+            }
+        }
+        r[0][1] -= ax[2] * s;
+        r[0][2] += ax[1] * s;
+        r[1][0] += ax[2] * s;
+        r[1][2] -= ax[0] * s;
+        r[2][0] -= ax[1] * s;
+        r[2][1] += ax[0] * s;
+        BossGanon_Player_Mul3(r, m, m, false);
+        BossGanon_Player_Mul3(parent, m, m, true); // back into the shin's space
+        BossGanon_Player_MtxToRot(m, &joints[1 + sLegChains[leg][4]]);
+    }
+}
+
 // ---- The dance emote (the Ganondorf menu) ----
 // The Cucui Ganon dance, from MMadness' "Suavemente" motion kit for MikuMikuDance, retargeted offline to his skeleton
 // like the Mixamo clips: the kit's intro and then its four dances, one after another, each blended into the next; after
@@ -11580,6 +11661,8 @@ static const Vec3s sGdfClipLadderTop[34][13] = {
 // with it.
 #include "gdf_dance_clip.h" // the dance itself: sGdfClipDance and sGdfClipDanceHips
 #define GDF_DANCE_RATE 15.0f   // rows a second
+#define GDF_DANCE1_ROWS 355      // the first dance after the intro (Suavemente 1: 709 kit frames)
+#define GDF_DANCE_TOES_DOWN_DEG 12.0f
 
 void BossGanon_Player_Dance(BossGanon* this, PlayState* play);
 void BossGanon_Player_SetupFloat(BossGanon* this, PlayState* play);
@@ -11626,6 +11709,14 @@ void BossGanon_Player_Dance(BossGanon* this, PlayState* play) {
     w = frame - floorf(frame);
     joints[0].x += (s16)((sGdfClipDanceHips[a][0] * (1.0f - w) + sGdfClipDanceHips[b][0] * w) * weight);
     joints[0].z += (s16)((sGdfClipDanceHips[a][1] * (1.0f - w) + sGdfClipDanceHips[b][1] * w) * weight);
+    // The first dance after the intro (the kit's "Suavemente 1"): his feet always angled down, never tipped up
+    {
+        f32 d0 = frame - GDF_DANCE_INTRO_ROWS;
+        f32 d1 = (GDF_DANCE_INTRO_ROWS + GDF_DANCE1_ROWS) - frame;
+        f32 feet = CLAMP(MIN(d0, d1) / 6.0f + 0.5f, 0.0f, 1.0f); // (eased in and out over the blends)
+
+        BossGanon_Player_FeetDown(this, feet * weight, GDF_DANCE_TOES_DOWN_DEG);
+    }
 
     sCape->backPush = -2.0f;
     sCape->backSwayMagnitude = 0.6f;
