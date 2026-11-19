@@ -7163,6 +7163,52 @@ void BossGanon_Player_CsKneel(BossGanon* this, PlayState* play);
 
 static s32 BossGanon_Player_ShouldBrood(PlayState* play);
 
+// A blue warp has Link: he's walked to its middle (a cutscene action only the warps use) and is taken up
+static s32 BossGanon_Player_Warping(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Actor* a;
+
+    if ((player->csAction != PLAYER_CSACTION_10) || !(player->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE)) {
+        return false;
+    }
+    for (a = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head; a != NULL; a = a->next) {
+        if ((a->id == ACTOR_DOOR_WARP1) && (Actor_WorldDistXZToActor(a, &player->actor) < 300.0f)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The pose: straight, legs together, arms hanging straight down, his head tipped back looking up into the light
+// (made offline on his skeleton with the clip tools: a single row)
+static const Vec3s sGdfClipWarpPose[1][13] = {
+    { { -1498, -29963, 0 }, { -450, -29997, 0 }, { 1498, -29963, 0 }, { 450, -29997, 0 }, { 4159, -29704, 594 },
+      { 1794, -29893, 1794 }, { -4159, -29704, 594 }, { -1794, -29893, 1794 }, { -10133, 521, -15966 },
+      { 12350, 2716, 15304 }, { 16478, -7439, 16326 }, { 21530, -2798, 20704 }, { -25494, 4055, 15285 } },
+};
+static f32 sGdfWarpPoseWeight = 0.0f;
+
+static f32 BossGanon_Player_SmoothStep(f32 t);
+
+static void BossGanon_Player_ApplyWarpPose(BossGanon* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    s32 on = BossGanon_Player_Warping(play) && !this->playerHidden;
+    f32 dx = player->actor.world.pos.x - player->unk_450.x;
+    f32 dz = player->actor.world.pos.z - player->unk_450.z;
+
+    // Once Link has walked to the warp's middle (or is already rising)
+    if (on && ((SQ(dx) + SQ(dz) > SQ(25.0f)) && (player->actor.velocity.y <= 0.5f))) {
+        on = false;
+        Math_ApproachZeroF(&sGdfWarpPoseWeight, 1.0f, 0.1f);
+    } else {
+        Math_ApproachF(&sGdfWarpPoseWeight, on ? 1.0f : 0.0f, 1.0f, on ? 0.06f : 0.2f);
+    }
+    if (sGdfWarpPoseWeight > 0.0f) {
+        BossGanon_Player_ApplyClip(this, sGdfClipWarpPose, 1, 0.0f, false,
+                                   BossGanon_Player_SmoothStep(sGdfWarpPoseWeight), 1.0f);
+    }
+}
+
 static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
@@ -7173,6 +7219,10 @@ static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
     // Link's house: he broods against the wall by the bed for the whole scene (roaming took him off across the room,
     // at Link's height in bed: sunk in the floor)
     if (BossGanon_Player_ShouldBrood(play)) {
+        return false;
+    }
+    // A blue warp: he goes up with Link
+    if (BossGanon_Player_Warping(play)) {
         return false;
     }
     if (!(player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) &&
@@ -14533,9 +14583,12 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
     // The Gerudo intro's direction: his arm pose, head and hand
     BossGanon_Player_ApplyIntroCs(this, play);
+    // Taken up by a blue warp: standing straight, looking up
+    BossGanon_Player_ApplyWarpPose(this, play);
 
     // His taunt (D-pad Up) works in cutscenes and conversations too, where his other moves don't
     if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_DUP) && !this->playerHidden &&
+        !BossGanon_Player_Warping(play) &&
         !GanondorfSongs_IsOcarinaOut() && !gGdfIntroCs.active &&
         ((player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) ||
          (play->csCtx.state != CS_STATE_IDLE)) &&
