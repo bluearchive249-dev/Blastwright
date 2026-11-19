@@ -1569,6 +1569,82 @@ void func_8090109C(BossGanon2* this, PlayState* play) {
 
 // SoH: "Play as Ganondorf": the kick that ends the fight (z_boss_ganon.c), his foot meeting Ganon on its frame 13
 #define GDF_FINISHER_IMPACT 13
+#define GDF_FINISHER_SIDE_SHOT 14 // frames of the side shot after the kick, before the look straight up
+
+// The kick lands: the ground shakes and the pad rumbles hard, a blast of light and a shockwave where his foot met
+// Ganon, and a ring of dust thrown out across the floor from Ganondorf's feet
+static void BossGanon2_GdfLaunchBlast(BossGanon2* this, PlayState* play, Player* player) {
+    static Color_RGBA8 sDustPrim = { 170, 150, 130, 255 };
+    static Color_RGBA8 sDustEnv = { 100, 85, 70, 255 };
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    Vec3f pos = this->unk_1B8;
+    s16 quake = Quake_Add(GET_ACTIVE_CAM(play), 3);
+    s32 i;
+
+    Quake_SetSpeed(quake, 0x7FFF);
+    Quake_SetQuakeValues(quake, 22, 6, 30, 0);
+    Quake_SetCountdown(quake, 30);
+    Rumble_Request(0.0f, 255, 40, 4);
+
+    Sfx_PlaySfxCentered(NA_SE_IT_BOMB_EXPLOSION);
+    Sfx_PlaySfxCentered(NA_SE_EN_GANON_HIT_THUNDER);
+    EffectSsBomb2_SpawnLayered(play, &pos, &zero, &zero, 120, 30);
+    EffectSsBlast_SpawnWhiteShockwave(play, &pos, &zero, &zero);
+    EffectSsHitMark_SpawnFixedScale(play, 0, &pos);
+    for (i = 0; i < 28; i++) {
+        f32 a = i * (2.0f * M_PI / 28.0f);
+        Vec3f p = player->actor.world.pos;
+        Vec3f v = { sinf(a) * 9.0f, 1.5f, cosf(a) * 9.0f };
+        Vec3f acc = { -sinf(a) * 0.15f, 0.05f, -cosf(a) * 0.15f };
+
+        p.x += sinf(a) * 40.0f;
+        p.y += 5.0f;
+        p.z += cosf(a) * 40.0f;
+        EffectSsDust_Spawn(play, 0, &p, &v, &acc, &sDustPrim, &sDustEnv, 300, 25, 25, 0);
+    }
+}
+
+// His flight: a streak of light and sparks trailing off him, and the rumble dying away as he goes
+static void BossGanon2_GdfLaunchTrail(BossGanon2* this, PlayState* play, s16 t) {
+    static Color_RGBA8 sPrim = { 255, 255, 220, 255 };
+    static Color_RGBA8 sEnv = { 255, 160, 40, 0 };
+    Vec3f vel = { 0.0f, -2.0f, 0.0f };
+    Vec3f acc = { 0.0f, 0.0f, 0.0f };
+    s32 i;
+
+    for (i = 0; i < 4; i++) {
+        Vec3f p = this->actor.world.pos;
+
+        p.x += Rand_CenteredFloat(160.0f);
+        p.y += Rand_ZeroFloat(250.0f) - 80.0f;
+        p.z += Rand_CenteredFloat(160.0f);
+        EffectSsKiraKira_SpawnDispersed(play, &p, &vel, &acc, &sPrim, &sEnv, 2500, 20);
+    }
+    if ((t < 36) && ((t % 6) == 0)) {
+        Rumble_Request(0.0f, (u8)(220 - t * 5), 8, 30);
+    }
+    if (t == 2) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_ROAR); // (fading as he goes)
+    }
+}
+
+// Where he vanished: a big star of light in the middle of the picture, and a chime
+static void BossGanon2_GdfTwinkle(BossGanon2* this, PlayState* play) {
+    static Color_RGBA8 sPrim = { 255, 255, 255, 255 };
+    static Color_RGBA8 sEnv = { 255, 230, 120, 0 };
+    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+    Vec3f dir = { this->subCamAt.x - this->subCamEye.x, this->subCamAt.y - this->subCamEye.y,
+                  this->subCamAt.z - this->subCamEye.z };
+    f32 len = MAX(sqrtf(SQ(dir.x) + SQ(dir.y) + SQ(dir.z)), 1.0f);
+    Vec3f p = { this->subCamEye.x + dir.x / len * 900.0f, this->subCamEye.y + dir.y / len * 900.0f,
+                this->subCamEye.z + dir.z / len * 900.0f };
+    s32 i;
+
+    Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
+    for (i = 0; i < 3; i++) {
+        EffectSsKiraKira_SpawnFocused(play, &p, &zero, &zero, &sPrim, &sEnv, 9000 - i * 2500, 30);
+    }
+}
 void BossGanon_Player_StartFinisherKick(PlayState* play, Vec3f* target);
 
 void func_8090120C(BossGanon2* this, PlayState* play) {
@@ -1852,6 +1928,7 @@ void func_8090120C(BossGanon2* this, PlayState* play) {
                 Animation_MorphToPlayOnce(&this->skelAnime, &gGanonDeadStartAnim, -4.0f);
                 this->unk_410.y = 30.0f;
                 this->unk_410.z = this->actor.world.pos.y; // (where he rose from)
+                BossGanon2_GdfLaunchBlast(this, play, player);
             }
             if (this->csTimer >= GDF_FINISHER_IMPACT) {
                 // Up, ever faster, tumbling
@@ -1863,11 +1940,9 @@ void func_8090120C(BossGanon2* this, PlayState* play) {
                     this->actor.world.pos.y = this->unk_410.z + 30000.0f; // (out of sight above the clouds)
                     this->unk_410.y = 0.0f;
                 }
-                if (this->csTimer == GDF_FINISHER_IMPACT + 48) {
-                    Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME); // the twinkle where he vanished
-                }
+                BossGanon2_GdfLaunchTrail(this, play, this->csTimer - GDF_FINISHER_IMPACT);
             }
-            {
+            if (this->csTimer < GDF_FINISHER_IMPACT + GDF_FINISHER_SIDE_SHOT) {
                 // From low beside Ganondorf, looking up after Ganon
                 f32 dx = this->actor.world.pos.x - player->actor.world.pos.x;
                 f32 dz = this->actor.world.pos.z - player->actor.world.pos.z;
@@ -1881,6 +1956,28 @@ void func_8090120C(BossGanon2* this, PlayState* play) {
                 this->subCamAt.z = this->actor.world.pos.z;
                 // (no further than steeply up: past straight up the view would turn over)
                 this->subCamAt.y = MIN(gy, this->subCamEye.y + (d + 260.0f) * 6.0f);
+            } else {
+                // Then from the ground at Ganondorf's side, looking straight up after him as he shrinks into the sky
+                f32 dx = this->actor.world.pos.x - player->actor.world.pos.x;
+                f32 dz = this->actor.world.pos.z - player->actor.world.pos.z;
+                f32 d = MAX(sqrtf(SQ(dx) + SQ(dz)), 1.0f);
+
+                if (this->csTimer == GDF_FINISHER_IMPACT + GDF_FINISHER_SIDE_SHOT) {
+                    this->subCamEye.x = player->actor.world.pos.x - dz / d * 60.0f;
+                    this->subCamEye.y = player->actor.world.pos.y + 30.0f;
+                    this->subCamEye.z = player->actor.world.pos.z + dx / d * 60.0f;
+                }
+                this->subCamAt.x = this->actor.world.pos.x;
+                this->subCamAt.y = this->actor.world.pos.y + 150.0f;
+                this->subCamAt.z = this->actor.world.pos.z;
+                // (looking up: the top of the picture is the way from Ganondorf to where Ganon lay)
+                this->subCamUp.x = dx / d;
+                this->subCamUp.y = 0.0f;
+                this->subCamUp.z = dz / d;
+                if (this->csTimer == GDF_FINISHER_IMPACT + 48) {
+                    // The twinkle where he vanished: in the middle of the picture, where he's gone
+                    BossGanon2_GdfTwinkle(this, play);
+                }
             }
             if (this->csTimer > GDF_FINISHER_IMPACT + 90) {
                 Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
