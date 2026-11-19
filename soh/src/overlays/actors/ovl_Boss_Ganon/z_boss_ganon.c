@@ -136,6 +136,7 @@ void EnGanonMant_SetWear(f32 wear);
 static s16 sGdfRoamHold = 0;     // frames left to leave him standing on his own where he is (the Door of Time)
 static const Vec3s sGdfClipSwdKick[53][13];
 static void BossGanon_Player_DrawWarlockFire(BossGanon* this, PlayState* play);
+static void BossGanon_Player_FootDust(BossGanon* this, PlayState* play, f32 side, f32 speed);
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
 static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play);
 static void BossGanon_Player_ApplyIntroCs(BossGanon* this, PlayState* play);
@@ -7637,6 +7638,7 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
                     func_800F4010(&player->actor.projectedPos, sfx, speed * 0.6f);
                     GdfInvasion_NoteSfx(sfx);
                     player->stateFlags2 |= PLAYER_STATE2_FOOTSTEP;
+                    BossGanon_Player_FootDust(this, play, (i == 0) ? 1.0f : -1.0f, speed);
                 }
             }
         }
@@ -12089,6 +12091,38 @@ static f32 BossGanon_Player_ClipFrame(const GdfClipKey* keys, s32 count, f32 t) 
         }
     }
     return keys[count - 1].clip;
+}
+
+// A puff of dust kicked up where his heel comes down (side: 1 his right foot, -1 his left), bigger the faster he goes;
+// none in water or in the air
+static void BossGanon_Player_FootDust(BossGanon* this, PlayState* play, f32 side, f32 speed) {
+    static Color_RGBA8 sPrim = { 170, 150, 125, 255 };
+    static Color_RGBA8 sEnv = { 110, 95, 75, 255 };
+    Player* player = GET_PLAYER(play);
+    f32 sinY = Math_SinS(this->actor.shape.rot.y);
+    f32 cosY = Math_CosS(this->actor.shape.rot.y);
+    f32 run = CLAMP(speed / 10.0f, 0.3f, 1.4f);
+    Vec3f foot;
+    s32 i;
+
+    if (!this->playerGrounded || (player->actor.bgCheckFlags & BGCHECKFLAG_WATER) ||
+        (player->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
+        return;
+    }
+    // (his heel, a stride's reach ahead of him and to that side)
+    foot.x = this->actor.world.pos.x + cosY * 13.0f * side + sinY * 12.0f;
+    foot.y = this->playerFloorY + 2.0f;
+    foot.z = this->actor.world.pos.z - sinY * 13.0f * side + cosY * 12.0f;
+    for (i = 0; i < 3; i++) {
+        Vec3f p = foot;
+        Vec3f v = { Rand_CenteredFloat(1.6f) * run - sinY * 0.8f * run, 0.6f + Rand_ZeroFloat(0.6f) * run,
+                    Rand_CenteredFloat(1.6f) * run - cosY * 0.8f * run };
+        Vec3f acc = { 0.0f, -0.02f, 0.0f };
+
+        p.x += Rand_CenteredFloat(8.0f);
+        p.z += Rand_CenteredFloat(8.0f);
+        EffectSsDust_Spawn(play, 0, &p, &v, &acc, &sPrim, &sEnv, (s16)(90 + 90 * run), (s16)(12 + 10 * run), 14, 0);
+    }
 }
 
 // The trident's first hit: the slash, wound up from his right and cut across to his left (striking at frame 6)
