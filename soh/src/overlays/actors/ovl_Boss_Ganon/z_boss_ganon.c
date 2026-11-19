@@ -14030,9 +14030,9 @@ void BossGanon_Player_Block(BossGanon* this, PlayState* play) {
     } else {
         sCape->sideSwayMagnitude = -13.0f;
 
-        // ...and his snicker after the "Hah!", as in his fight
+        // ...and his low, murmured snicker after the "Hah!" (the one from his fight as he gets back up)
         if (Animation_OnFrame(&this->skelAnime, 6.0f)) {
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_RESTORE));
         }
         if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
             BossGanon_Player_SetupFloat(this, play);
