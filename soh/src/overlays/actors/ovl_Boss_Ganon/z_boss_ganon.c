@@ -13730,6 +13730,7 @@ void BossGanon_Player_SetupBlock(BossGanon* this, PlayState* play) {
     this->unk_1C2 = 0;
     sCape->attachLeftArmTimer = this->timers[0] = GDF_BLOCK_MIN_FRAMES;
     Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW)); // "Huh"
     this->handLightBallScale = 0.0f;
     this->playerShieldPitch = 0;
 
@@ -13788,6 +13789,10 @@ void BossGanon_Player_Block(BossGanon* this, PlayState* play) {
     } else {
         sCape->sideSwayMagnitude = -13.0f;
 
+        // ...and his snicker after the "Hah!", as in his fight
+        if (Animation_OnFrame(&this->skelAnime, 6.0f)) {
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+        }
         if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
             BossGanon_Player_SetupFloat(this, play);
         } else if (this->skelAnime.curFrame >= GDF_BLOCK_RELEASE_CANCEL_FRAME) {
@@ -15218,11 +15223,11 @@ void BossGanon_Player_DarkAura(BossGanon* this, PlayState* play) {
     if ((this->playerAuraTimer % 2) == 0) {
         BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
     }
+    // The deadly aura's sound as in the tower intro, when he turns it on Link: the dark wave, then its deep
+    // throbbing hum held as long as the aura is
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE_M - SFX_FLAG));
     if ((this->playerAuraTimer % 45) == 0) {
         Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE));
-    }
-    if ((this->playerAuraTimer % 9) == 0) {
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
     }
 
     if (this->playerAuraScale > 0.05f) {
