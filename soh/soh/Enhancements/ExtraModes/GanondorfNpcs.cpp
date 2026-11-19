@@ -6,6 +6,8 @@
 #include <string>
 #include <unordered_map>
 #include <libultraship/bridge/consolevariablebridge.h>
+#include <ship/Context.h>
+#include <ship/window/Window.h>
 #include "soh/cvar_prefixes.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
@@ -89,7 +91,7 @@ bool EndsPlainly(const std::string& text) {
 
 void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) ||
-        !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 1) ||
+        !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 0) ||
         (gSaveContext.language != LANGUAGE_ENG) || !*loadFromMessageTable) {
         return; // (another of his hooks already gave this line its own text)
     }
@@ -166,6 +168,12 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
 }
 
 void RegisterNpcs() {
+    // Off by default while it's reworked (once only: it used to be on, and a saved setting kept it on)
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogueReset"), 0)) {
+        CVarSetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 0);
+        CVarSetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogueReset"), 1);
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+    }
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(OnOpenText);
 }
 
