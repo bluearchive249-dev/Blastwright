@@ -99,13 +99,30 @@ extern "C" s32 PlayAsGanondorf_IsTitleScreen(PlayState* play) {
            (play->sceneNum == SCENE_GANONDORF_BOSS) && PlayAsGanondorf_UseTitleScreen();
 }
 
+// The player's Ganondorf, wherever he is in the actor lists (he puts himself in MISC, but looking only there could
+// miss him and spawn a second one). There's only ever one: a second (a clone in the same place, moving with the
+// player, and taking the tower Ganondorf's hits as a boss would) goes at once, the one in control stays.
 static BossGanon* FindPlayerGanondorf(PlayState* play) {
-    for (Actor* actor = play->actorCtx.actorLists[ACTORCAT_MISC].head; actor != NULL; actor = actor->next) {
-        if ((actor->id == ACTOR_BOSS_GANON) && (actor->params == GDF_PARAMS_PLAYER) && (actor->update != NULL)) {
-            return (BossGanon*)actor;
+    Actor* found = NULL;
+
+    for (s32 cat = 0; cat < ACTORCAT_MAX; cat++) {
+        for (Actor* actor = play->actorCtx.actorLists[cat].head; actor != NULL; actor = actor->next) {
+            if ((actor->id != ACTOR_BOSS_GANON) || (actor->params != GDF_PARAMS_PLAYER) || (actor->update == NULL)) {
+                continue;
+            }
+            if (found == NULL) {
+                found = actor;
+                continue;
+            }
+            Actor* keep = BossGanon_Player_GetMain();
+            Actor* extra = (keep == actor) ? found : actor;
+
+            extra->draw = NULL;
+            Actor_Kill(extra);
+            found = (extra == found) ? actor : found;
         }
     }
-    return NULL;
+    return (BossGanon*)found;
 }
 
 static BossGanon2* FindPlayerGanon(PlayState* play) {

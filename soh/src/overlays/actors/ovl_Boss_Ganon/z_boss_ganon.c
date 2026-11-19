@@ -6585,6 +6585,10 @@ s32 BossGanon_IsPlayerAttack(Actor* actor) {
             (actor->params < GDF_PARAMS_PLAYER_BIG_MAGIC + GDF_PLAYER_BIG_MAGIC_COUNT));
 }
 
+Actor* BossGanon_Player_GetMain(void) {
+    return ((sPlayerGanondorf != NULL) && (sPlayerGanondorf->actor.update != NULL)) ? &sPlayerGanondorf->actor : NULL;
+}
+
 s32 BossGanon_Player_IsHidden(Actor* thisx) {
     BossGanon* this = (BossGanon*)thisx;
 

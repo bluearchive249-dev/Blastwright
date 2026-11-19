@@ -265,6 +265,8 @@ s32 BossGanon_Player_AuraReaches(PlayState* play, Actor* boss, Vec3f* pos);
 void BossGanon_Player_AuraFakeHit(Collider* col, ColliderInfo* elem, u32 dmgFlags);
 s32 BossGanon_Player_SwallowLightBall(PlayState* play, Vec3f* pos, f32 radius);
 s32 BossGanon_Player_IsHidden(Actor* thisx);
+// The player's Ganondorf in control (his cape and effects are his), or NULL
+Actor* BossGanon_Player_GetMain(void);
 s32 BossGanon_IsPlayerAttack(Actor* actor);
 s32 BossGanon_Player_CanAct(Actor* thisx);
 s32 BossGanon_Player_IsCapeUp(Actor* thisx);
