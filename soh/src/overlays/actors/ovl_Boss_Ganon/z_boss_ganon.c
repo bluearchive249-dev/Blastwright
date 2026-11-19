@@ -8281,11 +8281,11 @@ static const GdfSwordAttack sGdfSwordAttacks[] = {
       20, 7, 11, -1, 0, 9, NA_SE_IT_SWORD_SWING_HARD },
     // The fists (their arms and body come from the clips, BossGanon_Player_ApplyFistAttack)
     /* FIST1: a left jab, then a right cross */
-    { { { 0, GDF_KEY_FROM }, { 22, GDF_POSE_REST } }, 22, 6, 15, 8, GDF_SWORD_ATK_FIST2, -1, NA_SE_IT_SWORD_SWING },
+    { { { 0, GDF_KEY_FROM }, { 16, GDF_POSE_REST } }, 16, 4, 11, 5, GDF_SWORD_ATK_FIST2, -1, NA_SE_IT_SWORD_SWING },
     /* FIST2: a left hook */
-    { { { 0, GDF_KEY_FROM }, { 24, GDF_POSE_REST } }, 24, 5, 10, 7, GDF_SWORD_ATK_FIST3, -1, NA_SE_IT_SWORD_SWING },
+    { { { 0, GDF_KEY_FROM }, { 17, GDF_POSE_REST } }, 17, 4, 7, 5, GDF_SWORD_ATK_FIST3, -1, NA_SE_IT_SWORD_SWING },
     /* FIST3: a rising right uppercut */
-    { { { 0, GDF_KEY_FROM }, { 24, GDF_POSE_REST } }, 24, 7, 12, -1, 0, -1, NA_SE_IT_SWORD_SWING_HARD },
+    { { { 0, GDF_KEY_FROM }, { 17, GDF_POSE_REST } }, 17, 5, 8, -1, 0, -1, NA_SE_IT_SWORD_SWING_HARD },
     /* WARLOCK: a long dark wind-up, then one straight right that lands like thunder */
     { { { 0, GDF_KEY_FROM }, { 44, GDF_POSE_REST } }, 44, 23, 27, -1, 0, 24, NA_SE_IT_SWORD_SWING_HARD },
 };
@@ -8329,6 +8329,11 @@ static const GdfSwordBodyKey sGdfSwordBody[][6] = {
     /* WAVE: like the first slash, flung wider */
     { { 0, 0, 0, 0 }, { 5, -0x2800, 0x0200, 40 }, { 9, 0x1800, 0x0C00, 100 }, { 12, 0x2C00, 0x0800, 100 },
       { 20, 0, 0, 0 }, { -1 } },
+    // The fists: their body comes from the clips
+    /* FIST1 */ { { -1 } },
+    /* FIST2 */ { { -1 } },
+    /* FIST3 */ { { -1 } },
+    /* WARLOCK */ { { -1 } },
 };
 
 // Persists across areas (the player Ganondorf is spawned again in every scene)
@@ -9207,6 +9212,25 @@ static void BossGanon_Player_SwordImpact(BossGanon* this, PlayState* play, f32 r
     BossGanon_Player_SetAT(this, play);
 }
 
+static s8 sGdfPunchStop = 0;  // hit stop frames left
+static s8 sGdfPunchLast = -10; // the attack frame the last punch connected on
+
+static void BossGanon_Player_PunchImpact(BossGanon* this, PlayState* play) {
+    Vec3f pos = this->playerBladeTip;
+    u8 upper = (this->playerSwordAttack == GDF_SWORD_ATK_FIST3);
+
+    sGdfPunchStop = upper ? 5 : 3;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DARUNIA_HIT_BREAST);
+    Audio_PlayActorSound2(&this->actor, NA_SE_PL_BODY_HIT);
+    if (upper) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_IT_WALL_HIT_HARD);
+    }
+    EffectSsHitMark_SpawnFixedScale(play, 0, &pos); // the white flash
+    BossGanonEff_SpawnDustDark(play, &pos, upper ? 0.12f : 0.08f, 0.7f);
+    Actor_RequestQuakeAndRumble(&this->actor, play, upper ? 4 : 2, upper ? 8 : 5);
+    Rumble_Request(0.0f, upper ? 200 : 140, upper ? 10 : 6, 40);
+}
+
 void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     const GdfSwordAttack* atk = &sGdfSwordAttacks[this->playerSwordAttack];
     Input* input = &play->state.input[0];
@@ -9223,12 +9247,17 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     // Left arm keeps the sheath, right arm follows the attack, and his whole body moves with it
     Math_ApproachF(&this->playerSheathArmWeight, (BossGanon_Player_IsPhantom() || sGdfFists) ? 0.0f : 1.0f, 1.0f,
                    0.2f);
-    BossGanon_Player_ApplyAttackBody(this, this->playerSwordTimer);
-    BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
-                              this->playerSheathArmWeight);
-    BossGanon_Player_ApplyAttackArm(this, this->playerSwordTimer);
-    BossGanon_Player_ApplyTridentAttack(this);
-    BossGanon_Player_ApplyFistAttack(this);
+    if (sGdfFists) {
+        // Under each punch his guard: the punch eases out of it and back into it
+        BossGanon_Player_ApplyFistStance(this);
+        BossGanon_Player_ApplyFistAttack(this);
+    } else {
+        BossGanon_Player_ApplyAttackBody(this, this->playerSwordTimer);
+        BossGanon_Player_BlendArm(this, GDF_LEFT_ARM_LIMB, sGdfSwordPoses[GDF_POSE_SHEATH_HOLD],
+                                  this->playerSheathArmWeight);
+        BossGanon_Player_ApplyAttackArm(this, this->playerSwordTimer);
+        BossGanon_Player_ApplyTridentAttack(this);
+    }
 
     sCape->backPush = -3.0f;
     sCape->backSwayMagnitude = 1.0f;
@@ -9322,6 +9351,28 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     if ((this->playerSwordTimer > atk->activeEnd) && (sPlayerSwordState == GDF_SWORD_DRAWN) &&
         CHECK_BTN_ALL(input->press.button, BTN_R) && (stickYaw >= 0) && BossGanon_Player_CanStartAttack(this, play)) {
         BossGanon_Player_SetupSwordDash(this, play, (s16)stickYaw);
+        return;
+    }
+
+    // A punch that connects: a heavy thud, a flash at his fist, the ground and pad jolting, and a moment's hit stop
+    if (sGdfFists && (this->playerSwordAttack >= GDF_SWORD_ATK_FIST1) &&
+        (this->playerSwordAttack <= GDF_SWORD_ATK_FIST3)) {
+        if (this->playerSwordTimer == atk->activeStart) {
+            this->playerSwordQuad.base.atFlags &= ~AT_HIT;
+            this->collider.base.atFlags &= ~AT_HIT;
+            sGdfPunchLast = -10;
+        }
+        if ((sGdfPunchStop == 0) && (this->playerSwordTimer >= atk->activeStart) &&
+            (this->playerSwordTimer <= atk->activeEnd + 1) && (this->playerSwordTimer - sGdfPunchLast >= 4) &&
+            ((this->playerSwordQuad.base.atFlags | this->collider.base.atFlags) & AT_HIT)) {
+            this->playerSwordQuad.base.atFlags &= ~AT_HIT;
+            this->collider.base.atFlags &= ~AT_HIT;
+            sGdfPunchLast = this->playerSwordTimer;
+            BossGanon_Player_PunchImpact(this, play);
+        }
+    }
+    if (sGdfPunchStop > 0) {
+        sGdfPunchStop--;
         return;
     }
 
@@ -12459,9 +12510,9 @@ static void BossGanon_Player_ApplyFistStance(BossGanon* this) {
 }
 
 // Each punch: game frames to clip rows (the strike lands on the attack's active frames)
-static const GdfClipKey sGdfFistJabCross[] = { { 0, 0 }, { 8, 12 }, { 13, 20 }, { 22, 40 } };
-static const GdfClipKey sGdfFistHookKeys[] = { { 0, 0 }, { 6, 9 }, { 9, 14 }, { 18, 28 }, { 24, 39 } };
-static const GdfClipKey sGdfFistUppercutKeys[] = { { 0, 0 }, { 7, 11 }, { 10, 17 }, { 24, 40 } };
+static const GdfClipKey sGdfFistJabCross[] = { { 0, 0 }, { 5, 12 }, { 9, 20 }, { 16, 40 } };
+static const GdfClipKey sGdfFistHookKeys[] = { { 0, 0 }, { 4, 9 }, { 6, 14 }, { 12, 28 }, { 17, 39 } };
+static const GdfClipKey sGdfFistUppercutKeys[] = { { 0, 0 }, { 5, 11 }, { 7, 17 }, { 17, 40 } };
 // The Warlock Punch: the cross's chamber drawn out (his right fist back, held, shaking with the dark), then the cross
 // thrown all at once, held out, and back
 static const GdfClipKey sGdfFistWarlock[] = { { 0, 0 }, { 8, 10 }, { 22, 10 }, { 25, 20 }, { 32, 22 }, { 44, 40 } };
