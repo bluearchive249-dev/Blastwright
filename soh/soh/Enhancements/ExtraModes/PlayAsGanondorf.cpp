@@ -393,14 +393,28 @@ static void UpdateLevitation(PlayState* play, Player* player, BossGanon* dorf) {
                       PlayAsGanondorf_GetRunSpeedFactor(play, player);
     Math_StepToF(&sLevitateSpeed, targetSpeed, (targetSpeed > sLevitateSpeed) ? 1.5f : 2.0f);
 
-    if (stickMagnitude > 0.0f) {
-        s16 worldYaw = (s16)(Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + stickAngle);
-        Math_ScaledStepToS(&player->actor.shape.rot.y, worldYaw, 0x1800);
+    // Locked on (Z-targeting): he keeps facing the target and strafes, gliding whichever way the stick points
+    // (sideways, back or in) as Phantom Ganon circles Link; otherwise he turns to fly where the stick points
+    static s16 sMoveYaw = 0;
+    Actor* target = player->focusActor;
+    bool strafing = (target != NULL) && (player->stateFlags1 & PLAYER_STATE1_Z_TARGETING);
+
+    if (strafing) {
+        Math_ScaledStepToS(&player->actor.shape.rot.y, Actor_WorldYawTowardActor(&player->actor, target), 0x1800);
+        if (stickMagnitude > 0.0f) {
+            sMoveYaw = (s16)(Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + stickAngle);
+        }
+    } else {
+        if (stickMagnitude > 0.0f) {
+            s16 worldYaw = (s16)(Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + stickAngle);
+            Math_ScaledStepToS(&player->actor.shape.rot.y, worldYaw, 0x1800);
+        }
+        sMoveYaw = player->actor.shape.rot.y;
     }
     player->yaw = player->actor.world.rot.y = player->actor.shape.rot.y;
 
-    player->actor.world.pos.x += Math_SinS(player->actor.shape.rot.y) * sLevitateSpeed;
-    player->actor.world.pos.z += Math_CosS(player->actor.shape.rot.y) * sLevitateSpeed;
+    player->actor.world.pos.x += Math_SinS(sMoveYaw) * sLevitateSpeed;
+    player->actor.world.pos.z += Math_CosS(sMoveYaw) * sLevitateSpeed;
     player->actor.world.pos.y = sLevitateY;
 
     // Walls and ceilings still stop him
