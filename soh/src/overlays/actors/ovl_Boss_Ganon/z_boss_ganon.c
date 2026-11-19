@@ -280,8 +280,10 @@ static MtxF sGdfHairTorso;
 static u8 sGdfHairTorsoValid = false;
 static void BossGanon_Player_HairOverride(BossGanon* this, Vec3s* rot);
 static s32 BossGanon_Player_SwdKeepBack(PlayState* play, Vec3f* target);
+static Actor* sGdfSwd; // the Master Sword's pedestal (defined with the sword's kick)
 static f32 sGdfSwdWalk = -1.0f; // the pull: how far he walked this frame (-1: not then)
 static s16 sGdfSwdWalkYaw;
+static u8 sGdfSwdWalkBack = false; // stepping back from the stone (facing it, the walk backwards)
 // First person (C-Up): his body stays, seen from his eyes, with his head left out (the view is from inside it)
 static u8 sGdfFpBodyQuery = false;
 static s32 BossGanon_Player_FpBodyOn(void) {
@@ -7427,6 +7429,9 @@ static s32 BossGanon_Player_MixamoWalkBack(PlayState* play, f32 speed) {
     s32 targeting = (player->focusActor != NULL) ||
                     (player->stateFlags1 & (PLAYER_STATE1_Z_TARGETING | PLAYER_STATE1_PARALLEL));
 
+    if (sGdfSwdWalk >= 0.0f) {
+        return sGdfSwdWalkBack && (speed > 0.5f); // stepping back to his place for the Master Sword
+    }
     return !sGdfRoaming && targeting && (speed > 0.5f) &&
            ((player->linearVelocity < -0.5f) || (ABS(heading) > 0x5000));
 }
@@ -7957,7 +7962,12 @@ static void BossGanon_Player_Follow(BossGanon* this, PlayState* play, u8 control
             this->actor.world.pos.x += dx / d * step;
             this->actor.world.pos.z += dz / d * step;
             if (step > 0.5f) {
-                sGdfSwdWalkYaw = Math_Atan2S(dz, dx);
+                // Away from the stone he steps back, still facing it; toward it or round it, he faces his way
+                f32 ox = this->actor.world.pos.x - sGdfSwd->world.pos.x;
+                f32 oz = this->actor.world.pos.z - sGdfSwd->world.pos.z;
+
+                sGdfSwdWalkBack = ((ox * dx + oz * dz) > 0.5f * d * sqrtf(SQ(ox) + SQ(oz)));
+                sGdfSwdWalkYaw = sGdfSwdWalkBack ? Math_Atan2S(-oz, -ox) : Math_Atan2S(dz, dx);
             }
         }
         sGdfSwdWalk = step;
