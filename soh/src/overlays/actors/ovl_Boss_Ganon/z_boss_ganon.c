@@ -14030,9 +14030,10 @@ void BossGanon_Player_Block(BossGanon* this, PlayState* play) {
     } else {
         sCape->sideSwayMagnitude = -13.0f;
 
-        // ...and his low, murmured snicker after the "Hah!" (the one from his fight as he gets back up)
+        // ...and his low, murmured snicker after the "Hah!" (the "Ganondorf Chuckles" sample: despite its name, this
+        // sound is his, used in his fight)
         if (Animation_OnFrame(&this->skelAnime, 6.0f)) {
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_RESTORE));
+            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_FANTOM_ST_LAUGH));
         }
         if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
             BossGanon_Player_SetupFloat(this, play);
