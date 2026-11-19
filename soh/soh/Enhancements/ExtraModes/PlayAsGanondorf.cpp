@@ -154,6 +154,10 @@ extern "C" s32 PlayAsGanondorf_IsLevitating(void) {
     return sLevitating;
 }
 
+extern "C" s32 PlayAsGanondorf_IsDorfOut(PlayState* play) {
+    return IsEnabled() && (play != NULL) && (FindPlayerGanondorf(play) != NULL) && (FindPlayerGanon(play) == NULL);
+}
+
 extern "C" s32 PlayAsGanondorf_IsGanonOut(PlayState* play) {
     return IsEnabled() && (play != NULL) && (FindPlayerGanon(play) != NULL);
 }

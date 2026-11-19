@@ -48,6 +48,9 @@ s32 PlayAsGanondorf_IsLevitating(void);
 // Ganon (the D-Pad Right transformation) is out instead of Ganondorf
 s32 PlayAsGanondorf_IsGanonOut(PlayState* play);
 
+// Whether Ganondorf (not Ganon) is out in this scene
+s32 PlayAsGanondorf_IsDorfOut(PlayState* play);
+
 // How much faster than Link Ganondorf runs (1.0 when he isn't out)
 f32 PlayAsGanondorf_GetRunSpeedFactor(PlayState* play, Player* player);
 

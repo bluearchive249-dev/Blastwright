@@ -9710,6 +9710,16 @@ static Actor* BossGanon_Player_FindShutDoor(PlayState* play) {
     return best;
 }
 
+// The end of the Ganon fight (z_boss_ganon2.c): his step-in front kick at Ganon, downed, that sends him into the sky
+void BossGanon_Player_StartFinisherKick(PlayState* play, Vec3f* target) {
+    Player* player = GET_PLAYER(play);
+
+    sGdfBreakTarget = NULL;
+    sGdfBreakTimer = 1;
+    sGdfBreakYaw = Math_Vec3f_Yaw(&player->actor.world.pos, target);
+    player->linearVelocity = 0.0f;
+}
+
 // A in front of a shut door (from the input filter, before Link reads A): the kick starts
 s32 BossGanon_Player_TryBreakKick(Actor* thisx, PlayState* play) {
     BossGanon* this = (BossGanon*)thisx;

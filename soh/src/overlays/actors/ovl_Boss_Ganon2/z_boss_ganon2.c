@@ -1567,6 +1567,10 @@ void func_8090109C(BossGanon2* this, PlayState* play) {
     }
 }
 
+// SoH: "Play as Ganondorf": the kick that ends the fight (z_boss_ganon.c), his foot meeting Ganon on its frame 13
+#define GDF_FINISHER_IMPACT 13
+void BossGanon_Player_StartFinisherKick(PlayState* play, Vec3f* target);
+
 void func_8090120C(BossGanon2* this, PlayState* play) {
     Player* player;
     f32 temp_f14;
@@ -1739,6 +1743,26 @@ void func_8090120C(BossGanon2* this, PlayState* play) {
             temp_f14 = this->unk_1B8.x - player->actor.world.pos.x;
             temp_f12 = this->unk_1B8.z - player->actor.world.pos.z;
             temp_a0_2 = Math_Atan2S(temp_f12, temp_f14) - player->actor.shape.rot.y;
+            // SoH: "Play as Ganondorf": no Master Sword stab for him (Link's sword never swings): B at Ganon's head,
+            // facing it, and he kicks Ganon into the sky (state 70)
+            if (PlayAsGanondorf_IsDorfOut(play)) {
+                if ((ABS(temp_a0_2) < 0x3000) && (sqrtf(SQ(temp_f14) + SQ(temp_f12)) < 140.0f) &&
+                    CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
+                    func_80064520(play, &play->csCtx);
+                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                    if (GameInteractor_Should(VB_SLAY_GANON, true)) {
+                        this->subCamId = Play_CreateSubCamera(play);
+                        Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
+                        Play_ChangeCameraStatus(play, this->subCamId, CAM_STAT_ACTIVE);
+                        Player_SetCsActionWithHaltedActors(play, &this->actor, 8);
+                        BossGanon_Player_StartFinisherKick(play, &this->unk_1B8);
+                        this->csState = 70;
+                        this->csTimer = 0;
+                        this->unk_410.y = 0.0f; // (his speed up)
+                    }
+                }
+                break;
+            }
             if ((ABS(temp_a0_2) < 0x2000) && (sqrtf(SQ(temp_f14) + SQ(temp_f12)) < 70.0f) &&
                 (player->meleeWeaponState != 0) && (player->heldItemAction == PLAYER_IA_SWORD_MASTER)) {
                 func_80064520(play, &play->csCtx);
@@ -1813,6 +1837,62 @@ void func_8090120C(BossGanon2* this, PlayState* play) {
                 this->subCamAt.z = 177.0f;
                 player->actor.world.pos.x = 200.0f;
                 this->subCamUp.z = 0.0f;
+            }
+            break;
+        case 70:
+            // SoH: "Play as Ganondorf": the kick, and Ganon hurled up into the sky until he's gone
+            this->unk_339 = 23;
+            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.2f);
+            if (this->csTimer == GDF_FINISHER_IMPACT) {
+                Sfx_PlaySfxCentered(NA_SE_IT_HAMMER_HIT);
+                Sfx_PlaySfxCentered(NA_SE_EN_MGANON_DAMAGE);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DEAD1);
+                func_8090109C(this, play);
+                play->envCtx.unk_D8 = 1.0f;
+                Animation_MorphToPlayOnce(&this->skelAnime, &gGanonDeadStartAnim, -4.0f);
+                this->unk_410.y = 30.0f;
+                this->unk_410.z = this->actor.world.pos.y; // (where he rose from)
+            }
+            if (this->csTimer >= GDF_FINISHER_IMPACT) {
+                // Up, ever faster, tumbling
+                this->actor.world.pos.y += this->unk_410.y;
+                this->unk_410.y = MIN(this->unk_410.y * 1.06f + 2.0f, 900.0f);
+                this->actor.world.rot.x += 0x0900; // (his shape follows it in the update)
+                this->actor.world.rot.z += 0x0500;
+                if ((this->actor.world.pos.y - this->unk_410.z) > 30000.0f) {
+                    this->actor.world.pos.y = this->unk_410.z + 30000.0f; // (out of sight above the clouds)
+                    this->unk_410.y = 0.0f;
+                }
+                if (this->csTimer == GDF_FINISHER_IMPACT + 48) {
+                    Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME); // the twinkle where he vanished
+                }
+            }
+            {
+                // From low beside Ganondorf, looking up after Ganon
+                f32 dx = this->actor.world.pos.x - player->actor.world.pos.x;
+                f32 dz = this->actor.world.pos.z - player->actor.world.pos.z;
+                f32 d = MAX(sqrtf(SQ(dx) + SQ(dz)), 1.0f);
+                f32 gy = this->actor.world.pos.y + 150.0f;
+
+                this->subCamEye.x = player->actor.world.pos.x - dx / d * 260.0f - dz / d * 180.0f;
+                this->subCamEye.y = player->actor.world.pos.y + 60.0f;
+                this->subCamEye.z = player->actor.world.pos.z - dz / d * 260.0f + dx / d * 180.0f;
+                this->subCamAt.x = this->actor.world.pos.x;
+                this->subCamAt.z = this->actor.world.pos.z;
+                // (no further than steeply up: past straight up the view would turn over)
+                this->subCamAt.y = MIN(gy, this->subCamEye.y + (d + 260.0f) * 6.0f);
+            }
+            if (this->csTimer > GDF_FINISHER_IMPACT + 90) {
+                Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
+                this->actor.world.pos.y = this->unk_410.z + 30000.0f;
+                this->csState = 9;
+                this->csTimer = 0;
+                sZelda->unk_3C8 = 11;
+                Message_StartTextbox(play, 0x70D9, NULL);
+                this->unk_336 = 0;
+                this->unk_339 = 0;
+                play->envCtx.unk_BE = 0;
+                play->envCtx.unk_D8 = 0.0f;
             }
             break;
         case 75:
