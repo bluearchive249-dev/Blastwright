@@ -6413,6 +6413,8 @@ static s16 sGdfWarlockBurst = 0; // frames into the Warlock Punch's burst of fir
 #define GDF_WARLOCK_BURST_FRAMES 14
 static Vec3f sGdfWarlockBurstPos;
 static s16 sGdfWarlockBurstYaw;
+static f32 sGdfWarlockBurstScale = 1.0f; // 1: the Warlock Punch, smaller for the combo's punches
+static s16 sGdfWarlockBurstFrames = GDF_WARLOCK_BURST_FRAMES;
 static s32 BossGanon_Player_DaggerOut(void);
 static void BossGanon_Player_DrawDagger(BossGanon* this, PlayState* play);
 static void BossGanon_Player_SetBlade(BossGanon* this, Vec3f* base, Vec3f* tip);
@@ -9225,8 +9227,12 @@ static void BossGanon_Player_PunchImpact(BossGanon* this, PlayState* play) {
     if (upper) {
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_WALL_HIT_HARD);
     }
-    EffectSsHitMark_SpawnFixedScale(play, 0, &pos); // the white flash
-    BossGanonEff_SpawnDustDark(play, &pos, upper ? 0.12f : 0.08f, 0.7f);
+    // A small burst of the Warlock Punch's purple fire (no dust)
+    sGdfWarlockBurst = 1;
+    sGdfWarlockBurstPos = pos;
+    sGdfWarlockBurstYaw = this->actor.shape.rot.y;
+    sGdfWarlockBurstScale = upper ? 0.45f : 0.32f;
+    sGdfWarlockBurstFrames = 8;
     Actor_RequestQuakeAndRumble(&this->actor, play, upper ? 4 : 2, upper ? 8 : 5);
     Rumble_Request(0.0f, upper ? 200 : 140, upper ? 10 : 6, 40);
 }
@@ -12587,6 +12593,8 @@ static void BossGanon_Player_WarlockImpact(BossGanon* this, PlayState* play) {
     sGdfWarlockBurst = 1;
     sGdfWarlockBurstPos = pos;
     sGdfWarlockBurstYaw = this->actor.shape.rot.y;
+    sGdfWarlockBurstScale = 1.0f;
+    sGdfWarlockBurstFrames = GDF_WARLOCK_BURST_FRAMES;
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_FRAME); // (the fire arrow's burst)
     Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_THUNDER));
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_BOMB_EXPLOSION);
@@ -12702,13 +12710,29 @@ static void BossGanon_Player_DrawWarlockFire(BossGanon* this, PlayState* play) {
     }
     // The landing: a ball of purple fire bursting out where his fist met, and a great tongue of flame thrown ahead
     if (sGdfWarlockBurst > 0) {
-        f32 u = sGdfWarlockBurst / (f32)GDF_WARLOCK_BURST_FRAMES;
+        f32 u = sGdfWarlockBurst / (f32)sGdfWarlockBurstFrames;
         f32 grow = 1.0f - SQ(1.0f - MIN(u * 2.0f, 1.0f));
         u8 alpha = (u8)(255 * CLAMP((1.0f - u) * 1.6f, 0.0f, 1.0f));
+        f32 k = sGdfWarlockBurstScale;
 
-        BossGanon_Player_DrawDinBall(play, &sGdfWarlockBurstPos, 25.0f + 85.0f * grow, alpha);
-        BossGanon_Player_DrawArrowFlame(play, &sGdfWarlockBurstPos, sGdfWarlockBurstYaw, 40.0f + 140.0f * grow,
-                                        30.0f + 50.0f * grow, alpha);
+        BossGanon_Player_DrawDinBall(play, &sGdfWarlockBurstPos, (25.0f + 85.0f * grow) * k, alpha);
+        BossGanon_Player_DrawArrowFlame(play, &sGdfWarlockBurstPos, sGdfWarlockBurstYaw, (40.0f + 140.0f * grow) * k,
+                                        (30.0f + 50.0f * grow) * k, alpha);
+    }
+    // The combo's punches: purple fire round the striking fist while it's out
+    if ((this->actionFunc == BossGanon_Player_SwordAttack) && sGdfFists &&
+        (this->playerSwordAttack >= GDF_SWORD_ATK_FIST1) && (this->playerSwordAttack <= GDF_SWORD_ATK_FIST3) &&
+        this->playerBladeValid && !this->playerHidden) {
+        const GdfSwordAttack* p = &sGdfSwordAttacks[this->playerSwordAttack];
+
+        if ((this->playerSwordTimer >= p->activeStart - 1) && (this->playerSwordTimer <= p->activeEnd + 1)) {
+            Vec3f fist = { (this->playerBladeBase.x + this->playerBladeTip.x) * 0.5f,
+                           (this->playerBladeBase.y + this->playerBladeTip.y) * 0.5f,
+                           (this->playerBladeBase.z + this->playerBladeTip.z) * 0.5f };
+
+            BossGanon_Player_DrawDinBall(play, &fist, 12.0f, 190);
+            BossGanon_Player_DrawArrowFlame(play, &fist, this->actor.shape.rot.y + 0x8000, 22.0f, 12.0f, 190);
+        }
     }
     Matrix_Pop();
 }
@@ -14431,7 +14455,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     }
 
     // The Warlock Punch's burst of fire runs its course (drawn in BossGanon_Player_DrawWarlockFire)
-    if ((sGdfWarlockBurst > 0) && (++sGdfWarlockBurst > GDF_WARLOCK_BURST_FRAMES)) {
+    if ((sGdfWarlockBurst > 0) && (++sGdfWarlockBurst > sGdfWarlockBurstFrames)) {
         sGdfWarlockBurst = 0;
     }
 
