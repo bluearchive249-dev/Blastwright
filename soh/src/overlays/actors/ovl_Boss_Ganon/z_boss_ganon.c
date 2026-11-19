@@ -7167,7 +7167,8 @@ static s32 BossGanon_Player_CanRoam(BossGanon* this, PlayState* play) {
     }
     return (this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_Brood) ||
            (this->actionFunc == BossGanon_Player_Laugh) || (this->actionFunc == BossGanon_Player_Dance) ||
-           (this->actionFunc == BossGanon_Player_CsKneel);
+           (this->actionFunc == BossGanon_Player_CsKneel) ||
+           (this->actionFunc == BossGanon_Player_SwordIdle); // (the trident or sword out: he walks with it)
 }
 
 static void BossGanon_Player_UpdateRoam(BossGanon* this, PlayState* play) {
