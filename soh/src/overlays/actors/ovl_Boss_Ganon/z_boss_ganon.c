@@ -12745,7 +12745,8 @@ static void BossGanon_Player_EnterFists(BossGanon* this, PlayState* play) {
     sPlayerDarkAuraMode = false;
     sPlayerSwordState = GDF_SWORD_DRAWN;
     sGdfFistIdleFrame = 0.0f;
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_BODY_SPARK));
+    // (a short grunt as his guard comes up; the body spark is a looping sound and would never stop)
+    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
     BossGanon_Player_SetupSwordIdle(this, play);
 }
 
