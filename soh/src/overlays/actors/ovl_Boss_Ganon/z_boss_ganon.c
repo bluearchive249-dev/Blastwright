@@ -7844,6 +7844,11 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
 
                     func_800F4010(&player->actor.projectedPos, sfx, speed * 0.6f);
                     GdfInvasion_NoteSfx(sfx);
+                    // SoH: in the Iron Knuckle's armour (Goron Tunic), its heavy armoured step too
+                    if (BossGanon_Player_GoronLook()) {
+                        Audio_PlayActorSound2(&player->actor, NA_SE_EN_IRONNACK_WALK);
+                        GdfInvasion_NoteSfx(NA_SE_EN_IRONNACK_WALK);
+                    }
                     player->stateFlags2 |= PLAYER_STATE2_FOOTSTEP;
                     BossGanon_Player_FootDust(this, play, (i == 0) ? 1.0f : -1.0f, speed);
                 }
