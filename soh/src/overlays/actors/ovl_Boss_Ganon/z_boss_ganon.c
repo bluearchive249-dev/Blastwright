@@ -6966,8 +6966,15 @@ static void BossGanon_Player_RotToMtx(Vec3s* rot, f32 m[3][3]) {
 static void BossGanon_Player_MtxToRot(f32 m[3][3], Vec3s* rot) {
     f32 sy = CLAMP(-m[2][0], -1.0f, 1.0f);
 
-    rot->x = RADF_TO_BINANG(atan2f(m[2][1], m[2][2]));
     rot->y = RADF_TO_BINANG(asinf(sy));
+    // Turned a quarter about y (gimbal lock: x and z turn about the same axis): only x - z (or x + z) is defined, and
+    // reading x and z apart from the near-zero entries gives noise that jitters the limb. Put it all in x.
+    if ((SQ(m[2][1]) + SQ(m[2][2])) < 1e-6f) {
+        rot->z = 0;
+        rot->x = (sy > 0.0f) ? RADF_TO_BINANG(atan2f(m[0][1], m[0][2])) : RADF_TO_BINANG(atan2f(-m[0][1], -m[0][2]));
+        return;
+    }
+    rot->x = RADF_TO_BINANG(atan2f(m[2][1], m[2][2]));
     rot->z = RADF_TO_BINANG(atan2f(m[1][0], m[0][0]));
 }
 
