@@ -14616,6 +14616,9 @@ void BossGanon_Player_UpdateCapeShield(Actor* thisx, PlayState* play) {
     Matrix_Translate(frontX, this->unk_1FC.y + 30.0f, frontZ, MTXMODE_NEW);
     Matrix_RotateY(BINANG_TO_RAD((s16)(yaw + 0x8000)), MTXMODE_APPLY);
     Matrix_RotateX(BINANG_TO_RAD(this->playerShieldPitch), MTXMODE_APPLY);
+    // At a model's scale, as Link's (his comes from his drawn arm): things drawn on it, like Twinrova's shield charge,
+    // are sized for that; unscaled they were drawn a hundred times too big, flashing over the whole room
+    Matrix_Scale(0.015f, 0.015f, 0.015f, MTXMODE_APPLY);
     Matrix_Get(&player->shieldMf);
     Matrix_Pop();
 }

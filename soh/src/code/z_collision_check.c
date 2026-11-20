@@ -3099,6 +3099,10 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
                 s32 his = (collider->ac->id == ACTOR_BOSS_GANON2) ? high : (low + high + 1) / 2;
 
                 damage = his;
+                // ...and the target reacts as to a sword too: the entry picked for damage can carry a reaction the
+                // target treats as a block (an Iron Knuckle's armour shrugs off arrows, its 15-damage entry
+                // included, so he did nothing to it)
+                collider->actor->colChkInfo.damageEffect = (tbl->table[(master > 0) ? 9 : 10] >> 4) & 0xF;
             }
         }
     }

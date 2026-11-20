@@ -4343,6 +4343,7 @@ void BossGanon2_Player_UpdateGuardShield(Actor* thisx, PlayState* play) {
     Matrix_Push();
     Matrix_Translate(frontX, player->actor.world.pos.y + (this->playerHeadHeight * 0.5f), frontZ, MTXMODE_NEW);
     Matrix_RotateY(BINANG_TO_RAD((s16)(yaw + 0x8000)), MTXMODE_APPLY);
+    Matrix_Scale(0.02f, 0.02f, 0.02f, MTXMODE_APPLY); // (at a model's scale, as Link's: see Ganondorf's)
     Matrix_Get(&player->shieldMf);
     Matrix_Pop();
 }
