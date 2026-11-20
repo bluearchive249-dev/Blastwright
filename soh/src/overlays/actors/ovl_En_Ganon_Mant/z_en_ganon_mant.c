@@ -11,6 +11,7 @@
 #include "soh/ResourceManagerHelpers.h"
 #include <libultraship/bridge/resourcebridge.h>
 #include "soh/Enhancements/Graphics/LinkGanonCape.h"
+#include "assets/objects/object_tw/object_tw.h" // SoH: Koume's burning hair, for the Goron Tunic's cape
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -609,8 +610,66 @@ void EnGanonMant_Update(Actor* thisx, PlayState* play) {
     }
 }
 
+// SoH: "Play as Ganondorf", the Goron Tunic: his cape burns. Koume's hair (her flame textures, scrolling upward, in
+// her two layers' colors) laid over the cloth, drawn as a decal on the same vertices so it sits right on it.
+static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
+    static const u8 sLayers[2][4] = { { 100, 20, 0, 10 }, { 255, 70, 0, 15 } }; // prim color, scroll speed
+    Gfx* mant = ResourceMgr_LoadGfxByName(gMantDL);
+    Gfx* geom = NULL;
+    u32 frames = play->gameplayFrames;
+    s32 i;
+
+    // gMantDL past its own material (its vertices and triangles), so the fire's material stays
+    for (i = 0; (mant != NULL) && (i < 32);) {
+        u8 op = mant[i].words.w0 >> 24;
+
+        if (op == 0x01) { // G_VTX
+            geom = &mant[i];
+            break;
+        }
+        if (op == 0xDF) {
+            break;
+        }
+        i += ((op == G_SETTIMG_OTR_HASH) || (op == G_DL_OTR_HASH) || (op == G_VTX_OTR_HASH) || (op == G_MARKER) ||
+              (op == G_MTX_OTR) || (op == G_BRANCH_Z_OTR) || (op == G_MOVEMEM_OTR))
+                 ? 2
+                 : 1;
+    }
+    if ((geom == NULL) || (vtx == NULL)) {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gSPMatrix(POLY_XLU_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPSegment(POLY_XLU_DISP++, 0x0C, vtx);
+    gDPPipeSync(POLY_XLU_DISP++);
+    gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH | G_LIGHTING);
+    gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPLoadTextureBlock(POLY_XLU_DISP++, gTwinrovaEffectTex, G_IM_FMT_I, G_IM_SIZ_8b, 32, 32, 0,
+                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 5, G_TX_NOLOD, G_TX_NOLOD);
+    gDPLoadMultiBlock_4b(POLY_XLU_DISP++, gTwinrovaEffectMaskTex, 0x100, 1, G_IM_FMT_I, 32, 64, 0,
+                         G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 6, G_TX_NOLOD, G_TX_NOLOD);
+    // (Koume's hair's combiner: the two textures' flicker, between her two colors)
+    gDPSetCombine(POLY_XLU_DISP++, 0x262A60, 0xF50CE37F);
+    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_DECAL2);
+    gDPSetEnvColor(POLY_XLU_DISP++, 255, 240, 0, 128);
+    for (i = 0; i < 2; i++) {
+        gDPPipeSync(POLY_XLU_DISP++);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, sLayers[i][0], sLayers[i][1], sLayers[i][2], 255);
+        gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (i * 37) & 0x7F, 0, 32, 32, 1,
+                                                         (i * 53) & 0xFF, (-frames * sLayers[i][3]) & 0xFF, 32,
+                                                         64));
+        gSPDisplayList(POLY_XLU_DISP++, geom);
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     s32 pad;
+    Mtx* mtx;
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -625,7 +684,8 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
     }
 
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    mtx = MATRIX_NEWMTX(play->state.gfxCtx);
+    gSPMatrix(POLY_OPA_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     // set texture
     if (EnGanonMant_IsPhantom(this) && EnGanonMant_BuildPhantomTex()) {
@@ -651,6 +711,9 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
 
     // draw cloak
     gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+    if (this->ownVertices && BossGanon_Player_GoronLook()) {
+        EnGanonMant_DrawFire(play, mtx, EnGanonMant_GetOwnVertices(this));
+    }
 
     if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
         // SoH: the player-controlled Ganondorf's hood, the same way as Link's
@@ -659,6 +722,9 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         if (hoodVtx != NULL) {
             gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
             gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+            if (BossGanon_Player_GoronLook()) {
+                EnGanonMant_DrawFire(play, mtx, hoodVtx);
+            }
         }
     }
 

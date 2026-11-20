@@ -2290,6 +2290,11 @@ void SohMenu::AddMenuEnhancements() {
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.CapeWear"))
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "His cape tears as Link loses hearts, in tatters near the end, and mends as he heals."));
+    AddWidget(path, "Goron Tunic: Heavy Knight", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GoronTunicLook"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "With the Goron Tunic on, he wears an Iron Knuckle's armour in black and gold (no helmet) and his cape "
+            "burns with Koume's flames. Only a look."));
     AddWidget(path, "Phantom Ganon Skin", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"))
         .PreFunc([](WidgetInfo& info) {

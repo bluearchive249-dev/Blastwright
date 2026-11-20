@@ -12,6 +12,7 @@
 #include "assets/objects/object_ganon_anime2/object_ganon_anime2.h"
 #include "assets/objects/object_gndd/object_gndd.h"
 #include "assets/objects/object_gnd/object_gnd.h" // SoH: Phantom Ganon skin for "Play as Ganondorf"
+#include "assets/objects/object_ik/object_ik.h"   // SoH: Iron Knuckle armour with the Goron Tunic
 #include "soh/Enhancements/ExtraModes/GanondorfSword.h"
 #include "soh/Enhancements/ExtraModes/GanondorfTrident.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
@@ -4699,6 +4700,127 @@ void BossGanon_DrawShadowTexture(void* tex, BossGanon* this, PlayState* play) {
     CLOSE_DISPS(gfxCtx);
 }
 
+// SoH: "Play as Ganondorf", the Goron Tunic: a heavy knight, in an Iron Knuckle's armour (everything but the
+// helmet), and a burning cape (z_en_ganon_mant.c). Only a look.
+s32 BossGanon_Player_GoronLook(void) {
+    return (sPlayerGanondorf != NULL) && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GoronTunicLook"), 1) &&
+           (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_GORON) && !BossGanon_Player_IsPhantom();
+}
+
+#define GDF_ARMOR_SLOTS 24
+// Iron Knuckle limbs (those with a display list, in the order its skeleton's matrices go), each placed on one of
+// his limbs: his limb (its index in sGdfLimbWorld), then the piece's matrix in that limb's space (column by column)
+static const s8 sGdfArmorLimb[GDF_ARMOR_SLOTS] = { 18, 22, 23, 24, 19, 20, 21, 1, 1, 7, 8, 1, 9, 3, 4, 5, 1, 1, 1, 1, 1, 1, 1, 1 };
+static const f32 sGdfArmorMtx[GDF_ARMOR_SLOTS][16] = {
+    { 1.0500f, 0.0000f, -0.0000f, 0.0000f, -0.0476f, 1.2883f, -0.0101f, 0.0000f, 0.0129f, -0.0663f, 1.0854f, 0.0000f, -0.0000f, 0.0000f, -0.0000f, 1.0000f }, // limb 2
+    { 1.2900f, 0.0000f, -0.0000f, 0.0000f, 0.0425f, 1.6176f, -0.2206f, 0.0000f, -0.0116f, 0.1054f, 1.4289f, 0.0000f, -0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 3
+    { 2.0500f, -0.0000f, 0.0000f, 0.0000f, 0.1995f, 2.0071f, -0.5981f, 0.0000f, -0.0569f, 0.4379f, 1.8295f, 0.0000f, 0.0000f, -0.0000f, 0.0000f, 1.0000f }, // limb 4
+    { 0.0000f, -0.0000f, 1.2500f, 0.0000f, 0.1703f, -1.2751f, -0.0063f, 0.0000f, 1.2616f, 0.1714f, 0.0907f, 0.0000f, -0.0000f, 0.0000f, -0.0000f, 1.0000f }, // limb 5
+    { 1.2900f, 0.0000f, 0.0000f, 0.0000f, -0.1229f, 1.5360f, 0.3719f, 0.0000f, 0.0414f, -0.4309f, 1.3509f, 0.0000f, -0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 6
+    { 2.0500f, 0.0000f, 0.0000f, 0.0000f, 0.0445f, 2.0634f, 0.7353f, 0.0000f, -0.0157f, -0.7877f, 1.7693f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 7
+    { -0.0000f, -0.0000f, 1.2500f, 0.0000f, -0.0356f, -1.2864f, -0.0031f, 0.0000f, 1.2738f, -0.0333f, 0.0930f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 8
+    { 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 12
+    { 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 13
+    { 2.5500f, -0.0000f, 0.0000f, 0.0000f, 0.0492f, 1.4069f, -1.1872f, 0.0000f, -0.1025f, 1.0080f, 1.5752f, 0.0000f, -0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 14
+    { 1.6700f, 0.0000f, 0.0000f, 0.0000f, 0.1858f, 0.1309f, -1.5528f, 0.0000f, -0.0820f, 1.4736f, 0.2147f, 0.0000f, -0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 15
+    { 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 17
+    { 1.5000f, -0.0000f, -0.0000f, 0.0000f, 0.0676f, -0.7172f, -1.5233f, 0.0000f, -0.0087f, 1.3709f, -0.5522f, 0.0000f, -0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 18
+    { 2.5500f, -0.0000f, -0.0000f, 0.0000f, 0.0963f, 1.3257f, 1.2744f, 0.0000f, 0.1300f, -1.0883f, 1.4555f, 0.0000f, -0.0000f, -0.0000f, 0.0000f, 1.0000f }, // limb 19
+    { 1.6700f, 0.0000f, 0.0000f, 0.0000f, 0.1993f, -0.0255f, 1.5712f, 0.0000f, 0.0453f, -1.4772f, 0.0397f, 0.0000f, 0.0000f, -0.0000f, -0.0000f, 1.0000f }, // limb 20
+    { 1.5000f, -0.0000f, -0.0000f, 0.0000f, -0.0746f, 1.2388f, -0.5551f, 0.0000f, 0.1253f, 0.5119f, 1.2508f, 0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.0000f }, // limb 21
+    { -0.1991f, -0.1400f, 1.2754f, 0.0000f, 1.2942f, -0.2120f, 0.1774f, 0.0000f, 0.1667f, 1.4783f, 0.1462f, 0.0000f, 2028.5f, -0.0000f, 1179.1f, 1.0000f }, // limb 22
+    { -0.5614f, 0.1945f, 1.1608f, 0.0000f, 1.1924f, 0.0000f, 0.5559f, 0.0000f, 0.0734f, 1.4873f, -0.1518f, 0.0000f, 1880.0f, -0.0000f, 1538.7f, 1.0000f }, // limb 23
+    { -0.2339f, 0.0605f, -1.2744f, 0.0000f, 1.2988f, 0.0445f, -0.2282f, 0.0000f, 0.0291f, -1.4981f, -0.0582f, 0.0000f, 2028.5f, -0.0000f, -1179.1f, 1.0000f }, // limb 24
+    { -0.6103f, 0.1176f, -1.1447f, 0.0000f, 1.1704f, 0.0803f, -0.5953f, 0.0000f, 0.0149f, -1.4932f, -0.1222f, 0.0000f, 1880.0f, -0.0000f, -1538.7f, 1.0000f }, // limb 25
+    { 1.1000f, -0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.2500f, -0.0000f, 0.0000f, -0.0000f, 0.0000f, 1.0800f, 0.0000f, -60.0f, -0.0000f, -0.0000f, 1.0000f }, // limb 26
+    { 1.1000f, -0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.2500f, -0.0000f, 0.0000f, -0.0000f, 0.0000f, 1.0800f, 0.0000f, -60.0f, -0.0000f, -0.0000f, 1.0000f }, // limb 27
+    { 1.1000f, -0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.2500f, -0.0000f, 0.0000f, -0.0000f, 0.0000f, 1.0800f, 0.0000f, -60.0f, -0.0000f, -0.0000f, 1.0000f }, // limb 28
+    { 0.0141f, -1.2116f, 0.2654f, 0.0000f, 1.0999f, 0.0133f, -0.0111f, 0.0000f, 0.0081f, 0.3073f, 1.0468f, 0.0000f, -60.0f, -0.0000f, -0.0000f, 1.0000f }, // limb 29
+};
+
+// Which of those slots get drawn (the helmet, the head under it and the axe don't), and their see-through markings
+static const s8 sGdfArmorDrawn[] = { 0, 1, 2, 3, 4, 5, 6, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
+
+static Gfx* BossGanon_Player_ArmorColor(GraphicsContext* gfxCtx, u8 pr, u8 pg, u8 pb, u8 er, u8 eg, u8 eb) {
+    Gfx* dl = Graph_Alloc(gfxCtx, 4 * sizeof(Gfx));
+    Gfx* g = dl;
+
+    gDPPipeSync(g++);
+    gDPSetPrimColor(g++, 0, 0, pr, pg, pb, 255);
+    gDPSetEnvColor(g++, er, eg, eb, 255);
+    gSPEndDisplayList(g++);
+    return dl;
+}
+
+static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
+    static const char* sDLs[GDF_ARMOR_SLOTS] = {
+        object_ik_DL_01C7B8, object_ik_DL_01CEE0, object_ik_DL_01CB58, object_ik_DL_01CCA0, object_ik_DL_01D638,
+        object_ik_DL_01D2B0, object_ik_DL_01D3F8, NULL,                NULL,                object_ik_DL_01C130,
+        object_ik_DL_01BE98, NULL,                object_ik_DL_016118, object_ik_DL_01C550, object_ik_DL_01C2B8,
+        object_ik_DL_016340, object_ik_DL_016658, object_ik_DL_0164A0, object_ik_DL_016568, object_ik_DL_016278,
+        object_ik_DL_0151F0, object_ik_DL_015380, gIronKnuckleTorsoDL, object_ik_DL_01C6D8,
+    };
+    // (the rivets and the emblem on the breastplate, the back plate's and the pauldrons' markings)
+    static const struct {
+        s8 slot;
+        const char* dl;
+    } sMarks[] = {
+        { 20, gIronKnuckleArmorRivetAndSymbolDL },
+        { 21, object_ik_DL_016CD8 },
+        { 16, object_ik_DL_016F88 },
+        { 18, object_ik_DL_016EE8 },
+    };
+    Mtx* mtx;
+    s32 i;
+    s32 fp = BossGanon_Player_HeadHidden(this, play);
+
+    if ((this != sPlayerGanondorf) || !sGdfLimbWorldValid || !BossGanon_Player_GoronLook()) {
+        return;
+    }
+
+    mtx = Graph_Alloc(play->state.gfxCtx, GDF_ARMOR_SLOTS * sizeof(Mtx));
+    Matrix_Push();
+    for (i = 0; i < GDF_ARMOR_SLOTS; i++) {
+        MtxF c;
+
+        memcpy(&c, sGdfArmorMtx[i], sizeof(c));
+        Matrix_Put(&sGdfLimbWorld[sGdfArmorLimb[i]]);
+        Matrix_Mult(&c, MTXMODE_APPLY);
+        Matrix_ToMtx(&mtx[i], __FILE__, __LINE__);
+    }
+    Matrix_Pop();
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    // A black knight's colors: dark iron, gold trim
+    gSPSegment(POLY_OPA_DISP++, 0x08, BossGanon_Player_ArmorColor(play->state.gfxCtx, 55, 65, 55, 0, 0, 0));
+    gSPSegment(POLY_OPA_DISP++, 0x09, BossGanon_Player_ArmorColor(play->state.gfxCtx, 205, 165, 75, 25, 20, 0));
+    // (the pieces are an Iron Knuckle's skinned limbs: some of their vertices go by the limb above's matrix)
+    gSPSegment(POLY_OPA_DISP++, 0x0D, mtx);
+    for (i = 0; i < ARRAY_COUNT(sGdfArmorDrawn); i++) {
+        s32 slot = sGdfArmorDrawn[i];
+
+        // (in first person, nothing on his shoulders right in front of the camera)
+        if (fp && (slot >= 16) && (slot <= 19)) {
+            continue;
+        }
+        gSPMatrix(POLY_OPA_DISP++, &mtx[slot], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, sDLs[slot]);
+    }
+
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    for (i = 0; i < ARRAY_COUNT(sMarks); i++) {
+        if (fp && (sMarks[i].slot >= 16) && (sMarks[i].slot <= 19)) {
+            continue;
+        }
+        gSPMatrix(POLY_XLU_DISP++, &mtx[sMarks[i].slot], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, sMarks[i].dl);
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     s32 i;
     BossGanon* this = (BossGanon*)thisx;
@@ -4756,6 +4878,9 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
     if (GDF_IS_PLAYER(this)) {
         BossGanon_Player_DrawSword(this, play);
         BossGanon_Player_DrawWarlockFire(this, play);
+        if (!BossGanon_Player_IsPhantom()) {
+            BossGanon_Player_DrawArmor(this, play);
+        }
         // His lowest point, for the ground offset
         sGdfMeshLowValid = sGdfMeshLowYNext < 1.0e8f;
         if (sGdfMeshLowValid) {
