@@ -611,7 +611,7 @@ void EnGanonMant_Update(Actor* thisx, PlayState* play) {
 }
 
 // SoH: "Play as Ganondorf", the Goron Tunic: his cape is pure flame. The cloth isn't drawn; its mesh is, see-through,
-// in Koume's hair's fire (her flame texture, rising, between her red and yellow), solid down to a hem of live flame
+// in Koume's hair's fire (her flame texture, streaming down from his neck, between her red and yellow), solid down to a hem of live flame
 // tongues that flicker and lick upward. Tears from his wounds (EnGanonMant_SetWear) are holes burnt through.
 // (The cape's texture coordinates run s down the cape, 0 at his shoulders to 64 at the hem, and t across it.)
 #define FLAME_TEX_S 64
@@ -717,8 +717,8 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
                               0, 0, COMBINED, 0, 0, 0, COMBINED);
             gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, sLayers[i][0], sLayers[i][1], sLayers[i][2], 180);
         }
-        // (rising: the texture runs up the cape, s at his shoulders is 0)
-        gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (frames * sLayers[i][3]) & 0x7F,
+        // (pouring from his neck down the cape: s at his shoulders is 0, and the texture runs toward the hem)
+        gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (0u - frames * sLayers[i][3]) & 0x7F,
                                                          (i * 45) & 0x7F, 32, 32, 1, 0, 0, FLAME_TEX_S, FLAME_TEX_T));
         gSPDisplayList(POLY_XLU_DISP++, geom);
     }
