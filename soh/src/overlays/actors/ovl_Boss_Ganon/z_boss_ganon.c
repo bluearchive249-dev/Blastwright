@@ -9816,8 +9816,6 @@ static s32 BossGanon_Player_TrySpearStorm(BossGanon* this, PlayState* play) {
     }
     this->actionFunc = BossGanon_Player_SpearStorm;
     this->playerSwordTimer = 0;
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_MASIC2);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_CHARGE_MASIC));
     return true;
 }
 
@@ -9838,6 +9836,12 @@ void BossGanon_Player_SpearStorm(BossGanon* this, PlayState* play) {
     BossGanon_Player_ApplyPgRows(this, sGdfClipPgSpearStorm, GDF_STORM_ROWS, t, false,
                                  BossGanon_Player_SmoothStep(w), BossGanon_Player_SmoothStep(w));
 
+    // The charge's hum while it gathers (held sounds: played each frame they last, they stop when he's done)
+    if (t < GDF_STORM_BOLT) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_MASIC2 - SFX_FLAG);
+    } else if (t < GDF_STORM_BOLT + 8) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_SPARK - SFX_FLAG);
+    }
     // Green light gathering at the tines as he raises it
     if ((t >= 2) && (t < GDF_STORM_THRUST) && this->playerBladeValid) {
         Vec3f vel = { 0.0f, 0.0f, 0.0f };
@@ -9858,7 +9862,6 @@ void BossGanon_Player_SpearStorm(BossGanon* this, PlayState* play) {
         Vec3f accel = { 0.0f, -0.2f, 0.0f };
 
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_SPARK);
         for (i = 0; i < 16; i++) {
             Vec3f vel = { Rand_CenteredFloat(12.0f), Rand_ZeroFloat(4.0f), Rand_CenteredFloat(12.0f) };
 
