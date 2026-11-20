@@ -237,9 +237,10 @@ jobs:
       id: restore-cache-vcpkg
       uses: actions/cache/restore@v5
       with:
-        key: ${{ runner.os }}-vcpkg-v2-${{ hashFiles('CMakeLists.txt', 'CMake/automate-vcpkg.cmake') }}
+        key: ${{ runner.os }}-vcpkg-v3-${{ hashFiles('CMakeLists.txt', 'CMake/automate-vcpkg.cmake') }}-${{ github.run_id }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-v2-
+          ${{ runner.os }}-vcpkg-v3-${{ hashFiles('CMakeLists.txt', 'CMake/automate-vcpkg.cmake') }}-
+          ${{ runner.os }}-vcpkg-v3-
         path: vcpkg
     - name: Configure Developer Command Prompt
       uses: TheMrMilchmann/setup-msvc-dev@v4
@@ -255,8 +256,22 @@ jobs:
         VCPKG_ROOT: ${{github.workspace}}/vcpkg
       run: |
         set $env:PATH="$env:USERPROFILE/.cargo/bin;$env:PATH"
-        cmake -S . -B build-windows -G Ninja -DVCPKG_ROOT="${{github.workspace}}/vcpkg" -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBUILD_REMOTE_CONTROL=1 2>&1 | Tee-Object -FilePath build.log
-        if ($LASTEXITCODE -ne 0) { exit 1 }
+        # vcpkg fetches some patches straight from github.com, which often answers 503 to build machines: retry the
+        # configure (what's already built is kept) until those downloads go through
+        $ok = $false
+        for ($i = 1; $i -le 6; $i++) {
+          cmake -S . -B build-windows -G Ninja -DVCPKG_ROOT="${{github.workspace}}/vcpkg" -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBUILD_REMOTE_CONTROL=1 2>&1 | Tee-Object -FilePath "configure$i.log"
+          $code = $LASTEXITCODE
+          Get-Content "configure$i.log" | Add-Content build.log
+          $failed = ($code -ne 0) -or (Select-String -Path "configure$i.log" -Pattern "BUILD_FAILED" -Quiet)
+          if (-not $failed) { $ok = $true; break }
+          if (-not (Select-String -Path "configure$i.log" -Pattern "curl operation failed|Download failed" -Quiet)) { break }
+          Write-Host "::warning::A vcpkg download failed (GitHub busy), retrying in $(45 * $i) s"
+          Start-Sleep -Seconds (45 * $i)
+        }
+        if (-not $ok) { exit 1 }
+        # (nothing new to keep when vcpkg had everything already)
+        if (-not (Select-String -Path build.log -Pattern "Installing \d+/\d+" -Quiet)) { "VCPKG_UNCHANGED=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8 }
         cmake --build build-windows --config Release --parallel 10 2>&1 | Tee-Object -FilePath build.log -Append
         if ($LASTEXITCODE -ne 0) { exit 1 }
 
@@ -280,11 +295,11 @@ jobs:
         name: soh-windows
         path: soh-windows
     - name: Trim VCPKG folder
-      if: ${{ always() && github.ref_name == github.event.repository.default_branch && steps.restore-cache-vcpkg.outputs.cache-hit != 'true' && hashFiles('vcpkg/installed/vcpkg/status') != '' }}
+      if: ${{ always() && github.ref_name == github.event.repository.default_branch && env.VCPKG_UNCHANGED != '1' && hashFiles('vcpkg/.vcpkg-root') != '' }}
       shell: bash
       run: rm -rf vcpkg/buildtrees vcpkg/packages
     - name: Save Cache VCPKG folder
-      if: ${{ always() && github.ref_name == github.event.repository.default_branch && steps.restore-cache-vcpkg.outputs.cache-hit != 'true' && hashFiles('vcpkg/installed/vcpkg/status') != '' }}
+      if: ${{ always() && github.ref_name == github.event.repository.default_branch && env.VCPKG_UNCHANGED != '1' && hashFiles('vcpkg/.vcpkg-root') != '' }}
       uses: actions/cache/save@v5
       with:
         key: ${{ steps.restore-cache-vcpkg.outputs.cache-primary-key }}
