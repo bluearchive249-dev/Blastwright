@@ -4752,7 +4752,17 @@ static Gfx* BossGanon_Player_ArmorColor(GraphicsContext* gfxCtx, u8 pr, u8 pg, u
     return dl;
 }
 
+static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp);
+
 static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
+    if ((this != sPlayerGanondorf) || !sGdfLimbWorldValid || !BossGanon_Player_GoronLook()) {
+        return;
+    }
+    BossGanon_Player_DrawArmorOn(play, sGdfLimbWorld, BossGanon_Player_HeadHidden(this, play));
+}
+
+// (on his limbs as drawn: their matrices, his limb order)
+static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp) {
     static const char* sDLs[GDF_ARMOR_SLOTS] = {
         object_ik_DL_01C7B8, object_ik_DL_01CEE0, object_ik_DL_01CB58, object_ik_DL_01CCA0, object_ik_DL_01D638,
         object_ik_DL_01D2B0, object_ik_DL_01D3F8, NULL,                NULL,                object_ik_DL_01C130,
@@ -4772,11 +4782,6 @@ static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
     };
     Mtx* mtx;
     s32 i;
-    s32 fp = BossGanon_Player_HeadHidden(this, play);
-
-    if ((this != sPlayerGanondorf) || !sGdfLimbWorldValid || !BossGanon_Player_GoronLook()) {
-        return;
-    }
 
     mtx = Graph_Alloc(play->state.gfxCtx, GDF_ARMOR_SLOTS * sizeof(Mtx));
     Matrix_Push();
@@ -4784,7 +4789,7 @@ static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
         MtxF c;
 
         memcpy(&c, sGdfArmorMtx[i], sizeof(c));
-        Matrix_Put(&sGdfLimbWorld[sGdfArmorLimb[i]]);
+        Matrix_Put(&limbs[sGdfArmorLimb[i]]);
         Matrix_Mult(&c, MTXMODE_APPLY);
         Matrix_ToMtx(&mtx[i], __FILE__, __LINE__);
     }
@@ -18820,4 +18825,54 @@ s32 BossGanon_Player_BMode(void) {
         return 1;
     }
     return 0;
+}
+
+// SoH: "Play as Ganondorf" (single player, not Invasion): the equipment screen shows him instead of Link, in his idle
+// stance (and in Iron Knuckle armour with the Goron Tunic). Drawn into the pause screen's own view, already set up.
+static MtxF sGdfPauseLimbs[GDF_LIMB_COUNT_PLAYER];
+
+static void BossGanon_Player_PausePostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* arg) {
+    if ((limbIndex >= 1) && (limbIndex <= GDF_LIMB_COUNT_PLAYER)) {
+        Matrix_Get(&sGdfPauseLimbs[limbIndex - 1]);
+    }
+    if (limbIndex == 11) {
+        OPEN_DISPS(play->state.gfxCtx);
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gSPSegment(POLY_XLU_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(gGanondorfNormalEyeTex));
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gGanondorfEyesDL));
+        CLOSE_DISPS(play->state.gfxCtx);
+    }
+}
+
+s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot) {
+    static Vec3s sJoints[GDF_LIMB_COUNT_PLAYER + 1];
+    static u32 sTick = 0;
+    BossGanon* gdf = sPlayerGanondorf;
+    s32 last;
+
+    if ((gdf == NULL) || (GdfInvasion_Role() != 0) || (gdf->skelAnime.skeleton == NULL)) {
+        return false;
+    }
+
+    // His idle stance, breathing (on the pause screen's own clock: the game's is stopped)
+    last = Animation_GetLastFrame(gGanondorfStandIdleAnim);
+    sTick++;
+    SkelAnime_GetFrameData((AnimationHeader*)gGanondorfStandIdleAnim, (last > 0) ? ((sTick / 2) % (last + 1)) : 0,
+                           GDF_LIMB_COUNT_PLAYER + 1, sJoints);
+    sJoints[0].x = 0;
+    sJoints[0].z = 0;
+
+    // (framed like adult Link: feet at the bottom of the box, scaled down since he's much taller)
+    Matrix_SetTranslateRotateYXZ(25.0f, -232.0f, 60.0f, rot);
+    Matrix_Scale(0.026f * (CVarGetInteger(CVAR_ENHANCEMENT("MirroredWorld"), 0) ? -1 : 1), 0.026f, 0.026f,
+                 MTXMODE_APPLY);
+
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    SkelAnime_DrawFlexOpa(play, gdf->skelAnime.skeleton, sJoints, gdf->skelAnime.dListCount, NULL,
+                          BossGanon_Player_PausePostLimbDraw, NULL);
+    if (BossGanon_Player_GoronLook()) {
+        BossGanon_Player_DrawArmorOn(play, sGdfPauseLimbs, false);
+    }
+    return true;
 }

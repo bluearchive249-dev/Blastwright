@@ -24,6 +24,8 @@ s32 PlayAsGanondorf_BreathesUnderwater(PlayState* play, Player* player);
 
 // Called from Player_Draw. Link stays invisible while Ganondorf is shown.
 s32 PlayAsGanondorf_ShouldHideLink(PlayState* play, Player* player);
+// ovl_Boss_Ganon: the equipment screen's figure is him (single player); false to draw Link
+s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot);
 void PlayAsGanondorf_DelayDoorTransition(PlayState* play);
 s32 PlayAsGanondorf_IsCrawlFlame(PlayState* play, Player* player);
 s32 PlayAsGanondorf_UseGanonHorse(void);
