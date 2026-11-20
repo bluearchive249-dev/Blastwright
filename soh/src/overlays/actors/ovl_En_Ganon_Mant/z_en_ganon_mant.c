@@ -610,10 +610,59 @@ void EnGanonMant_Update(Actor* thisx, PlayState* play) {
     }
 }
 
-// SoH: "Play as Ganondorf", the Goron Tunic: his cape burns. Koume's hair (her flame textures, scrolling upward, in
-// her two layers' colors) laid over the cloth, drawn as a decal on the same vertices so it sits right on it.
+// SoH: "Play as Ganondorf", the Goron Tunic: his cape is pure flame. The cloth isn't drawn; its mesh is, see-through,
+// in Koume's hair's fire (her flame texture, rising, between her red and yellow), solid down to a hem of live flame
+// tongues that flicker and lick upward. Tears from his wounds (EnGanonMant_SetWear) are holes burnt through.
+// (The cape's texture coordinates run s down the cape, 0 at his shoulders to 64 at the hem, and t across it.)
+#define FLAME_TEX_S 64
+#define FLAME_TEX_T 64
+static u8 sFlameMaskTex[FLAME_TEX_S * FLAME_TEX_T / 2]; // I4
+static u32 sFlameMaskFrame = 0xFFFFFFFF;
+
+static void EnGanonMant_BuildFlameMask(u32 frame) {
+    s32 s;
+    s32 t;
+
+    if (frame == sFlameMaskFrame) {
+        return;
+    }
+    sFlameMaskFrame = frame;
+    for (t = 0; t < FLAME_TEX_T; t++) {
+        // Where this column's flame ends: tongues across the hem (four, then seven smaller, over the wrap of 64),
+        // each rising and falling at its own pace
+        f32 u = t * (2.0f * M_PI / FLAME_TEX_T);
+        f32 tongue = 0.55f * fabsf(sinf(u * 2.0f + frame * 0.09f)) + 0.3f * fabsf(sinf(u * 3.5f - frame * 0.13f + 1.7f)) +
+                     0.15f * sinf(u * 9.0f + frame * 0.31f);
+        f32 hem = 46.0f + 14.0f * tongue;
+
+        for (s = 0; s < FLAME_TEX_S; s++) {
+            f32 a;
+            s32 v;
+
+            if (s < hem - 6.0f) {
+                a = 1.0f;
+            } else if (s < hem) {
+                a = (hem - s) / 6.0f; // the tongue's tip thins out
+            } else {
+                a = 0.0f;
+            }
+            // (a hole wherever the cloth would be torn)
+            if (sMaskTex[(t & (MANT_TEX_HEIGHT - 1)) * MANT_TEX_WIDTH + (s & (MANT_TEX_WIDTH - 1))] != 0) {
+                a = 0.0f;
+            }
+            v = CLAMP((s32)(a * 15.0f + 0.5f), 0, 15);
+            if (s & 1) {
+                sFlameMaskTex[(t * FLAME_TEX_S + s) / 2] = (sFlameMaskTex[(t * FLAME_TEX_S + s) / 2] & 0xF0) | v;
+            } else {
+                sFlameMaskTex[(t * FLAME_TEX_S + s) / 2] = (sFlameMaskTex[(t * FLAME_TEX_S + s) / 2] & 0x0F) | (v << 4);
+            }
+        }
+    }
+}
+
 static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
-    static const u8 sLayers[2][4] = { { 100, 20, 0, 10 }, { 255, 70, 0, 15 } }; // prim color, scroll speed
+    // Two layers: the body of the fire, then a brighter flicker over it. Prim color, scroll speed down the cape
+    static const u8 sLayers[2][4] = { { 200, 30, 0, 9 }, { 255, 110, 0, 15 } };
     Gfx* mant = ResourceMgr_LoadGfxByName(gMantDL);
     Gfx* geom = NULL;
     u32 frames = play->gameplayFrames;
@@ -638,10 +687,12 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
     if ((geom == NULL) || (vtx == NULL)) {
         return;
     }
+    EnGanonMant_BuildFlameMask(frames);
 
     OPEN_DISPS(play->state.gfxCtx);
 
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gSPInvalidateTexCache(POLY_XLU_DISP++, sFlameMaskTex);
     gSPMatrix(POLY_XLU_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPSegment(POLY_XLU_DISP++, 0x0C, vtx);
     gDPPipeSync(POLY_XLU_DISP++);
@@ -649,18 +700,26 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
     gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
     gDPLoadTextureBlock(POLY_XLU_DISP++, gTwinrovaEffectTex, G_IM_FMT_I, G_IM_SIZ_8b, 32, 32, 0,
                         G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 5, G_TX_NOLOD, G_TX_NOLOD);
-    gDPLoadMultiBlock_4b(POLY_XLU_DISP++, gTwinrovaEffectMaskTex, 0x100, 1, G_IM_FMT_I, 32, 64, 0,
-                         G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 6, G_TX_NOLOD, G_TX_NOLOD);
-    // (Koume's hair's combiner: the two textures' flicker, between her two colors)
-    gDPSetCombine(POLY_XLU_DISP++, 0x262A60, 0xF50CE37F);
-    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_DECAL2);
-    gDPSetEnvColor(POLY_XLU_DISP++, 255, 240, 0, 128);
+    gDPLoadMultiBlock_4b(POLY_XLU_DISP++, sFlameMaskTex, 0x100, 1, G_IM_FMT_I, FLAME_TEX_S, FLAME_TEX_T, 0,
+                         G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
+    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_SURF2);
+    gDPSetEnvColor(POLY_XLU_DISP++, 255, 235, 40, 255);
     for (i = 0; i < 2; i++) {
         gDPPipeSync(POLY_XLU_DISP++);
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, sLayers[i][0], sLayers[i][1], sLayers[i][2], 255);
-        gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (i * 37) & 0x7F, 0, 32, 32, 1,
-                                                         (i * 53) & 0xFF, (-frames * sLayers[i][3]) & 0xFF, 32,
-                                                         64));
+        if (i == 0) {
+            // the flame's color between Koume's red and yellow by her texture; solid inside the flame's outline
+            gDPSetCombineLERP(POLY_XLU_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL1, 0, PRIMITIVE, 0,
+                              0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, sLayers[i][0], sLayers[i][1], sLayers[i][2], 255);
+        } else {
+            // the flicker: only where her texture is bright
+            gDPSetCombineLERP(POLY_XLU_DISP++, ENVIRONMENT, PRIMITIVE, TEXEL0, PRIMITIVE, TEXEL0, 0, TEXEL1, 0, 0,
+                              0, 0, COMBINED, 0, 0, 0, COMBINED);
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, sLayers[i][0], sLayers[i][1], sLayers[i][2], 180);
+        }
+        // (rising: the texture runs up the cape, s at his shoulders is 0)
+        gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (frames * sLayers[i][3]) & 0x7F,
+                                                         (i * 45) & 0x7F, 32, 32, 1, 0, 0, FLAME_TEX_S, FLAME_TEX_T));
         gSPDisplayList(POLY_XLU_DISP++, geom);
     }
 
@@ -709,10 +768,11 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         gSPSegmentLoadRes(POLY_OPA_DISP++, 0x0C, gMant2Vtx);
     }
 
-    // draw cloak
-    gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+    // draw cloak (SoH: with the Goron Tunic, flame in its place)
     if (this->ownVertices && BossGanon_Player_GoronLook()) {
         EnGanonMant_DrawFire(play, mtx, EnGanonMant_GetOwnVertices(this));
+    } else {
+        gSPDisplayList(POLY_OPA_DISP++, gMantDL);
     }
 
     if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
@@ -720,10 +780,11 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         void* hoodVtx = GanondorfHood_Build(this, play);
 
         if (hoodVtx != NULL) {
-            gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
-            gSPDisplayList(POLY_OPA_DISP++, gMantDL);
             if (BossGanon_Player_GoronLook()) {
                 EnGanonMant_DrawFire(play, mtx, hoodVtx);
+            } else {
+                gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
+                gSPDisplayList(POLY_OPA_DISP++, gMantDL);
             }
         }
     }
