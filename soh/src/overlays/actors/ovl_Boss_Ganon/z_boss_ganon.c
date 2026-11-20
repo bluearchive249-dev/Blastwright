@@ -6427,6 +6427,7 @@ static void BossGanon_Player_ApplyClipRoot(BossGanon* this, const Vec3s* root, s
 static void BossGanon_Player_ApplyClip(BossGanon* this, const Vec3s (*clip)[13], s32 count, f32 frame, s32 loop,
                                        f32 weight, f32 body);
 static const Vec3s sGdfClipRun[21][13];
+static const Vec3s sGdfClipStab[32][13];
 static const Vec3s sGdfClipJump[21][13];
 static const Vec3s sGdfClipLadder[24][13];
 static const Vec3s sGdfClipLadderTop[34][13];
@@ -9472,9 +9473,34 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
 void BossGanon_Player_SwordDash(BossGanon* this, PlayState* play) {
     Input* input = &play->state.input[0];
 
+    f32 t = this->playerDashTimer;
+    f32 w = BossGanon_Player_SmoothStep(CLAMP((t + 1.0f) / 2.0f, 0.0f, 1.0f) *
+                                        CLAMP((GDF_DASH_FRAMES - t) / 3.0f, 0.0f, 1.0f));
+
     SkelAnime_Update(&this->skelAnime);
     Math_ApproachZeroF(&this->playerWalkWeight, 1.0f, 0.3f);
+    // A lunging step: his legs in a long stride, right foot forward, and leaning into it
+    if (this->playerGrounded && (w > 0.0f)) {
+        f32 savedFrame = this->playerWalkFrame;
+        f32 savedWeight = this->playerWalkWeight;
+        f32 savedStride = this->playerWalkStride;
+
+        this->playerWalkFrame = GDF_LUNGE_FRAME;
+        this->playerWalkWeight = MAX(w, savedWeight);
+        this->playerWalkStride = 1.3f;
+        BossGanon_Player_ApplyWalk(this);
+        this->playerWalkFrame = savedFrame;
+        this->playerWalkWeight = savedWeight;
+        this->playerWalkStride = savedStride;
+    }
     BossGanon_Player_ApplyStanceArms(this);
+    if (BossGanon_Player_HasTrident()) {
+        // The trident drawn back for the thrust as he steps in (the stab's run-up, so B carries straight on into it)
+        BossGanon_Player_ApplyClip(this, sGdfClipStab, ARRAY_COUNT(sGdfClipStab), t * (11.0f / GDF_DASH_FRAMES),
+                                   false, w, 1.0f);
+    } else {
+        BossGanon_Player_TwistLean(this, 0.0f, 0x0C00 * w);
+    }
 
     this->playerDashTimer++;
     if (this->playerDashTimer > GDF_DASH_FRAMES / 2) {
