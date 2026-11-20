@@ -29,6 +29,7 @@
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h" // SoH: riding his horse
 #include "overlays/actors/ovl_En_Heishi1/z_en_heishi1.h" // SoH: guards hunting him after a murder
 #include "overlays/actors/ovl_En_Door/z_en_door.h" // SoH: he kicks doors open
+#include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h" // SoH: his blue warp pose
 #include "overlays/actors/ovl_En_Fhg_Fire/z_en_fhg_fire.h" // SoH: Phantom Ganon's lightning, from his trident
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h" // SoH: ...locked, barred and chained ones too
@@ -7176,17 +7177,27 @@ void BossGanon_Player_CsKneel(BossGanon* this, PlayState* play);
 
 static s32 BossGanon_Player_ShouldBrood(PlayState* play);
 
-// A blue warp has Link: he's walked to its middle (a cutscene action only the warps use) and is taken up
+// A blue warp has Link: from the moment it takes him (the warp's own warp-out, child, Ruto's or adult; or the cutscene
+// action only the warps give him) until the scene changes
+void DoorWarp1_ChildWarpOut(DoorWarp1* this, PlayState* play);
+void DoorWarp1_RutoWarpOut(DoorWarp1* this, PlayState* play);
+void DoorWarp1_AdultWarpOut(DoorWarp1* this, PlayState* play);
 static s32 BossGanon_Player_Warping(PlayState* play) {
     Player* player = GET_PLAYER(play);
     Actor* a;
 
-    if ((player->csAction != PLAYER_CSACTION_10) || !(player->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE)) {
-        return false;
-    }
     for (a = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head; a != NULL; a = a->next) {
-        if ((a->id == ACTOR_DOOR_WARP1) && (Actor_WorldDistXZToActor(a, &player->actor) < 300.0f)) {
-            return true;
+        if (a->id == ACTOR_DOOR_WARP1) {
+            DoorWarp1* warp = (DoorWarp1*)a;
+
+            if ((warp->actionFunc == DoorWarp1_ChildWarpOut) || (warp->actionFunc == DoorWarp1_RutoWarpOut) ||
+                (warp->actionFunc == DoorWarp1_AdultWarpOut)) {
+                return true;
+            }
+            if ((player->csAction == PLAYER_CSACTION_10) && (player->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE) &&
+                (Actor_WorldDistXZToActor(a, &player->actor) < 300.0f)) {
+                return true;
+            }
         }
     }
     return false;
