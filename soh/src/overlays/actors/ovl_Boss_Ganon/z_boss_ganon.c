@@ -30,6 +30,7 @@
 #include "overlays/actors/ovl_En_Heishi1/z_en_heishi1.h" // SoH: guards hunting him after a murder
 #include "overlays/actors/ovl_En_Door/z_en_door.h" // SoH: he kicks doors open
 #include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h" // SoH: his blue warp pose
+#include "overlays/actors/ovl_Bg_Spot06_Objects/z_bg_spot06_objects.h" // SoH: the Water Temple gate's lock
 #include "overlays/actors/ovl_En_Fhg_Fire/z_en_fhg_fire.h" // SoH: Phantom Ganon's lightning, from his trident
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h" // SoH: ...locked, barred and chained ones too
@@ -7868,9 +7869,14 @@ static void BossGanon_Player_AimRot(Vec3f* from, Vec3f* to, s16* rotX, s16* rotY
 }
 
 // Closest targetable enemy in front of `from`
-// Puzzle targets that are meant to be shot: eye switches, crystal switches, sun switches and unlit torches
+// Puzzle targets that are meant to be shot: eye switches, crystal switches, sun switches and unlit torches, and the
+// fish-shaped lock on the Water Temple's gate that Link pulls out with the hookshot (his light ball counts as a hookshot
+// hit, so it pulls the lock out)
+void BgSpot06Objects_LockWait(BgSpot06Objects* this, PlayState* play);
 static s32 BossGanon_Player_IsPuzzleTarget(Actor* actor) {
     switch (actor->id) {
+        case ACTOR_BG_SPOT06_OBJECTS:
+            return (actor->params == 1) && (((BgSpot06Objects*)actor)->actionFunc == BgSpot06Objects_LockWait);
         case ACTOR_OBJ_SWITCH: {
             s32 type = actor->params & 7;
 
