@@ -611,9 +611,10 @@ void EnGanonMant_Update(Actor* thisx, PlayState* play) {
 }
 
 // SoH: "Play as Ganondorf", the Goron Tunic: his cape is pure flame. The cloth isn't drawn; its mesh is, see-through,
-// in Koume's hair's fire (her flame texture, streaming down from his neck, between her red and yellow), solid down to a hem of live flame
-// tongues that flicker and lick upward. Tears from his wounds (EnGanonMant_SetWear) are holes burnt through.
-// (The cape's texture coordinates run s down the cape, 0 at his shoulders to 64 at the hem, and t across it.)
+// in Koume's hair's fire (her flame texture, streaming down from his neck, between her red and yellow), solid down to
+// a hem of live flame tongues that flicker. Tears from his wounds (EnGanonMant_SetWear) are holes burnt through.
+// (The cape's texture coordinates: s runs across it, 0 to 64 texels; t runs down it, -16 at his neck to 68 at the
+// hem. The mask is read at half t, so its 64 rows cover -8..34 of that, wrapping: rows 56-63 are -8..-1.)
 #define FLAME_TEX_S 64
 #define FLAME_TEX_T 64
 static u8 sFlameMaskTex[FLAME_TEX_S * FLAME_TEX_T / 2]; // I4
@@ -621,40 +622,42 @@ static u32 sFlameMaskFrame = 0xFFFFFFFF;
 
 static void EnGanonMant_BuildFlameMask(u32 frame) {
     s32 s;
-    s32 t;
+    s32 r;
 
     if (frame == sFlameMaskFrame) {
         return;
     }
     sFlameMaskFrame = frame;
-    for (t = 0; t < FLAME_TEX_T; t++) {
-        // Where this column's flame ends: tongues across the hem (four, then seven smaller, over the wrap of 64),
-        // each rising and falling at its own pace
-        f32 u = t * (2.0f * M_PI / FLAME_TEX_T);
+    for (s = 0; s < FLAME_TEX_S; s++) {
+        // Where this strip of the cape's flame ends (in half texels down it, the hem is at 34): tongues along the
+        // hem, each lengthening and shortening at its own pace
+        f32 u = s * (2.0f * M_PI / FLAME_TEX_S);
         f32 tongue = 0.55f * fabsf(sinf(u * 2.0f + frame * 0.09f)) + 0.3f * fabsf(sinf(u * 3.5f - frame * 0.13f + 1.7f)) +
                      0.15f * sinf(u * 9.0f + frame * 0.31f);
-        f32 hem = 46.0f + 14.0f * tongue;
+        f32 hem = 26.0f + 8.0f * tongue;
 
-        for (s = 0; s < FLAME_TEX_S; s++) {
+        for (r = 0; r < FLAME_TEX_T; r++) {
+            f32 t = (r < 48) ? r : (r - 64); // (half texels down the cape)
             f32 a;
             s32 v;
 
-            if (s < hem - 6.0f) {
+            if (t < hem - 3.0f) {
                 a = 1.0f;
-            } else if (s < hem) {
-                a = (hem - s) / 6.0f; // the tongue's tip thins out
+            } else if (t < hem) {
+                a = (hem - t) / 3.0f; // the tongue's tip thins out
             } else {
                 a = 0.0f;
             }
             // (a hole wherever the cloth would be torn)
-            if (sMaskTex[(t & (MANT_TEX_HEIGHT - 1)) * MANT_TEX_WIDTH + (s & (MANT_TEX_WIDTH - 1))] != 0) {
+            if (sMaskTex[(((s32)(t * 2.0f)) & (MANT_TEX_HEIGHT - 1)) * MANT_TEX_WIDTH + (s & (MANT_TEX_WIDTH - 1))] !=
+                0) {
                 a = 0.0f;
             }
             v = CLAMP((s32)(a * 15.0f + 0.5f), 0, 15);
             if (s & 1) {
-                sFlameMaskTex[(t * FLAME_TEX_S + s) / 2] = (sFlameMaskTex[(t * FLAME_TEX_S + s) / 2] & 0xF0) | v;
+                sFlameMaskTex[(r * FLAME_TEX_S + s) / 2] = (sFlameMaskTex[(r * FLAME_TEX_S + s) / 2] & 0xF0) | v;
             } else {
-                sFlameMaskTex[(t * FLAME_TEX_S + s) / 2] = (sFlameMaskTex[(t * FLAME_TEX_S + s) / 2] & 0x0F) | (v << 4);
+                sFlameMaskTex[(r * FLAME_TEX_S + s) / 2] = (sFlameMaskTex[(r * FLAME_TEX_S + s) / 2] & 0x0F) | (v << 4);
             }
         }
     }
@@ -698,10 +701,11 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
     gDPPipeSync(POLY_XLU_DISP++);
     gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH | G_LIGHTING);
     gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    // (her flame texture stretched over the whole cape once: half across it, a quarter down it)
     gDPLoadTextureBlock(POLY_XLU_DISP++, gTwinrovaEffectTex, G_IM_FMT_I, G_IM_SIZ_8b, 32, 32, 0,
-                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 5, G_TX_NOLOD, G_TX_NOLOD);
+                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 5, 1, 2);
     gDPLoadMultiBlock_4b(POLY_XLU_DISP++, sFlameMaskTex, 0x100, 1, G_IM_FMT_I, FLAME_TEX_S, FLAME_TEX_T, 0,
-                         G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
+                         G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 0, 1);
     gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_SURF2);
     gDPSetEnvColor(POLY_XLU_DISP++, 255, 235, 40, 255);
     for (i = 0; i < 2; i++) {
@@ -717,9 +721,10 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
                               0, 0, COMBINED, 0, 0, 0, COMBINED);
             gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, sLayers[i][0], sLayers[i][1], sLayers[i][2], 180);
         }
-        // (pouring from his neck down the cape: s at his shoulders is 0, and the texture runs toward the hem)
-        gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (0u - frames * sLayers[i][3]) & 0x7F,
-                                                         (i * 45) & 0x7F, 32, 32, 1, 0, 0, FLAME_TEX_S, FLAME_TEX_T));
+        // (pouring from his neck down the cape: t runs toward the hem, so the texture moves to higher t)
+        gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (i * 45) & 0x7F,
+                                                         (0u - frames * sLayers[i][3]) & 0x7F, 32, 32, 1, 0, 0,
+                                                         FLAME_TEX_S, FLAME_TEX_T));
         gSPDisplayList(POLY_XLU_DISP++, geom);
     }
 
