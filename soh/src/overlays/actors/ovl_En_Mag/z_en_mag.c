@@ -745,7 +745,7 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
             gSPTextureRectangle(gfx++, creditLeft << 2, 198 << 2, (creditLeft + GDF_CREDIT_WIDTH) << 2,
                                 (198 + GDF_CREDIT_HEIGHT) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
 
-            // "Pre-Release" centred under it
+            // "1.0 Release" centred under it
             gDPLoadTextureBlock(gfx++, sGdfPreReleaseTex, G_IM_FMT_IA, G_IM_SIZ_8b, GDF_PRERELEASE_WIDTH,
                                 GDF_PRERELEASE_HEIGHT, 0, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP,
                                 G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
