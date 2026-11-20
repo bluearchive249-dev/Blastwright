@@ -3957,6 +3957,13 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
         *dList = NULL;
     }
 
+    // SoH: "Play as Ganondorf", in the Iron Knuckle's armour his own shoulders aren't drawn (as on the Iron Knuckle,
+    // nothing under the pauldrons: its arm guards, sewn to the breastplate, cover them), so they don't clip through
+    if (((limbIndex == 3) || (limbIndex == 7)) && (this == sPlayerGanondorf) && !sGdfPgCapture &&
+        BossGanon_Player_GoronLook()) {
+        *dList = NULL;
+    }
+
     // SoH: "Play as Ganondorf", the upper half of his hair (limb 14) hangs from his torso's way, not his head's
     if ((limbIndex == 15) && GDF_IS_PLAYER(this) && sGdfHairTorsoValid) {
         BossGanon_Player_HairOverride(this, rot);
@@ -4728,10 +4735,10 @@ static const f32 sGdfArmorMtx[GDF_ARMOR_SLOTS][16] = {
     { 3.0461f, -0.0000f, -0.0000f, 0.0000f, 0.1150f, 2.8373f, 1.7070f, 0.0000f, 0.1553f, -2.3291f, 1.9496f, 0.0000f, -236.0f, 75.4f, -178.6f, 1.0000f }, // limb 19
     { 1.7295f, 0.0000f, 0.0000f, 0.0000f, 0.2064f, -0.0321f, 2.1681f, 0.0000f, 0.0469f, -1.8585f, 0.0548f, 0.0000f, 338.1f, -357.1f, 85.4f, 1.0000f }, // limb 20
     { 1.6096f, -0.0000f, -0.0000f, 0.0000f, -0.0801f, 1.7236f, -0.7009f, 0.0000f, 0.1345f, 0.7122f, 1.5794f, 0.0000f, -167.2f, 21.3f, 43.9f, 1.0000f }, // limb 21
-    { -0.2323f, -0.1633f, 1.4880f, 0.0000f, 1.5099f, -0.2473f, 0.2069f, 0.0000f, 0.1945f, 1.7247f, 0.1706f, 0.0000f, 2008.5f, -0.0000f, 1249.1f, 1.0000f }, // limb 22
-    { -0.6550f, 0.2269f, 1.3543f, 0.0000f, 1.3911f, 0.0000f, 0.6486f, 0.0000f, 0.0856f, 1.7352f, -0.1771f, 0.0000f, 1860.0f, -0.0000f, 1608.7f, 1.0000f }, // limb 23
-    { -0.2729f, 0.0705f, -1.4868f, 0.0000f, 1.5153f, 0.0519f, -0.2662f, 0.0000f, 0.0340f, -1.7478f, -0.0679f, 0.0000f, 2008.5f, -0.0000f, -1249.1f, 1.0000f }, // limb 24
-    { -0.7120f, 0.1372f, -1.3354f, 0.0000f, 1.3654f, 0.0937f, -0.6946f, 0.0000f, 0.0174f, -1.7421f, -0.1425f, 0.0000f, 1860.0f, -0.0000f, -1608.7f, 1.0000f }, // limb 25
+    { -0.1991f, -0.1400f, 1.2754f, 0.0000f, 1.2942f, -0.2120f, 0.1774f, 0.0000f, 0.1667f, 1.4783f, 0.1462f, 0.0000f, 2028.5f, -0.0000f, 1179.1f, 1.0000f }, // limb 22
+    { -0.5614f, 0.1945f, 1.1608f, 0.0000f, 1.1924f, 0.0000f, 0.5559f, 0.0000f, 0.0734f, 1.4873f, -0.1518f, 0.0000f, 1880.0f, -0.0000f, 1538.7f, 1.0000f }, // limb 23
+    { -0.2339f, 0.0605f, -1.2744f, 0.0000f, 1.2988f, 0.0445f, -0.2282f, 0.0000f, 0.0291f, -1.4981f, -0.0582f, 0.0000f, 2028.5f, -0.0000f, -1179.1f, 1.0000f }, // limb 24
+    { -0.6103f, 0.1176f, -1.1447f, 0.0000f, 1.1704f, 0.0803f, -0.5953f, 0.0000f, 0.0149f, -1.4932f, -0.1222f, 0.0000f, 1880.0f, -0.0000f, -1538.7f, 1.0000f }, // limb 25
     { 1.1000f, -0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.2500f, -0.0000f, 0.0000f, -0.0000f, 0.0000f, 1.0800f, 0.0000f, -60.0f, -0.0000f, -0.0000f, 1.0000f }, // limb 26
     { 1.1000f, -0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.2500f, -0.0000f, 0.0000f, -0.0000f, 0.0000f, 1.0800f, 0.0000f, -60.0f, -0.0000f, -0.0000f, 1.0000f }, // limb 27
     { 1.1000f, -0.0000f, 0.0000f, 0.0000f, 0.0000f, 1.2500f, -0.0000f, 0.0000f, -0.0000f, 0.0000f, 1.0800f, 0.0000f, -60.0f, -0.0000f, -0.0000f, 1.0000f }, // limb 28
@@ -18836,6 +18843,14 @@ s32 BossGanon_Player_BMode(void) {
 // stance (and in Iron Knuckle armour with the Goron Tunic). Drawn into the pause screen's own view, already set up.
 static MtxF sGdfPauseLimbs[GDF_LIMB_COUNT_PLAYER];
 
+static s32 BossGanon_Player_PauseOverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos,
+                                                  Vec3s* rot, void* arg) {
+    if (((limbIndex == 3) || (limbIndex == 7)) && BossGanon_Player_GoronLook()) {
+        *dList = NULL; // (his shoulders, under the armour)
+    }
+    return false;
+}
+
 static void BossGanon_Player_PausePostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* arg) {
     if ((limbIndex >= 1) && (limbIndex <= GDF_LIMB_COUNT_PLAYER)) {
         Matrix_Get(&sGdfPauseLimbs[limbIndex - 1]);
@@ -18874,8 +18889,8 @@ s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot) {
                  MTXMODE_APPLY);
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    SkelAnime_DrawFlexOpa(play, gdf->skelAnime.skeleton, sJoints, gdf->skelAnime.dListCount, NULL,
-                          BossGanon_Player_PausePostLimbDraw, NULL);
+    SkelAnime_DrawFlexOpa(play, gdf->skelAnime.skeleton, sJoints, gdf->skelAnime.dListCount,
+                          BossGanon_Player_PauseOverrideLimbDraw, BossGanon_Player_PausePostLimbDraw, NULL);
     if (BossGanon_Player_GoronLook()) {
         BossGanon_Player_DrawArmorOn(play, sGdfPauseLimbs, false);
     }
