@@ -9299,6 +9299,61 @@ static void BossGanon_Player_SwordImpact(BossGanon* this, PlayState* play, f32 r
     BossGanon_Player_SetAT(this, play);
 }
 
+static void BossGanon_Player_GrabRagdoll(Actor* actor);
+static u8 sGdfPunchLaunched = false; // this punch has sent someone flying
+
+// The fists send people flying (unhurt): the nearest one his fist reaches goes up as a ragdoll, launched the way he
+// punched, and picks themselves up where they land (the throat grab's throw, without the grab)
+static void BossGanon_Player_PunchLaunch(BossGanon* this, PlayState* play, f32 reach, f32 speed, f32 up) {
+    Vec3f fist = { (this->playerBladeBase.x + this->playerBladeTip.x) * 0.5f,
+                   (this->playerBladeBase.y + this->playerBladeTip.y) * 0.5f,
+                   (this->playerBladeBase.z + this->playerBladeTip.z) * 0.5f };
+    Actor* best = NULL;
+    f32 bestDist = reach;
+    Actor* actor;
+
+    if (sGdfPunchLaunched || (sGdfGrabState != GDF_GRAB_NONE) || !this->playerBladeValid ||
+        !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Ragdolls"), 1)) {
+        return;
+    }
+    for (actor = play->actorCtx.actorLists[ACTORCAT_NPC].head; actor != NULL; actor = actor->next) {
+        f32 dist;
+        f32 top;
+
+        if ((actor->update == NULL) || (actor->draw == NULL) || (actor->id == ACTOR_EN_HORSE) ||
+            (GdfInvasion_DummyClientId(actor) != 0)) {
+            continue;
+        }
+        top = MAX(actor->focus.pos.y, actor->world.pos.y + 20.0f);
+        if ((fist.y < actor->world.pos.y - 10.0f) || (fist.y > top + 25.0f)) {
+            continue;
+        }
+        dist = sqrtf(SQ(actor->world.pos.x - fist.x) + SQ(actor->world.pos.z - fist.z));
+        if (dist < bestDist) {
+            best = actor;
+            bestDist = dist;
+        }
+    }
+    if (best == NULL) {
+        return;
+    }
+    sGdfPunchLaunched = true;
+    sGdfGrabActor = best;
+    sGdfGrabNetClient = 0;
+    sGdfGrabIsEnemy = false;
+    sGdfGrabOrigCategory = best->category;
+    Actor_ChangeCategory(play, &play->actorCtx, best, ACTORCAT_CHEST);
+    sGdfGrabNeck = CLAMP(best->focus.pos.y - best->world.pos.y, 15.0f, 110.0f);
+    best->freezeTimer = 2;
+    sGdfGrabState = GDF_GRAB_FLYING;
+    sGdfGrabVel.x = Math_SinS(this->actor.shape.rot.y) * speed;
+    sGdfGrabVel.z = Math_CosS(this->actor.shape.rot.y) * speed;
+    sGdfGrabVel.y = up;
+    Audio_PlayActorSound2(best, NA_SE_PL_BODY_HIT);
+    Audio_PlayActorSound2(best, NA_SE_EN_DARUNIA_HIT_BREAST);
+    BossGanon_Player_GrabRagdoll(best);
+}
+
 static s8 sGdfPunchStop = 0;  // hit stop frames left
 static s8 sGdfPunchLast = -10; // the attack frame the last punch connected on
 
@@ -9469,6 +9524,18 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
             this->playerSwordQuad.base.atFlags &= ~AT_HIT;
             this->collider.base.atFlags &= ~AT_HIT;
             sGdfPunchLast = -10;
+            sGdfPunchLaunched = false;
+        }
+        // People (not monsters) caught by the fist go flying, unhurt: a shove, sideways, up off their feet
+        if ((sGdfPunchStop == 0) && (this->playerSwordTimer >= atk->activeStart) &&
+            (this->playerSwordTimer <= atk->activeEnd)) {
+            u8 upper = this->playerSwordAttack == GDF_SWORD_ATK_FIST3;
+
+            BossGanon_Player_PunchLaunch(this, play, 45.0f, upper ? 5.0f : 11.0f, upper ? 17.0f : 6.0f);
+            if (sGdfPunchLaunched && (sGdfPunchLast < 0)) {
+                sGdfPunchLast = this->playerSwordTimer;
+                BossGanon_Player_PunchImpact(this, play);
+            }
         }
         if ((sGdfPunchStop == 0) && (this->playerSwordTimer >= atk->activeStart) &&
             (this->playerSwordTimer <= atk->activeEnd + 1) && (this->playerSwordTimer - sGdfPunchLast >= 4) &&
@@ -12938,6 +13005,9 @@ static void BossGanon_Player_WarlockImpact(BossGanon* this, PlayState* play) {
 
     Actor_RequestQuakeAndRumble(&this->actor, play, 10, 22);
     Rumble_Request(0.0f, 255, 25, 10);
+    // Someone in its way is blown away (unhurt)
+    sGdfPunchLaunched = false;
+    BossGanon_Player_PunchLaunch(this, play, 80.0f, 20.0f, 13.0f);
     sGdfWarlockBurst = 1;
     sGdfWarlockBurstPos = pos;
     sGdfWarlockBurstYaw = this->actor.shape.rot.y;
