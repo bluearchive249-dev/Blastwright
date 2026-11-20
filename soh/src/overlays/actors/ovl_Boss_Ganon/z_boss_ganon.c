@@ -15886,6 +15886,23 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
         }
     }
 
+    // The Water Temple gate's fish-shaped lock only takes the hookshot, which his attacks don't count as (enemies
+    // would treat every hit as a hookshot pull): a ball reaching it, even as it bursts on the gate, pulls it out
+    if (!hitSomething && (this->unk_1A6 == 0)) {
+        Actor* lock;
+
+        for (lock = play->actorCtx.actorLists[ACTORCAT_PROP].head; lock != NULL; lock = lock->next) {
+            if ((lock->id == ACTOR_BG_SPOT06_OBJECTS) && (lock->params == 1) &&
+                (((BgSpot06Objects*)lock)->actionFunc == BgSpot06Objects_LockWait) &&
+                (Math_Vec3f_DistXYZ(&this->actor.world.pos, &lock->world.pos) < 70.0f)) {
+                ((BgSpot06Objects*)lock)->collider.base.acFlags |= AC_HIT;
+                hitSomething = true;
+                burst = true;
+                break;
+            }
+        }
+    }
+
     // Also on the frame it bursts against a wall or floor: eye switches and the like sit right on the surface,
     // and the wall check can stop the ball before its hitbox reaches them. (In Invasion mode, near a Link it doesn't
     // hit here: his own game decides whether he sent it back)
