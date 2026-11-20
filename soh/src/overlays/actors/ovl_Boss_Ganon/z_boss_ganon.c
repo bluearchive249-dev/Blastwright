@@ -9299,59 +9299,155 @@ static void BossGanon_Player_SwordImpact(BossGanon* this, PlayState* play, f32 r
     BossGanon_Player_SetAT(this, play);
 }
 
-static void BossGanon_Player_GrabRagdoll(Actor* actor);
+static void BossGanon_Player_GrabSlam(PlayState* play, Actor* actor, Actor* from);
+Actor* BossGanon_Player_GetGrabbedActor(void);
 static u8 sGdfPunchLaunched = false; // this punch has sent someone flying
 
-// The fists send people flying (unhurt): the nearest one his fist reaches goes up as a ragdoll, launched the way he
-// punched, and picks themselves up where they land (the throat grab's throw, without the grab)
+// The fists send people flying (unhurt), several at once: each one a ragdoll of their own (GanondorfRagdoll.c slots
+// 1 and up; the throat grab's throw is slot 0), launched the way he punched, picking themselves up where they land
+#define GDF_LAUNCH_MAX (GDF_RAGDOLL_SLOTS - 1)
+#define GDF_LAUNCH_DOWN_FRAMES 30
+typedef struct {
+    Actor* actor;
+    u8 state; // 0 free, 1 flying, 2 lying there
+    u8 landed;
+    s16 timer;
+    s16 scene; // (a scene change lets them go: a new actor could sit at the same address)
+} GdfLaunch;
+static GdfLaunch sGdfLaunch[GDF_LAUNCH_MAX];
+
+static s32 BossGanon_Player_IsLaunched(Actor* actor) {
+    s32 i;
+
+    for (i = 0; i < GDF_LAUNCH_MAX; i++) {
+        if ((sGdfLaunch[i].state != 0) && (sGdfLaunch[i].actor == actor)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Everyone within `reach` of his fist (at its height) goes flying, as many as there are free ragdolls
 static void BossGanon_Player_PunchLaunch(BossGanon* this, PlayState* play, f32 reach, f32 speed, f32 up) {
     Vec3f fist = { (this->playerBladeBase.x + this->playerBladeTip.x) * 0.5f,
                    (this->playerBladeBase.y + this->playerBladeTip.y) * 0.5f,
                    (this->playerBladeBase.z + this->playerBladeTip.z) * 0.5f };
-    Actor* best = NULL;
-    f32 bestDist = reach;
     Actor* actor;
+    s32 slot;
 
-    if (sGdfPunchLaunched || (sGdfGrabState != GDF_GRAB_NONE) || !this->playerBladeValid ||
-        !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Ragdolls"), 1)) {
+    if (!this->playerBladeValid || !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Ragdolls"), 1)) {
         return;
     }
     for (actor = play->actorCtx.actorLists[ACTORCAT_NPC].head; actor != NULL; actor = actor->next) {
-        f32 dist;
         f32 top;
+        Vec3f vel;
 
         if ((actor->update == NULL) || (actor->draw == NULL) || (actor->id == ACTOR_EN_HORSE) ||
-            (GdfInvasion_DummyClientId(actor) != 0)) {
+            (GdfInvasion_DummyClientId(actor) != 0) || BossGanon_Player_IsLaunched(actor) ||
+            (actor == BossGanon_Player_GetGrabbedActor())) {
             continue;
         }
         top = MAX(actor->focus.pos.y, actor->world.pos.y + 20.0f);
-        if ((fist.y < actor->world.pos.y - 10.0f) || (fist.y > top + 25.0f)) {
+        if ((fist.y < actor->world.pos.y - 10.0f) || (fist.y > top + 25.0f) ||
+            (SQ(actor->world.pos.x - fist.x) + SQ(actor->world.pos.z - fist.z) > SQ(reach))) {
             continue;
         }
-        dist = sqrtf(SQ(actor->world.pos.x - fist.x) + SQ(actor->world.pos.z - fist.z));
-        if (dist < bestDist) {
-            best = actor;
-            bestDist = dist;
+        for (slot = 0; slot < GDF_LAUNCH_MAX; slot++) {
+            if (sGdfLaunch[slot].state == 0) {
+                break;
+            }
+        }
+        if (slot == GDF_LAUNCH_MAX) {
+            return; // (all of them still flying or lying there)
+        }
+        sGdfPunchLaunched = true;
+        sGdfLaunch[slot].actor = actor;
+        sGdfLaunch[slot].state = 1;
+        sGdfLaunch[slot].landed = false;
+        sGdfLaunch[slot].timer = 0;
+        sGdfLaunch[slot].scene = play->sceneNum;
+        actor->freezeTimer = 2;
+        vel.x = Math_SinS(this->actor.shape.rot.y) * speed;
+        vel.z = Math_CosS(this->actor.shape.rot.y) * speed;
+        vel.y = up;
+        GdfRagdoll_BeginSlot(slot + 1, actor, &vel);
+        Audio_PlayActorSound2(actor, NA_SE_PL_BODY_HIT);
+        Audio_PlayActorSound2(actor, NA_SE_EN_DARUNIA_HIT_BREAST);
+    }
+}
+
+// Each frame: the ones flying tumble, slam into the ground, lie there a moment, then get up (their own update held
+// off meanwhile)
+static void BossGanon_Player_UpdateLaunched(BossGanon* this, PlayState* play) {
+    s32 i;
+
+    for (i = 0; i < GDF_LAUNCH_MAX; i++) {
+        GdfLaunch* l = &sGdfLaunch[i];
+        Actor* actor = l->actor;
+        Actor* a;
+        u8 alive = false;
+
+        if (l->state == 0) {
+            continue;
+        }
+        if (l->scene != play->sceneNum) {
+            GdfRagdoll_CancelSlot(i + 1);
+            l->state = 0;
+            l->actor = NULL;
+            continue;
+        }
+        for (a = play->actorCtx.actorLists[ACTORCAT_NPC].head; a != NULL; a = a->next) {
+            if (a == actor) {
+                alive = actor->update != NULL;
+                break;
+            }
+        }
+        if (!alive || (GdfRagdoll_StateSlot(i + 1, actor) == 0)) {
+            // Gone, or no ragdoll could be made of them (or it's done): theirs again
+            if (alive) {
+                actor->freezeTimer = 0;
+            }
+            GdfRagdoll_CancelSlot(i + 1);
+            l->state = 0;
+            l->actor = NULL;
+            continue;
+        }
+        if (GdfRagdoll_StateSlot(i + 1, actor) == 3) {
+            continue; // getting up: blending back into their own animation, moving again
+        }
+        actor->freezeTimer = 2;
+        l->timer++;
+        if (GdfRagdoll_StateSlot(i + 1, actor) == 1) {
+            GdfRagdoll_StepSlot(play, i + 1); // (made when they're next drawn)
+            continue;
+        }
+        if (GdfRagdoll_StepSlot(play, i + 1)) {
+            GdfRagdoll_AnchorSlot(play, i + 1, &actor->world.pos);
+            BossGanon_Player_GrabSlam(play, actor, &this->actor);
+            l->landed = true;
+        }
+        GdfRagdoll_AnchorSlot(play, i + 1, &actor->world.pos);
+        actor->shape.rot.x = actor->world.rot.x = 0;
+        actor->shape.rot.z = actor->world.rot.z = 0;
+        actor->velocity.x = actor->velocity.y = actor->velocity.z = 0.0f;
+        actor->speedXZ = 0.0f;
+        actor->prevPos = actor->world.pos;
+        actor->focus.pos = actor->world.pos;
+        if (l->state == 1) {
+            if (((l->timer > 20) && (GdfRagdoll_MaxSpeedSlot(i + 1) < 0.8f)) || (l->timer > 90)) {
+                if (!l->landed) {
+                    BossGanon_Player_GrabSlam(play, actor, &this->actor);
+                }
+                l->state = 2;
+                l->timer = 0;
+            }
+        } else if (l->timer >= GDF_LAUNCH_DOWN_FRAMES) {
+            // Up again, dusting themselves off
+            Actor_SpawnFloorDustRing(play, actor, &actor->world.pos, 20.0f, 6, 3.0f, 300, 15, false);
+            actor->freezeTimer = 0;
+            GdfRagdoll_GetUpSlot(i + 1);
         }
     }
-    if (best == NULL) {
-        return;
-    }
-    sGdfPunchLaunched = true;
-    sGdfGrabActor = best;
-    sGdfGrabNetClient = 0;
-    sGdfGrabIsEnemy = false;
-    sGdfGrabOrigCategory = best->category;
-    Actor_ChangeCategory(play, &play->actorCtx, best, ACTORCAT_CHEST);
-    sGdfGrabNeck = CLAMP(best->focus.pos.y - best->world.pos.y, 15.0f, 110.0f);
-    best->freezeTimer = 2;
-    sGdfGrabState = GDF_GRAB_FLYING;
-    sGdfGrabVel.x = Math_SinS(this->actor.shape.rot.y) * speed;
-    sGdfGrabVel.z = Math_CosS(this->actor.shape.rot.y) * speed;
-    sGdfGrabVel.y = up;
-    Audio_PlayActorSound2(best, NA_SE_PL_BODY_HIT);
-    Audio_PlayActorSound2(best, NA_SE_EN_DARUNIA_HIT_BREAST);
-    BossGanon_Player_GrabRagdoll(best);
 }
 
 static s8 sGdfPunchStop = 0;  // hit stop frames left
@@ -15075,6 +15171,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
     this->actionFunc(this, play);
     BossGanon_Player_UpdateGrabbed(this, play);
+    BossGanon_Player_UpdateLaunched(this, play);
 
     {
         // The dark aura handles his legs itself (it walks)

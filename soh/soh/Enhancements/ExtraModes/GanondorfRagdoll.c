@@ -35,7 +35,7 @@ typedef struct {
     f32 m[3][3];
 } RdMat;
 
-static struct {
+typedef struct {
     Actor* actor;
     void** skeleton;
     s32 state;
@@ -55,7 +55,19 @@ static struct {
     s32 blend;
     Vec3s pose[RD_MAX_LIMBS + 1];
     Vec3s out[RD_MAX_LIMBS + 1];
-} sRd;
+} RdState;
+
+// Several at once: slot 0 for the one he throws, the others for the ones his fists send flying. Everything below works
+// on the current slot (sRd).
+static RdState sRdSlots[GDF_RAGDOLL_SLOTS];
+static RdState* sRdCur = &sRdSlots[0];
+#define sRd (*sRdCur)
+
+static void Rd_ImplCancel(void);
+
+static RdState* Rd_Slot(s32 slot) {
+    return &sRdSlots[CLAMP(slot, 0, GDF_RAGDOLL_SLOTS - 1)];
+}
 
 // ---- small 3x3 rotation helpers (v' = M v; the engine's joints rotate Z, then Y, then X: R = Rz Ry Rx) ----
 
@@ -382,12 +394,12 @@ static s32 Rd_Build(PlayState* play, void** skeleton, Vec3s* jointTable) {
 
 // ---- the physics ----
 
-s32 GdfRagdoll_Step(PlayState* play) {
+static s32 Rd_ImplStep(PlayState* play) {
     s32 impact = false;
 
     if (sRd.state == 1) {
         if (++sRd.pendingFrames > 3) { // never drawn with a skeleton we can read: the old throw takes over
-            GdfRagdoll_Cancel();
+            Rd_ImplCancel();
         }
         return false;
     }
@@ -469,7 +481,7 @@ s32 GdfRagdoll_Step(PlayState* play) {
     return impact;
 }
 
-f32 GdfRagdoll_MaxSpeed(void) {
+static f32 Rd_ImplMaxSpeed(void) {
     f32 m = 0.0f;
     if (sRd.state != 2) {
         return 0.0f;
@@ -481,7 +493,7 @@ f32 GdfRagdoll_MaxSpeed(void) {
     return m;
 }
 
-void GdfRagdoll_Anchor(PlayState* play, Vec3f* pos) {
+static void Rd_ImplAnchor(PlayState* play, Vec3f* pos) {
     CollisionPoly* poly;
     Vec3f probe;
     f32 floorY;
@@ -495,27 +507,75 @@ void GdfRagdoll_Anchor(PlayState* play, Vec3f* pos) {
     }
 }
 
-void GdfRagdoll_Begin(Actor* actor, Vec3f* vel) {
+static void Rd_ImplBegin(Actor* actor, Vec3f* vel) {
     memset(&sRd, 0, sizeof(sRd));
     sRd.actor = actor;
     sRd.vel = *vel;
     sRd.state = 1;
 }
 
-s32 GdfRagdoll_State(Actor* actor) {
-    return (actor != NULL && actor == sRd.actor) ? sRd.state : 0;
+s32 GdfRagdoll_StateSlot(s32 slot, Actor* actor) {
+    RdState* r = Rd_Slot(slot);
+    return (actor != NULL && actor == r->actor) ? r->state : 0;
 }
 
-void GdfRagdoll_GetUp(void) {
+static void Rd_ImplGetUp(void) {
     if (sRd.state == 2) {
         sRd.state = 3;
         sRd.blend = RD_BLEND_FRAMES;
     }
 }
 
-void GdfRagdoll_Cancel(void) {
+static void Rd_ImplCancel(void) {
     sRd.state = 0;
     sRd.actor = NULL;
+}
+
+// The slot API, and slot 0's (the thrown one) as before
+s32 GdfRagdoll_StepSlot(PlayState* play, s32 slot) {
+    sRdCur = Rd_Slot(slot);
+    return Rd_ImplStep(play);
+}
+f32 GdfRagdoll_MaxSpeedSlot(s32 slot) {
+    sRdCur = Rd_Slot(slot);
+    return Rd_ImplMaxSpeed();
+}
+void GdfRagdoll_AnchorSlot(PlayState* play, s32 slot, Vec3f* pos) {
+    sRdCur = Rd_Slot(slot);
+    Rd_ImplAnchor(play, pos);
+}
+void GdfRagdoll_BeginSlot(s32 slot, Actor* actor, Vec3f* vel) {
+    sRdCur = Rd_Slot(slot);
+    Rd_ImplBegin(actor, vel);
+}
+void GdfRagdoll_GetUpSlot(s32 slot) {
+    sRdCur = Rd_Slot(slot);
+    Rd_ImplGetUp();
+}
+void GdfRagdoll_CancelSlot(s32 slot) {
+    sRdCur = Rd_Slot(slot);
+    Rd_ImplCancel();
+}
+s32 GdfRagdoll_Step(PlayState* play) {
+    return GdfRagdoll_StepSlot(play, 0);
+}
+f32 GdfRagdoll_MaxSpeed(void) {
+    return GdfRagdoll_MaxSpeedSlot(0);
+}
+void GdfRagdoll_Anchor(PlayState* play, Vec3f* pos) {
+    GdfRagdoll_AnchorSlot(play, 0, pos);
+}
+void GdfRagdoll_Begin(Actor* actor, Vec3f* vel) {
+    GdfRagdoll_BeginSlot(0, actor, vel);
+}
+s32 GdfRagdoll_State(Actor* actor) {
+    return GdfRagdoll_StateSlot(0, actor);
+}
+void GdfRagdoll_GetUp(void) {
+    GdfRagdoll_GetUpSlot(0);
+}
+void GdfRagdoll_Cancel(void) {
+    GdfRagdoll_CancelSlot(0);
 }
 
 // ---- drawing it ----
@@ -589,12 +649,23 @@ static void Rd_Solve(PlayState* play) {
 }
 
 Vec3s* GdfRagdoll_Pose(PlayState* play, void** skeleton, Vec3s* jointTable, void* arg) {
-    if ((sRd.state == 0) || (arg == NULL) || (arg != (void*)sRd.actor) || (skeleton == NULL) || (jointTable == NULL)) {
+    s32 slot;
+
+    if ((arg == NULL) || (skeleton == NULL) || (jointTable == NULL)) {
         return jointTable;
     }
+    for (slot = 0; slot < GDF_RAGDOLL_SLOTS; slot++) {
+        if ((sRdSlots[slot].state != 0) && (arg == (void*)sRdSlots[slot].actor)) {
+            break;
+        }
+    }
+    if (slot == GDF_RAGDOLL_SLOTS) {
+        return jointTable;
+    }
+    sRdCur = &sRdSlots[slot];
     if (sRd.state == 1) {
         if (!Rd_Build(play, skeleton, jointTable)) {
-            GdfRagdoll_Cancel();
+            Rd_ImplCancel();
             return jointTable;
         }
         sRd.skeleton = skeleton;
@@ -623,7 +694,7 @@ Vec3s* GdfRagdoll_Pose(PlayState* play, void** skeleton, Vec3s* jointTable, void
             sRd.out[i].z = b->z + (s16)((s16)(a->z - b->z) * w);
         }
         if (--sRd.blend <= 0) {
-            GdfRagdoll_Cancel();
+            Rd_ImplCancel();
         }
         return sRd.out;
     }

@@ -24,6 +24,16 @@ f32 GdfRagdoll_MaxSpeed(void);
 void GdfRagdoll_GetUp(void);
 void GdfRagdoll_Cancel(void);
 
+// Several at once: slot 0 is the one above (the throw); the fists' launches use slots 1 and up
+#define GDF_RAGDOLL_SLOTS 5
+void GdfRagdoll_BeginSlot(s32 slot, Actor* actor, Vec3f* vel);
+s32 GdfRagdoll_StateSlot(s32 slot, Actor* actor);
+s32 GdfRagdoll_StepSlot(PlayState* play, s32 slot);
+void GdfRagdoll_AnchorSlot(PlayState* play, s32 slot, Vec3f* pos);
+f32 GdfRagdoll_MaxSpeedSlot(s32 slot);
+void GdfRagdoll_GetUpSlot(s32 slot);
+void GdfRagdoll_CancelSlot(s32 slot);
+
 // From the skeleton draws (z_skelanime.c): the joint table to draw this skeleton with
 Vec3s* GdfRagdoll_Pose(PlayState* play, void** skeleton, Vec3s* jointTable, void* arg);
 
