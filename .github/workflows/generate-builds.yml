@@ -231,14 +231,15 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-ccache-${{ github.ref }}
           ${{ runner.os }}-ccache
+    # vcpkg with its built libraries, kept between builds: without it every build downloads and compiles all of them
+    # again (half the build's time, and a GitHub hiccup on any download fails the build)
     - name: Restore Cached VCPKG folder
       id: restore-cache-vcpkg
       uses: actions/cache/restore@v5
       with:
-        key: ${{ runner.os }}-vcpkg-${{ github.ref }}-${{ github.sha }}
+        key: ${{ runner.os }}-vcpkg-v2-${{ hashFiles('CMakeLists.txt', 'CMake/automate-vcpkg.cmake') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-${{ github.ref }}-
-          ${{ runner.os }}-vcpkg-
+          ${{ runner.os }}-vcpkg-v2-
         path: vcpkg
     - name: Configure Developer Command Prompt
       uses: TheMrMilchmann/setup-msvc-dev@v4
@@ -254,7 +255,7 @@ jobs:
         VCPKG_ROOT: ${{github.workspace}}/vcpkg
       run: |
         set $env:PATH="$env:USERPROFILE/.cargo/bin;$env:PATH"
-        cmake -S . -B build-windows -G Ninja -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBUILD_REMOTE_CONTROL=1 2>&1 | Tee-Object -FilePath build.log
+        cmake -S . -B build-windows -G Ninja -DVCPKG_ROOT="${{github.workspace}}/vcpkg" -DCMAKE_MAKE_PROGRAM=ninja -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBUILD_REMOTE_CONTROL=1 2>&1 | Tee-Object -FilePath build.log
         if ($LASTEXITCODE -ne 0) { exit 1 }
         cmake --build build-windows --config Release --parallel 10 2>&1 | Tee-Object -FilePath build.log -Append
         if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -278,8 +279,12 @@ jobs:
       with:
         name: soh-windows
         path: soh-windows
+    - name: Trim VCPKG folder
+      if: ${{ always() && github.ref_name == github.event.repository.default_branch && steps.restore-cache-vcpkg.outputs.cache-hit != 'true' && hashFiles('vcpkg/installed/vcpkg/status') != '' }}
+      shell: bash
+      run: rm -rf vcpkg/buildtrees vcpkg/packages
     - name: Save Cache VCPKG folder
-      if: ${{ github.ref_name == github.event.repository.default_branch }}
+      if: ${{ always() && github.ref_name == github.event.repository.default_branch && steps.restore-cache-vcpkg.outputs.cache-hit != 'true' && hashFiles('vcpkg/installed/vcpkg/status') != '' }}
       uses: actions/cache/save@v5
       with:
         key: ${{ steps.restore-cache-vcpkg.outputs.cache-primary-key }}
