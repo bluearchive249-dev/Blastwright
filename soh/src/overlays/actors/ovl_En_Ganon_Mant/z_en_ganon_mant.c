@@ -721,9 +721,9 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
                               0, 0, COMBINED, 0, 0, 0, COMBINED);
             gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, sLayers[i][0], sLayers[i][1], sLayers[i][2], 180);
         }
-        // (pouring from his neck down the cape: t runs toward the hem, so the texture moves to higher t)
+        // (pouring from his neck down the cape: the tile's offset grows, which moves the picture toward the hem)
         gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (i * 45) & 0x7F,
-                                                         (0u - frames * sLayers[i][3]) & 0x7F, 32, 32, 1, 0, 0,
+                                                         (frames * sLayers[i][3]) & 0x7F, 32, 32, 1, 0, 0,
                                                          FLAME_TEX_S, FLAME_TEX_T));
         gSPDisplayList(POLY_XLU_DISP++, geom);
     }
