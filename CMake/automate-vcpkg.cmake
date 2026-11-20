@@ -117,6 +117,9 @@ macro(_install_or_update_vcpkg)
         # If a reproducible build is desired (and potentially old libraries are # ok), uncomment the
         # following line and pin the vcpkg repository to a specific githash.
         # execute_process(COMMAND git checkout 745a0aea597771a580d0b0f4886ea1e3a94dbca6 WORKING_DIRECTORY ${VCPKG_ROOT})
+    elseif(DEFINED ENV{AUTOMATE_VCPKG_NO_UPDATE})
+        # (the Windows build's vcpkg, restored from its cache: kept as it is so its built libraries stay valid)
+        message(STATUS "Using vcpkg in ${VCPKG_ROOT} as it is")
     else()
         # The following command has no effect if the vcpkg repository is in a detached head state.
         message(STATUS "Auto-updating vcpkg in ${VCPKG_ROOT}")

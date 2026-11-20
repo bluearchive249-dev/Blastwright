@@ -254,6 +254,10 @@ jobs:
     - name: Build SoH
       env:
         VCPKG_ROOT: ${{github.workspace}}/vcpkg
+        # Downloads go through our fetcher (GitHub's commit patches often fail with 503 on build machines), and a
+        # vcpkg restored from the cache stays as it is (no update: its built libraries stay valid)
+        X_VCPKG_ASSET_SOURCES: x-script,"C:\Program Files\Git\bin\bash.exe" ${{github.workspace}}/.github/scripts/vcpkg-fetch.sh {url} {sha512} {dst}
+        AUTOMATE_VCPKG_NO_UPDATE: 1
       run: |
         set $env:PATH="$env:USERPROFILE/.cargo/bin;$env:PATH"
         # vcpkg fetches some patches straight from github.com, which often answers 503 to build machines: retry the
