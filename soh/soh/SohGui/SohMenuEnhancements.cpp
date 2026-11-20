@@ -2295,6 +2295,11 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "With the Goron Tunic on, he wears an Iron Knuckle's armour in black and gold (no helmet) and his cape "
             "burns with Koume's flames. Only a look."));
+    AddWidget(path, "Flame Cape: Volvagia's Mane", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.FlameCapeMane"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Over the Goron Tunic's flame cape, chains of Volvagia's flame plumes hang down it and trail off the hem. "
+            "Off: the flame cape alone."));
     AddWidget(path, "Phantom Ganon Skin", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"))
         .PreFunc([](WidgetInfo& info) {

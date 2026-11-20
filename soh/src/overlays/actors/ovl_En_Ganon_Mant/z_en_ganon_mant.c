@@ -13,6 +13,7 @@
 #include "soh/Enhancements/Graphics/LinkGanonCape.h"
 #include "assets/objects/object_tw/object_tw.h" // SoH: Koume's burning hair, for the Goron Tunic's cape
 #include "assets/objects/gameplay_keep/gameplay_keep.h" // SoH: ...and the burning enemies' fire
+#include "assets/objects/object_fd/object_fd.h"             // SoH: ...and Volvagia's fiery mane
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -783,6 +784,98 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// SoH: "Play as Ganondorf", the flame cape's live flames in 3D: Volvagia's mane. As her mane runs in chains of flame
+// plumes down her back, a chain of them hangs down each of the cape's strands, joint to joint, so they sway with
+// it: wide at his shoulders, longer toward the hem, the last ones trailing off it. Each pulses in size on its own beat
+// and each strand's color flickers between orange and yellow, as hers do.
+static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this) {
+    u32 frames = play->gameplayFrames;
+    s32 i;
+    s32 j;
+
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.FlameCapeMane"), 1)) {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeMaterialDL);
+    gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH);
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        MantStrand* strand = &this->strands[i];
+        MantStrand* left = &this->strands[MAX(i - 1, 0)];
+        MantStrand* right = &this->strands[MIN(i + 1, GANON_MANT_NUM_STRANDS - 1)];
+        s32 glow = ((frames + i * 3) & 8) ? 128 : 255;
+
+        gDPPipeSync(POLY_XLU_DISP++);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, (glow + 128 + (s32)(Math_SinS(frames * 3000 + i * 9000) * 60.0f)) / 2,
+                        0, 255);
+        for (j = 1; j < GANON_MANT_NUM_JOINTS; j++) {
+            Vec3f* p = &strand->joints[j - 1];
+            Vec3f* q = &strand->joints[j];
+            Vec3f down;
+            Vec3f across;
+            Vec3f out;
+            f32 len;
+            f32 wid;
+            f32 pulse;
+            f32 d;
+            MtxF mf;
+
+            // along the strand (the plume's length, its tip toward the hem)
+            down.x = q->x - p->x;
+            down.y = q->y - p->y;
+            down.z = q->z - p->z;
+            len = sqrtf(SQ(down.x) + SQ(down.y) + SQ(down.z));
+            if (len < 0.01f) {
+                continue;
+            }
+            down.x /= len;
+            down.y /= len;
+            down.z /= len;
+            // across the cape, to its neighbors
+            across.x = right->joints[j].x - left->joints[j].x;
+            across.y = right->joints[j].y - left->joints[j].y;
+            across.z = right->joints[j].z - left->joints[j].z;
+            d = across.x * down.x + across.y * down.y + across.z * down.z;
+            across.x -= d * down.x;
+            across.y -= d * down.y;
+            across.z -= d * down.z;
+            wid = sqrtf(SQ(across.x) + SQ(across.y) + SQ(across.z));
+            if (wid < 0.01f) {
+                continue;
+            }
+            across.x /= wid;
+            across.y /= wid;
+            across.z /= wid;
+            wid /= (i == 0 || i == GANON_MANT_NUM_STRANDS - 1) ? 1.0f : 2.0f; // (one strand's width)
+            // out of the cape's face
+            out.x = across.y * down.z - across.z * down.y;
+            out.y = across.z * down.x - across.x * down.z;
+            out.z = across.x * down.y - across.y * down.x;
+
+            // Her plume is 3900 wide and 6750 long; each overlaps the next joint's, the lower ones longer
+            pulse = 1.0f + 0.3f * Math_SinS(frames * 5596 + i * 7000 + j * 11000);
+            {
+                f32 sx = (wid * 1.6f / 3900.0f) * pulse;
+                f32 sy = (len * (1.5f + j * 0.06f) / 6750.0f) * pulse;
+                f32 sz = sx * 0.6f;
+
+                mf.xx = across.x * sx; mf.yx = across.y * sx; mf.zx = across.z * sx; mf.wx = 0.0f;
+                mf.xy = down.x * sy;   mf.yy = down.y * sy;   mf.zy = down.z * sy;   mf.wy = 0.0f;
+                mf.xz = out.x * sz;    mf.yz = out.y * sz;    mf.zz = out.z * sz;    mf.wz = 0.0f;
+                mf.xw = p->x;          mf.yw = p->y;          mf.zw = p->z;          mf.ww = 1.0f;
+            }
+            Matrix_Put(&mf);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeModelDL);
+        }
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     s32 pad;
     Mtx* mtx;
@@ -828,6 +921,9 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     // draw cloak (SoH: with the Goron Tunic, flame in its place)
     if (this->ownVertices && BossGanon_Player_GoronLook()) {
         EnGanonMant_DrawFire(play, mtx, EnGanonMant_GetOwnVertices(this));
+        if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
+            EnGanonMant_DrawMane(play, this);
+        }
     } else {
         gSPDisplayList(POLY_OPA_DISP++, gMantDL);
     }
