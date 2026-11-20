@@ -12,6 +12,7 @@
 #include <libultraship/bridge/resourcebridge.h>
 #include "soh/Enhancements/Graphics/LinkGanonCape.h"
 #include "assets/objects/object_tw/object_tw.h" // SoH: Koume's burning hair, for the Goron Tunic's cape
+#include "assets/objects/gameplay_keep/gameplay_keep.h" // SoH: ...and the burning enemies' fire
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -663,6 +664,35 @@ static void EnGanonMant_BuildFlameMask(u32 frame) {
     }
 }
 
+// The burning enemies' fire (gameplay_keep), each frame turned upside down, once
+static u8 sDeathFlameTex[10][32 * 64];
+static u8 sDeathFlameReady = false;
+
+static s32 EnGanonMant_LoadDeathFlames(void) {
+    static const char* sFrames[10] = {
+        gEffEnemyDeathFlame1Tex, gEffEnemyDeathFlame2Tex, gEffEnemyDeathFlame3Tex, gEffEnemyDeathFlame4Tex,
+        gEffEnemyDeathFlame5Tex, gEffEnemyDeathFlame6Tex, gEffEnemyDeathFlame7Tex, gEffEnemyDeathFlame8Tex,
+        gEffEnemyDeathFlame9Tex, gEffEnemyDeathFlame10Tex,
+    };
+    s32 i;
+    s32 r;
+
+    if (!sDeathFlameReady) {
+        for (i = 0; i < 10; i++) {
+            u8* src = (u8*)ResourceMgr_LoadTexOrDListByName(sFrames[i]);
+
+            if (src == NULL) {
+                return false;
+            }
+            for (r = 0; r < 64; r++) {
+                memcpy(&sDeathFlameTex[i][r * 32], &src[(63 - r) * 32], 32);
+            }
+        }
+        sDeathFlameReady = true;
+    }
+    return true;
+}
+
 static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
     // Two layers: the body of the fire, then a brighter flicker over it. Prim color, scroll speed down the cape
     static const u8 sLayers[2][4] = { { 200, 30, 0, 9 }, { 255, 110, 0, 15 } };
@@ -726,6 +756,28 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
                                                          (frames * sLayers[i][3]) & 0x7F, 32, 32, 1, 0, 0,
                                                          FLAME_TEX_S, FLAME_TEX_T));
         gSPDisplayList(POLY_XLU_DISP++, geom);
+    }
+
+    // Live flames over that: the burning enemies' fire (its ten frames, played as a flipbook), upside down so the
+    // tongues lick down the cape with the rest, four across it and two and a half down. Two sets, out of step and
+    // offset half a flame, so they don't all flicker together. Their color runs from red at the edges to yellow at
+    // the core; the hem's outline cuts them off too.
+    if (EnGanonMant_LoadDeathFlames()) {
+        for (i = 0; i < 2; i++) {
+            u32 f = (frames + i * 5) % 10;
+
+            gDPPipeSync(POLY_XLU_DISP++);
+            gDPLoadTextureBlock(POLY_XLU_DISP++, sDeathFlameTex[f], G_IM_FMT_I, G_IM_SIZ_8b, 32, 64, 0,
+                                G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 6, 15, 15);
+            gDPSetCombineLERP(POLY_XLU_DISP++, ENVIRONMENT, PRIMITIVE, TEXEL0, PRIMITIVE, TEXEL0, 0, TEXEL1, 0, 0, 0,
+                              0, COMBINED, 0, 0, 0, COMBINED);
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 230, 40, 0, 255);
+            gDPSetEnvColor(POLY_XLU_DISP++, 255, 230, 90, 255);
+            gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (i * 64) & 0x7F,
+                                                             (frames * 6 + i * 128) & 0xFF, 32, 64, 1, 0, 0,
+                                                             FLAME_TEX_S, FLAME_TEX_T));
+            gSPDisplayList(POLY_XLU_DISP++, geom);
+        }
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
