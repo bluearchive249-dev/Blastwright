@@ -253,6 +253,7 @@ s32 BossGanon_Player_InStance(void); // his sword or trident is out
 s32 BossGanon_Player_TryBreakKick(Actor* thisx, PlayState* play); // A at a shut door: he kicks it in
 s32 BossGanon_Player_IsPhantom(void);
 s32 BossGanon_Player_GoronLook(void); // the Goron Tunic look: Iron Knuckle armour and a burning cape
+s32 BossGanon_Player_ZoraLook(void);  // the Zora Tunic look: a mage, with a great cape of ice
 // The guards hunt him (he murdered someone in the market and hasn't left by the drawbridge)
 s32 BossGanon_Player_IsWanted(void);
 // Killing NPCs (option): attack volumes from Ganon's form, and the check itself

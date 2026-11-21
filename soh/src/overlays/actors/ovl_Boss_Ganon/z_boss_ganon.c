@@ -470,7 +470,8 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
     {
         f32 go = this->playerGrounded ? this->playerWalkWeight * CLAMP(sGdfWalkSpeed / 10.0f, 0.0f, 1.0f) : 0.0f;
 
-        sCape->hemFlare = GDF_CAPE_HEM_FLARE;
+        // (the Zora Tunic's ice cape spreads twice as broad: half again at his shoulders, the rest at the hem)
+        sCape->hemFlare = GDF_CAPE_HEM_FLARE * ((!cloak && BossGanon_Player_ZoraLook()) ? 2.5f : 1.0f);
         Math_ApproachF(&sCape->billow, GDF_CAPE_BILLOW * go, 0.2f, 0.3f);
         sCape->billowPhase += 0.18f + 0.22f * go;
         if (sCape->billowPhase > 2.0f * M_PI * 100.0f) {
@@ -505,11 +506,12 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
     sGdfCollarValid = true;
 
     if (!cloak) {
-        // The plain cape, as it always hung
+        // The plain cape, as it always hung (the Zora Tunic's ice cape twice as long, and broader)
         sCape->rootOverride = false;
         sCape->capsules = NULL;
         sCape->linkedCount = 0;
-        sCape->jointLength = 0.0f;
+        sCape->jointLength = BossGanon_Player_ZoraLook() ? 19.0f : 0.0f;
+        sCape->widthScale = BossGanon_Player_ZoraLook() ? 1.5f : 0.0f;
         if (sGdfCapelet[0] != NULL) {
             sGdfCapelet[0]->actor.draw = NULL;
         }
@@ -4712,6 +4714,13 @@ void BossGanon_DrawShadowTexture(void* tex, BossGanon* this, PlayState* play) {
 s32 BossGanon_Player_GoronLook(void) {
     return (sPlayerGanondorf != NULL) && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.GoronTunicLook"), 1) &&
            (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_GORON) && !BossGanon_Player_IsPhantom();
+}
+
+// SoH: "Play as Ganondorf", the Zora Tunic: a mage, his cape a great sheet of ice, twice as long and twice as broad
+// (z_en_ganon_mant.c). Only a look.
+s32 BossGanon_Player_ZoraLook(void) {
+    return (sPlayerGanondorf != NULL) && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.ZoraTunicLook"), 1) &&
+           (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_ZORA) && !BossGanon_Player_IsPhantom();
 }
 
 #define GDF_ARMOR_SLOTS 24

@@ -622,14 +622,18 @@ void EnGanonMant_Update(Actor* thisx, PlayState* play) {
 static u8 sFlameMaskTex[FLAME_TEX_S * FLAME_TEX_T / 2]; // I4
 static u32 sFlameMaskFrame = 0xFFFFFFFF;
 
-static void EnGanonMant_BuildFlameMask(u32 frame) {
+static void EnGanonMant_BuildFlameMask(u32 frame, s32 ice) {
     s32 s;
     s32 r;
 
-    if (frame == sFlameMaskFrame) {
+    // (ice doesn't flicker: its hem is a still edge of icicles)
+    if (ice) {
+        frame = 0;
+    }
+    if ((frame | (ice << 31)) == sFlameMaskFrame) {
         return;
     }
-    sFlameMaskFrame = frame;
+    sFlameMaskFrame = frame | (ice << 31);
     for (s = 0; s < FLAME_TEX_S; s++) {
         // Where this strip of the cape's flame ends (in half texels down it, the hem is at 34): tongues along the
         // hem, each lengthening and shortening at its own pace
@@ -694,9 +698,13 @@ static s32 EnGanonMant_LoadDeathFlames(void) {
     return true;
 }
 
-static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
+// (ice: the Zora Tunic's cape, the same in Kotake's colors: ice blue to white, drifting slowly, its hem a still edge
+// of icicles, no flames over it)
+static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) {
     // Two layers: the body of the fire, then a brighter flicker over it. Prim color, scroll speed down the cape
-    static const u8 sLayers[2][4] = { { 200, 30, 0, 9 }, { 255, 110, 0, 15 } };
+    static const u8 sFireLayers[2][4] = { { 200, 30, 0, 9 }, { 255, 110, 0, 15 } };
+    static const u8 sIceLayers[2][4] = { { 70, 130, 220, 2 }, { 195, 225, 235, 3 } };
+    const u8(*sLayers)[4] = ice ? sIceLayers : sFireLayers;
     Gfx* mant = ResourceMgr_LoadGfxByName(gMantDL);
     Gfx* geom = NULL;
     u32 frames = play->gameplayFrames;
@@ -721,7 +729,7 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
     if ((geom == NULL) || (vtx == NULL)) {
         return;
     }
-    EnGanonMant_BuildFlameMask(frames);
+    EnGanonMant_BuildFlameMask(frames, ice);
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -738,7 +746,11 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
     gDPLoadMultiBlock_4b(POLY_XLU_DISP++, sFlameMaskTex, 0x100, 1, G_IM_FMT_I, FLAME_TEX_S, FLAME_TEX_T, 0,
                          G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 0, 1);
     gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_SURF2);
-    gDPSetEnvColor(POLY_XLU_DISP++, 255, 235, 40, 255);
+    if (ice) {
+        gDPSetEnvColor(POLY_XLU_DISP++, 240, 250, 255, 255);
+    } else {
+        gDPSetEnvColor(POLY_XLU_DISP++, 255, 235, 40, 255);
+    }
     for (i = 0; i < 2; i++) {
         gDPPipeSync(POLY_XLU_DISP++);
         if (i == 0) {
@@ -763,7 +775,7 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
     // tongues lick down the cape with the rest, four across it and two and a half down. Two sets, out of step and
     // offset half a flame, so they don't all flicker together. Their color runs from red at the edges to yellow at
     // the core; the hem's outline cuts them off too.
-    if (EnGanonMant_LoadDeathFlames()) {
+    if (!ice && EnGanonMant_LoadDeathFlames()) {
         for (i = 0; i < 2; i++) {
             u32 f = (frames + i * 5) % 10;
 
@@ -788,7 +800,8 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx) {
 // plumes down her back, a chain of them hangs down each of the cape's strands, joint to joint, so they sway with
 // it: wide at his shoulders, longer toward the hem, the last ones trailing off it. Each pulses in size on its own beat
 // and each strand's color flickers between orange and yellow, as hers do.
-static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this) {
+// (ice: the same plumes as frost, pale blue to white, still but for a slow breath)
+static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this, s32 ice) {
     u32 frames = play->gameplayFrames;
     s32 i;
     s32 j;
@@ -802,6 +815,9 @@ static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this) {
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
     gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeMaterialDL);
     gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH);
+    if (ice) {
+        gDPSetEnvColor(POLY_XLU_DISP++, 60, 140, 255, 0);
+    }
     for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
         MantStrand* strand = &this->strands[i];
         MantStrand* left = &this->strands[MAX(i - 1, 0)];
@@ -809,8 +825,12 @@ static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this) {
         s32 glow = ((frames + i * 3) & 8) ? 128 : 255;
 
         gDPPipeSync(POLY_XLU_DISP++);
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, (glow + 128 + (s32)(Math_SinS(frames * 3000 + i * 9000) * 60.0f)) / 2,
-                        0, 255);
+        if (ice) {
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 200, 235, 255, 255);
+        } else {
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255,
+                            (glow + 128 + (s32)(Math_SinS(frames * 3000 + i * 9000) * 60.0f)) / 2, 0, 255);
+        }
         for (j = 1; j < GANON_MANT_NUM_JOINTS; j++) {
             Vec3f* p = &strand->joints[j - 1];
             Vec3f* q = &strand->joints[j];
@@ -856,7 +876,7 @@ static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this) {
             out.z = across.x * down.y - across.y * down.x;
 
             // Her plume is 3900 wide and 6750 long; each overlaps the next joint's, the lower ones longer
-            pulse = 1.0f + 0.3f * Math_SinS(frames * 5596 + i * 7000 + j * 11000);
+            pulse = 1.0f + (ice ? 0.06f : 0.3f) * Math_SinS(frames * (ice ? 900 : 5596) + i * 7000 + j * 11000);
             {
                 f32 sx = (wid * 1.6f / 3900.0f) * pulse;
                 f32 sy = (len * (1.5f + j * 0.06f) / 6750.0f) * pulse;
@@ -919,10 +939,12 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     }
 
     // draw cloak (SoH: with the Goron Tunic, flame in its place)
-    if (this->ownVertices && BossGanon_Player_GoronLook()) {
-        EnGanonMant_DrawFire(play, mtx, EnGanonMant_GetOwnVertices(this));
+    if (this->ownVertices && (BossGanon_Player_GoronLook() || BossGanon_Player_ZoraLook())) {
+        s32 ice = BossGanon_Player_ZoraLook();
+
+        EnGanonMant_DrawFire(play, mtx, EnGanonMant_GetOwnVertices(this), ice);
         if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
-            EnGanonMant_DrawMane(play, this);
+            EnGanonMant_DrawMane(play, this, ice);
         }
     } else {
         gSPDisplayList(POLY_OPA_DISP++, gMantDL);
@@ -933,8 +955,8 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         void* hoodVtx = GanondorfHood_Build(this, play);
 
         if (hoodVtx != NULL) {
-            if (BossGanon_Player_GoronLook()) {
-                EnGanonMant_DrawFire(play, mtx, hoodVtx);
+            if (BossGanon_Player_GoronLook() || BossGanon_Player_ZoraLook()) {
+                EnGanonMant_DrawFire(play, mtx, hoodVtx, BossGanon_Player_ZoraLook());
             } else {
                 gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
                 gSPDisplayList(POLY_OPA_DISP++, gMantDL);
@@ -1047,6 +1069,9 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
         yaw = Math_Atan2F(zDiff, xDiff);
         pitch = -Math_Atan2F(sqrtf(SQ(xDiff) + SQ(zDiff)), yDiff);
         diffHalfDist = sqrtf(SQ(xDiff) + SQ(yDiff) + SQ(zDiff)) * 0.5f;
+        if (this->widthScale > 0.0f) {
+            diffHalfDist *= this->widthScale; // SoH: spread wider than the shoulders it hangs from
+        }
 
         Matrix_RotateY(yaw, MTXMODE_NEW);
         Matrix_RotateX(pitch, MTXMODE_APPLY);

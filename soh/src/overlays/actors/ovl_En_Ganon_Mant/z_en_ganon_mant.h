@@ -86,6 +86,8 @@ typedef struct EnGanonMant {
     f32 hemFlare;
     f32 billow;
     f32 billowPhase;
+    // SoH: how much wider than his shoulders the cape spreads at its top (0 = vanilla, as wide as them)
+    f32 widthScale;
 } EnGanonMant;
 
 // SoH: the player-controlled Ganondorf's hood, drawn with his cape (z_boss_ganon.c / GanondorfHood.cpp); null if off
