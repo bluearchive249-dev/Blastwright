@@ -92,5 +92,7 @@ typedef struct EnGanonMant {
 
 // SoH: the player-controlled Ganondorf's hood, drawn with his cape (z_boss_ganon.c / GanondorfHood.cpp); null if off
 void* GanondorfHood_Build(EnGanonMant* cape, PlayState* play);
+// SoH: the mage robe's cloth (the cape's, dark blue): 32x64 RGBA16, or null
+u8* EnGanonMant_GetRobeTex(void);
 
 #endif

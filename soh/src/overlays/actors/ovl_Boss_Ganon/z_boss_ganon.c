@@ -4145,6 +4145,11 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
         BossGanon_Player_GoronLook()) {
         *dList = NULL;
     }
+    // (and his hair, under the mage robe's hood)
+    if (((limbIndex == 15) || (limbIndex == 16)) && (this == sPlayerGanondorf) && !sGdfPgCapture &&
+        BossGanon_Player_RobeHoodOn()) {
+        *dList = NULL;
+    }
 
     // SoH: "Play as Ganondorf", the upper half of his hair (limb 14) hangs from his torso's way, not his head's
     if ((limbIndex == 15) && GDF_IS_PLAYER(this) && sGdfHairTorsoValid) {
@@ -4949,6 +4954,113 @@ static Gfx* BossGanon_Player_ArmorColor(GraphicsContext* gfxCtx, u8 pr, u8 pg, u
     return dl;
 }
 
+// SoH: "Play as Ganondorf", the mage robe's hood: the Poe Collector's own hood (object_ps), cut neatly from his model
+// (only the triangles in the hood's cloth; his face and everything else left out), in the robe's dark blue cloth. It
+// is welded across two of his limbs (his head and his body, for the drape over his shoulders); here those two sit on
+// Ganondorf's head and torso, fitted offline (scale 1.2, its face opening on his face). His hair goes under it.
+#define GDF_POE_HOOD_TEX_HASH 0xCD3E5AA192FB60F2ULL // ("objects/object_ps/object_psTex_007600": the hood's cloth)
+static const f32 sGdfPoeHoodC5[16] = { 0.13153f, -1.19275f, -0.00652f, 0.00000f, 1.19129f, 0.13169f, -0.05901f, 0.00000f, 0.05937f, 0.00000f, 1.19853f, 0.00000f, -1111.9f, 852.7f, 104.6f, 1.00000f };
+static const f32 sGdfPoeHoodC9[16] = { 0.08601f, -1.13555f, -0.37832f, 0.00000f, 1.19063f, 0.11998f, -0.08947f, 0.00000f, 0.12249f, -0.36895f, 1.13529f, 0.00000f, 2166.9f, -1156.2f, -241.3f, 1.00000f };
+static Gfx sGdfPoeHoodDL[2][160];
+static u8 sGdfPoeHoodReady = false;
+
+// His head limb's and body limb's lists, keeping only their vertices, their limb-matrix switches and the hood's triangles
+static s32 BossGanon_Player_CutPoeHood(const char* path, Gfx* out, s32 max) {
+    Gfx* src = ResourceMgr_LoadGfxByName(path);
+    s32 n = 0;
+    s32 i = 0;
+    u8 hood = false;
+
+    if (src == NULL) {
+        return false;
+    }
+    while ((i < 512) && (n < max - 1)) {
+        u8 op = src[i].words.w0 >> 24;
+
+        if (op == 0xDF) {
+            break;
+        }
+        if (op == G_SETTIMG_OTR_HASH) {
+            u64 hash = ((u64)src[i + 1].words.w0 << 32) | (u32)src[i + 1].words.w1;
+
+            hood = (hash == GDF_POE_HOOD_TEX_HASH);
+            i += 2;
+            continue;
+        }
+        if ((op == G_VTX_OTR_HASH) && (n < max - 2)) {
+            out[n++] = src[i];
+            out[n++] = src[i + 1];
+            i += 2;
+            continue;
+        }
+        if ((op == G_MTX) || (hood && ((op == G_TRI1) || (op == G_TRI2)))) {
+            out[n++] = src[i];
+        }
+        i += ((op == G_DL_OTR_HASH) || (op == G_MARKER) || (op == G_MTX_OTR) || (op == G_BRANCH_Z_OTR) ||
+              (op == G_MOVEMEM_OTR) || (op == G_SETTIMG_OTR_FILEPATH) || (op == G_VTX_OTR_FILEPATH) ||
+              (op == G_DL_OTR_FILEPATH))
+                 ? 2
+                 : 1;
+    }
+    gSPEndDisplayList(&out[n]);
+    return true;
+}
+
+static void BossGanon_Player_DrawPoeHood(PlayState* play, MtxF* limbs) {
+    Mtx* mtx;
+    u8* tex;
+    s32 i;
+
+    if (!sGdfPoeHoodReady) {
+        if (!BossGanon_Player_CutPoeHood("__OTR__objects/object_ps/gPoeSellerSkelLimbsLimb_00C1B8DL_009AE8",
+                                         sGdfPoeHoodDL[0], ARRAY_COUNT(sGdfPoeHoodDL[0])) ||
+            !BossGanon_Player_CutPoeHood("__OTR__objects/object_ps/gPoeSellerSkelLimbsLimb_00C1E8DL_0096C0",
+                                         sGdfPoeHoodDL[1], ARRAY_COUNT(sGdfPoeHoodDL[1]))) {
+            return;
+        }
+        sGdfPoeHoodReady = true;
+    }
+    tex = EnGanonMant_GetRobeTex();
+    if (tex == NULL) {
+        return;
+    }
+    // (the Poe Collector's ten limb matrices, of which the hood uses two: 5 his head's, 9 his body's)
+    mtx = Graph_Alloc(play->state.gfxCtx, 10 * sizeof(Mtx));
+    Matrix_Push();
+    for (i = 0; i < 10; i++) {
+        MtxF c;
+        s32 body = (i == 9);
+        f32 sc = body ? 1.0f : GdfTune("robe.hood_scale", 1.0f);
+
+        memcpy(&c, body ? sGdfPoeHoodC9 : sGdfPoeHoodC5, sizeof(c));
+        Matrix_Put(&limbs[body ? 1 : 10]);
+        if (!body) {
+            Matrix_Translate(GdfTuneAt("robe.hood_offset", 0, 0.0f), GdfTuneAt("robe.hood_offset", 1, 0.0f),
+                             GdfTuneAt("robe.hood_offset", 2, 0.0f), MTXMODE_APPLY);
+            Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+        }
+        Matrix_Mult(&c, MTXMODE_APPLY);
+        Matrix_ToMtx(&mtx[i], __FILE__, __LINE__);
+    }
+    Matrix_Pop();
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPLoadTextureBlock(POLY_OPA_DISP++, tex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 32, 64, 0, G_TX_MIRROR | G_TX_WRAP,
+                        G_TX_MIRROR | G_TX_WRAP, 5, 6, G_TX_NOLOD, G_TX_NOLOD);
+    gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, SHADE, 0, 0, 0, 0, 1, 0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
+    gSPSetGeometryMode(POLY_OPA_DISP++, G_LIGHTING | G_SHADE | G_SHADING_SMOOTH);
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH); // (its inside shows round his face)
+    gSPSegment(POLY_OPA_DISP++, 0x0D, mtx);
+    gSPMatrix(POLY_OPA_DISP++, &mtx[5], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, sGdfPoeHoodDL[0]);
+    gSPMatrix(POLY_OPA_DISP++, &mtx[9], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, sGdfPoeHoodDL[1]);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp);
 
 static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
@@ -5106,6 +5218,10 @@ static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
         BossGanon_Player_DrawWarlockFire(this, play);
         if (!BossGanon_Player_IsPhantom()) {
             BossGanon_Player_DrawArmor(this, play);
+            if ((this == sPlayerGanondorf) && sGdfLimbWorldValid && BossGanon_Player_RobeHoodOn() &&
+                !BossGanon_Player_HeadHidden(this, play)) {
+                BossGanon_Player_DrawPoeHood(play, sGdfLimbWorld);
+            }
         }
         // His lowest point, for the ground offset
         sGdfMeshLowValid = sGdfMeshLowYNext < 1.0e8f;
@@ -19079,6 +19195,9 @@ static s32 BossGanon_Player_PauseOverrideLimbDraw(PlayState* play, s32 limbIndex
     if (((limbIndex == 3) || (limbIndex == 7)) && BossGanon_Player_GoronLook()) {
         *dList = NULL; // (his shoulders, under the armour)
     }
+    if (((limbIndex == 15) || (limbIndex == 16)) && BossGanon_Player_RobeHoodOn()) {
+        *dList = NULL; // (his hair, under the hood)
+    }
     return false;
 }
 
@@ -19128,6 +19247,9 @@ s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot) {
                           BossGanon_Player_PauseOverrideLimbDraw, BossGanon_Player_PausePostLimbDraw, NULL);
     if (BossGanon_Player_GoronLook()) {
         BossGanon_Player_DrawArmorOn(play, sGdfPauseLimbs, false);
+    }
+    if (BossGanon_Player_RobeHoodOn()) {
+        BossGanon_Player_DrawPoeHood(play, sGdfPauseLimbs);
     }
     return true;
 }

@@ -974,6 +974,11 @@ static s32 EnGanonMant_BuildRobeTex(void) {
     return true;
 }
 
+// (for the mage's hood, drawn by Ganondorf: the same cloth)
+u8* EnGanonMant_GetRobeTex(void) {
+    return EnGanonMant_BuildRobeTex() ? sRobeMantTex : NULL;
+}
+
 void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     s32 pad;
     Mtx* mtx;

@@ -97,7 +97,9 @@ extern "C" void* GanondorfHood_Build(EnGanonMant* cape, PlayState* play) {
     Vec3f collar[GDF_HOOD_COLS];
 
     // (set aside on 9 Nov 2026; back on 21 Nov for the Zora Tunic's mage robe)
-    if (!BossGanon_Player_RobeHoodOn() || !BossGanon_Player_GetHoodFrame(cape, &head, collar)) {
+    // (the robe wears the Poe Collector's hood now, drawn by Ganondorf: this one only if tuned back, robe.hood_style 1)
+    if (!BossGanon_Player_RobeHoodOn() || (GdfTune("robe.hood_style", 0.0f) != 1.0f) ||
+        !BossGanon_Player_GetHoodFrame(cape, &head, collar)) {
         return NULL;
     }
 
