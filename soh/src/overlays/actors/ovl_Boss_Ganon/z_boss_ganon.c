@@ -5168,29 +5168,35 @@ static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
 // (on his limbs as drawn: their matrices, his limb order)
 // SoH: "Play as Ganondorf", the knight's helmet: Phantom Ganon's own head (object_gnd), horns, mask and all, worn over
 // his in place of his own, in the armour's metal with the same luster (the Iron Knuckle's metal texture, mapped by
-// the light as on the plate). Its swept-back crest goes in the armour's trim, its glowing eyes and the jewel on its
-// brow stay as they are. Cut from Phantom Ganon's head limb at first use, three ways:
+// the light as on the plate). Its mask keeps its eye holes and brow markings (in the metal's colors); its flaming hair,
+// glowing eyes and the jewel on its brow stay as they are. Cut from Phantom Ganon's head limb at first use, three ways:
 //  - the metal: the lit triangles of the mask, horns and helmet (their own textures dropped, only their geometry kept)
-//  - the trim: the crest
+//  - the mask's markings: eye holes and brow, their textures in the metal's colors
+//  - his hair, as it is
 //  - as it is: the unlit triangles (its eyes, the jewel, the dark inside of the mask) with their own textures
 // His head limb's axes are Ganondorf's head's (the Phantom Ganon skin poses it that way), so it sits on his head as is,
 // in the skin's scale (GDF_PG_SCALE).
 #define GDF_PG_HEAD_DL gPhantomGanonSkelLimbsLimb_00C628DL_0080F8
 static const u64 sGdfHelmMetalTex[] = {
     0x7C53D11588839A26ULL, // 00BE80: horns, helmet
-    0x5FBD268AB25482E1ULL, // 00BD80: the mask's brow
-    0xB435E0571671C8B4ULL, // 00BC80: its cheeks
     0x74074132A207416BULL, // 00A800: the helmet's shell
-    0x485756B91FCAF486ULL, // 00B980: the mask's teeth
     0x7434FD547B3E3C41ULL, // 00AF80: its band
 };
-static const u64 sGdfHelmTrimTex[] = { 0xDDB63AE9FE6A56BFULL }; // 00B780: the crest
-static Gfx sGdfHelmDL[3][400];
+// (the mask's own markings, its eye holes and brow, kept: their textures drawn in the metal's colors, light for its
+// ivory and dark for its holes)
+static const u64 sGdfHelmMarkTex[] = {
+    0x5FBD268AB25482E1ULL, // 00BD80: the mask's brow
+    0xB435E0571671C8B4ULL, // 00BC80: its eye holes
+    0x485756B91FCAF486ULL, // 00B980: its eye holes, lower
+};
+static const u64 sGdfHelmHairTex[] = { 0xDDB63AE9FE6A56BFULL }; // 00B780: his flaming hair, as it is
+static Gfx sGdfHelmDL[4][400];
 static u8 sGdfHelmReady = false;
 static Gfx* BossGanon_Pg_NullDL(GraphicsContext* gfxCtx);
 
 // mode 0: keep vertices and the lit triangles with one of `keep`'s textures. mode 1: everything (materials too) but only
-// the unlit triangles
+// the unlit triangles. mode 2: as 0, with the materials too but not their colors or combiner. mode 3: as 0 with the
+// materials, all of them.
 static s32 BossGanon_Player_CutHelm(const char* path, Gfx* out, s32 max, const u64* keep, s32 nkeep, s32 mode) {
     Gfx* src = ResourceMgr_LoadGfxByName(path);
     s32 n = 0;
@@ -5227,10 +5233,12 @@ static s32 BossGanon_Player_CutHelm(const char* path, Gfx* out, s32 max, const u
         if ((op == G_TRI1) || (op == G_TRI2)) {
             s32 lit = (geo & G_LIGHTING) != 0;
 
-            if ((mode == 0) ? (on && lit) : !lit) {
+            if ((mode == 1) ? !lit : (on && lit)) {
                 out[n++] = src[i];
             }
-        } else if ((op == G_VTX_OTR_HASH) || (op == G_VTX) || (mode == 1)) {
+        } else if ((mode == 2) && ((op == G_SETCOMBINE) || (op == G_SETPRIMCOLOR) || (op == G_SETENVCOLOR))) {
+            // (left to the metal)
+        } else if ((op == G_VTX_OTR_HASH) || (op == G_VTX) || (mode != 0)) {
             for (k = 0; k < size; k++) {
                 out[n++] = src[i + k];
             }
@@ -5301,9 +5309,11 @@ static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
     if (!sGdfHelmReady) {
         if (!BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[0], ARRAY_COUNT(sGdfHelmDL[0]), sGdfHelmMetalTex,
                                       ARRAY_COUNT(sGdfHelmMetalTex), 0) ||
-            !BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[1], ARRAY_COUNT(sGdfHelmDL[1]), sGdfHelmTrimTex,
-                                      ARRAY_COUNT(sGdfHelmTrimTex), 0) ||
-            !BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[2], ARRAY_COUNT(sGdfHelmDL[2]), NULL, 0, 1)) {
+            !BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[1], ARRAY_COUNT(sGdfHelmDL[1]), sGdfHelmHairTex,
+                                      ARRAY_COUNT(sGdfHelmHairTex), 3) ||
+            !BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[2], ARRAY_COUNT(sGdfHelmDL[2]), NULL, 0, 1) ||
+            !BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[3], ARRAY_COUNT(sGdfHelmDL[3]), sGdfHelmMarkTex,
+                                      ARRAY_COUNT(sGdfHelmMarkTex), 2)) {
             return;
         }
         sGdfHelmReady = true;
@@ -5325,15 +5335,20 @@ static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
     BossGanon_Player_PlateMaterial(&g, false);
     POLY_OPA_DISP = g;
     gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[0]);
+    // (the mask's eye holes and brow: their own textures, laid on as they were, no luster, in the metal's colors)
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR);
+    gSPSegment(POLY_OPA_DISP++, 0x08, BossGanon_Pg_NullDL(play->state.gfxCtx));
+    POLY_OPA_DISP->words.w0 = 0xFC30FE04;
+    POLY_OPA_DISP->words.w1 = 0x5FFEFFFE;
+    POLY_OPA_DISP++;
+    gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[3]);
+    // (his flaming hair, its eyes and jewel in their own colors: its list calls segment 8 for a render mode)
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetEnvColor(POLY_OPA_DISP++, 255, 255, 255, 255);
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR);
     if (GdfTune("helmet.crest", 1.0f) != 0.0f) {
-        g = POLY_OPA_DISP;
-        BossGanon_Player_ArmorPrimEnv(&g, true);
-        POLY_OPA_DISP = g;
         gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[1]);
     }
-    // (its eyes and jewel in their own colors: its list calls segment 8 for a render mode, nothing needed there)
-    gSPSegment(POLY_OPA_DISP++, 0x08, BossGanon_Pg_NullDL(play->state.gfxCtx));
-    gDPSetEnvColor(POLY_OPA_DISP++, 255, 255, 255, 255);
     gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[2]);
     CLOSE_DISPS(play->state.gfxCtx);
 }
