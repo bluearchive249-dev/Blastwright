@@ -316,7 +316,8 @@ static s32 BossGanon_Player_CloakOn(void) {
 
 // (back for the Zora Tunic's mage robe: its hood, unless tuned off)
 s32 BossGanon_Player_RobeHoodOn(void) {
-    return BossGanon_Player_ZoraLook() && (GdfTune("robe.hood", 1.0f) != 0.0f);
+    // (the mage robe was set aside on 21 Nov for the ice knight: only if tuned back on)
+    return BossGanon_Player_ZoraLook() && (GdfTune("robe.hood", 0.0f) != 0.0f);
 }
 
 static s32 BossGanon_Player_HoodOn(void) {
@@ -485,7 +486,7 @@ static s32 BossGanon_Player_UpdateRobe(BossGanon* this, Vec3f* fwd, Vec3f* right
         { 18, 0, 1700, 1050 }, { 19, 0, 2452, 950 }, { 20, 0, 2680, 800 }, { 22, 0, 2452, 950 }, { 23, 0, 2680, 800 },
     };
     static const f32 sPieces[3][2] = { { 10.0f, 120.0f }, { 120.0f, 240.0f }, { 240.0f, 350.0f } };
-    s32 on = BossGanon_Player_ZoraLook() && (GdfTune("robe.on", 1.0f) != 0.0f);
+    s32 on = BossGanon_Player_ZoraLook() && (GdfTune("robe.on", 0.0f) != 0.0f);
     Vec3f center;
     f32 rf;
     f32 rs;
@@ -566,7 +567,7 @@ static void BossGanon_Player_RobeRecolor(s32 on) {
     s32 i;
     s32 j;
 
-    on = on && (GdfTune("robe.recolor_clothes", 1.0f) != 0.0f);
+    on = on && (GdfTune("robe.recolor_clothes", 0.0f) != 0.0f);
     if (on && ((sMade[0] != cloth[0]) || (sMade[1] != cloth[1]) || (sMade[2] != cloth[2]) || (sMade[3] != gold[0]) ||
                (sMade[4] != gold[1]) || (sMade[5] != gold[2]))) {
         memset(sMask, 0xFF, sizeof(sMask));
@@ -4149,7 +4150,7 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
     // SoH: "Play as Ganondorf", in the Iron Knuckle's armour his own shoulders aren't drawn (as on the Iron Knuckle,
     // nothing under the pauldrons: its arm guards, sewn to the breastplate, cover them), so they don't clip through
     if (((limbIndex == 3) || (limbIndex == 7)) && (this == sPlayerGanondorf) && !sGdfPgCapture &&
-        BossGanon_Player_GoronLook()) {
+        BossGanon_Player_KnightLook()) {
         *dList = NULL;
     }
     // (and his hair, under the mage robe's hood)
@@ -4909,6 +4910,12 @@ s32 BossGanon_Player_GoronLook(void) {
            (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_GORON) && !BossGanon_Player_IsPhantom();
 }
 
+// SoH: "Play as Ganondorf", either tunic's knight: the Iron Knuckle's armour, his shoulders under it, its footsteps
+// (Goron: black and gold under the flame cape; Zora: frost silver and ice blue under the ice cape)
+s32 BossGanon_Player_KnightLook(void) {
+    return BossGanon_Player_GoronLook() || BossGanon_Player_ZoraLook();
+}
+
 // SoH: "Play as Ganondorf", the Zora Tunic: a mage, his cape a great sheet of ice, twice as long and twice as broad
 // (z_en_ganon_mant.c). Only a look.
 s32 BossGanon_Player_ZoraLook(void) {
@@ -5128,7 +5135,7 @@ static void BossGanon_Player_DrawPoeHood(PlayState* play, MtxF* limbs) {
 static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp);
 
 static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
-    if ((this != sPlayerGanondorf) || !sGdfLimbWorldValid || !BossGanon_Player_GoronLook()) {
+    if ((this != sPlayerGanondorf) || !sGdfLimbWorldValid || !BossGanon_Player_KnightLook()) {
         return;
     }
     BossGanon_Player_DrawArmorOn(play, sGdfLimbWorld, BossGanon_Player_HeadHidden(this, play));
@@ -5190,14 +5197,26 @@ static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp) {
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     // A black knight's colors: dark iron, gold trim
-    gSPSegment(POLY_OPA_DISP++, 0x08,
-               BossGanon_Player_ArmorColor(play->state.gfxCtx, GdfTuneAt("armor.metal_color", 0, 55),
-                                           GdfTuneAt("armor.metal_color", 1, 65), GdfTuneAt("armor.metal_color", 2, 55),
-                                           0, 0, 0));
-    gSPSegment(POLY_OPA_DISP++, 0x09,
-               BossGanon_Player_ArmorColor(play->state.gfxCtx, GdfTuneAt("armor.trim_color", 0, 205),
-                                           GdfTuneAt("armor.trim_color", 1, 165), GdfTuneAt("armor.trim_color", 2, 75),
-                                           25, 20, 0));
+    if (BossGanon_Player_ZoraLook()) {
+        // (the ice knight: frost silver, ice blue trim)
+        gSPSegment(POLY_OPA_DISP++, 0x08,
+                   BossGanon_Player_ArmorColor(play->state.gfxCtx, GdfTuneAt("armor.ice_metal_color", 0, 140),
+                                               GdfTuneAt("armor.ice_metal_color", 1, 165),
+                                               GdfTuneAt("armor.ice_metal_color", 2, 190), 0, 10, 30));
+        gSPSegment(POLY_OPA_DISP++, 0x09,
+                   BossGanon_Player_ArmorColor(play->state.gfxCtx, GdfTuneAt("armor.ice_trim_color", 0, 170),
+                                               GdfTuneAt("armor.ice_trim_color", 1, 225),
+                                               GdfTuneAt("armor.ice_trim_color", 2, 255), 20, 40, 80));
+    } else {
+        gSPSegment(POLY_OPA_DISP++, 0x08,
+                   BossGanon_Player_ArmorColor(play->state.gfxCtx, GdfTuneAt("armor.metal_color", 0, 55),
+                                               GdfTuneAt("armor.metal_color", 1, 65),
+                                               GdfTuneAt("armor.metal_color", 2, 55), 0, 0, 0));
+        gSPSegment(POLY_OPA_DISP++, 0x09,
+                   BossGanon_Player_ArmorColor(play->state.gfxCtx, GdfTuneAt("armor.trim_color", 0, 205),
+                                               GdfTuneAt("armor.trim_color", 1, 165),
+                                               GdfTuneAt("armor.trim_color", 2, 75), 25, 20, 0));
+    }
     // (the pieces are an Iron Knuckle's skinned limbs: some of their vertices go by the limb above's matrix)
     gSPSegment(POLY_OPA_DISP++, 0x0D, mtx);
     for (i = 0; i < ARRAY_COUNT(sGdfArmorDrawn); i++) {
@@ -8246,7 +8265,7 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
                     func_800F4010(&player->actor.projectedPos, sfx, speed * 0.6f);
                     GdfInvasion_NoteSfx(sfx);
                     // SoH: in the Iron Knuckle's armour (Goron Tunic), its heavy armoured step too
-                    if (BossGanon_Player_GoronLook()) {
+                    if (BossGanon_Player_KnightLook()) {
                         Audio_PlayActorSound2(&player->actor, NA_SE_EN_IRONNACK_WALK);
                         GdfInvasion_NoteSfx(NA_SE_EN_IRONNACK_WALK);
                     }
@@ -19256,7 +19275,7 @@ static MtxF sGdfPauseLimbs[GDF_LIMB_COUNT_PLAYER];
 
 static s32 BossGanon_Player_PauseOverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos,
                                                   Vec3s* rot, void* arg) {
-    if (((limbIndex == 3) || (limbIndex == 7)) && BossGanon_Player_GoronLook()) {
+    if (((limbIndex == 3) || (limbIndex == 7)) && BossGanon_Player_KnightLook()) {
         *dList = NULL; // (his shoulders, under the armour)
     }
     if (((limbIndex == 15) || (limbIndex == 16)) && BossGanon_Player_RobeHoodOn()) {
@@ -19309,7 +19328,7 @@ s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot) {
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     SkelAnime_DrawFlexOpa(play, gdf->skelAnime.skeleton, sJoints, gdf->skelAnime.dListCount,
                           BossGanon_Player_PauseOverrideLimbDraw, BossGanon_Player_PausePostLimbDraw, NULL);
-    if (BossGanon_Player_GoronLook()) {
+    if (BossGanon_Player_KnightLook()) {
         BossGanon_Player_DrawArmorOn(play, sGdfPauseLimbs, false);
     }
     if (BossGanon_Player_RobeHoodOn()) {

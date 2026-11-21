@@ -2300,11 +2300,12 @@ void SohMenu::AddMenuEnhancements() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Over the Goron Tunic's flame cape, chains of Volvagia's flame plumes hang down it and trail off the hem. "
             "Off: the flame cape alone."));
-    AddWidget(path, "Zora Tunic: Ice Mage", WIDGET_CVAR_CHECKBOX)
+    AddWidget(path, "Zora Tunic: Ice Knight", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.ZoraTunicLook"))
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "With the Zora Tunic on, his cape becomes a great sheet of ice in Kotake's colors, twice as long and "
-            "broader, with Volvagia's plumes on it as frost (the option above). Only a look."));
+            "With the Zora Tunic on, he wears the Iron Knuckle's armour in frost silver and ice blue, and his cape "
+            "becomes a great sheet of ice in Kotake's colors with a standing ice collar and Volvagia's plumes as "
+            "frost. Only a look."));
     AddWidget(path, "Phantom Ganon Skin", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"))
         .PreFunc([](WidgetInfo& info) {
