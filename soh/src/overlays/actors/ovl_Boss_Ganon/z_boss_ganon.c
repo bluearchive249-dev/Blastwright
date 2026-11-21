@@ -4961,11 +4961,12 @@ static Gfx* BossGanon_Player_ArmorColor(GraphicsContext* gfxCtx, u8 pr, u8 pg, u
 #define GDF_POE_HOOD_TEX_HASH 0xCD3E5AA192FB60F2ULL // ("objects/object_ps/object_psTex_007600": the hood's cloth)
 static const f32 sGdfPoeHoodC5[16] = { 0.13153f, -1.19275f, -0.00652f, 0.00000f, 1.19129f, 0.13169f, -0.05901f, 0.00000f, 0.05937f, 0.00000f, 1.19853f, 0.00000f, -1111.9f, 852.7f, 104.6f, 1.00000f };
 static const f32 sGdfPoeHoodC9[16] = { 0.08601f, -1.13555f, -0.37832f, 0.00000f, 1.19063f, 0.11998f, -0.08947f, 0.00000f, 0.12249f, -0.36895f, 1.13529f, 0.00000f, 2166.9f, -1156.2f, -241.3f, 1.00000f };
-static Gfx sGdfPoeHoodDL[2][160];
+#define GDF_POE_CHIN_TEX_HASH 0xF4CB30DB8F1471F0ULL // ("objects/object_ps/object_psTex_007640": his chin's wrap)
+static Gfx sGdfPoeHoodDL[3][160]; // the hood on his head, its drape on his body, and the chin wrap
 static u8 sGdfPoeHoodReady = false;
 
 // His head limb's and body limb's lists, keeping only their vertices, their limb-matrix switches and the hood's triangles
-static s32 BossGanon_Player_CutPoeHood(const char* path, Gfx* out, s32 max) {
+static s32 BossGanon_Player_CutPoeHood(const char* path, Gfx* out, s32 max, u64 keep) {
     Gfx* src = ResourceMgr_LoadGfxByName(path);
     s32 n = 0;
     s32 i = 0;
@@ -4983,7 +4984,7 @@ static s32 BossGanon_Player_CutPoeHood(const char* path, Gfx* out, s32 max) {
         if (op == G_SETTIMG_OTR_HASH) {
             u64 hash = ((u64)src[i + 1].words.w0 << 32) | (u32)src[i + 1].words.w1;
 
-            hood = (hash == GDF_POE_HOOD_TEX_HASH);
+            hood = (hash == keep);
             i += 2;
             continue;
         }
@@ -5013,9 +5014,11 @@ static void BossGanon_Player_DrawPoeHood(PlayState* play, MtxF* limbs) {
 
     if (!sGdfPoeHoodReady) {
         if (!BossGanon_Player_CutPoeHood("__OTR__objects/object_ps/gPoeSellerSkelLimbsLimb_00C1B8DL_009AE8",
-                                         sGdfPoeHoodDL[0], ARRAY_COUNT(sGdfPoeHoodDL[0])) ||
+                                         sGdfPoeHoodDL[0], ARRAY_COUNT(sGdfPoeHoodDL[0]), GDF_POE_HOOD_TEX_HASH) ||
             !BossGanon_Player_CutPoeHood("__OTR__objects/object_ps/gPoeSellerSkelLimbsLimb_00C1E8DL_0096C0",
-                                         sGdfPoeHoodDL[1], ARRAY_COUNT(sGdfPoeHoodDL[1]))) {
+                                         sGdfPoeHoodDL[1], ARRAY_COUNT(sGdfPoeHoodDL[1]), GDF_POE_HOOD_TEX_HASH) ||
+            !BossGanon_Player_CutPoeHood("__OTR__objects/object_ps/gPoeSellerSkelLimbsLimb_00C1B8DL_009AE8",
+                                         sGdfPoeHoodDL[2], ARRAY_COUNT(sGdfPoeHoodDL[2]), GDF_POE_CHIN_TEX_HASH)) {
             return;
         }
         sGdfPoeHoodReady = true;
@@ -5058,6 +5061,47 @@ static void BossGanon_Player_DrawPoeHood(PlayState* play, MtxF* limbs) {
     gSPDisplayList(POLY_OPA_DISP++, sGdfPoeHoodDL[0]);
     gSPMatrix(POLY_OPA_DISP++, &mtx[9], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, sGdfPoeHoodDL[1]);
+
+    // The chin wrap, snug round his throat: the hood's chin piece, widened round his neck and drawn up under his jaw
+    // (in his head's space: scaled about his neck's middle, then moved), its welds to the body following along
+    if (GdfTune("robe.hood_chin", 1.0f) != 0.0f) {
+        Mtx* chin = Graph_Alloc(play->state.gfxCtx, 10 * sizeof(Mtx));
+        MtxF head;
+        MtxF k;
+        MtxF headK;
+        MtxF headInv;
+        MtxF c;
+        MtxF t;
+        f32 sx = GdfTuneAt("robe.chin_scale", 0, 1.55f);
+        f32 sy = GdfTuneAt("robe.chin_scale", 1, 1.1f);
+        f32 sz = GdfTuneAt("robe.chin_scale", 2, 1.5f);
+
+        head = limbs[10];
+        SkinMatrix_SetScale(&k, sx, sy, sz);
+        k.xw = 300.0f * (1.0f - sx) + GdfTuneAt("robe.chin_offset", 0, 150.0f);
+        k.yw = 900.0f * (1.0f - sy) + GdfTuneAt("robe.chin_offset", 1, -420.0f);
+        k.zw = GdfTuneAt("robe.chin_offset", 2, 0.0f);
+        SkinMatrix_MtxFMtxFMult(&head, &k, &headK);
+        SkinMatrix_Invert(&head, &headInv);
+        for (i = 0; i < 10; i++) {
+            if (i == 9) {
+                memcpy(&c, sGdfPoeHoodC9, sizeof(c));
+                SkinMatrix_MtxFMtxFMult(&headInv, &limbs[1], &t);
+                SkinMatrix_MtxFMtxFMult(&headK, &t, &k);
+                SkinMatrix_MtxFMtxFMult(&k, &c, &t);
+            } else {
+                memcpy(&c, sGdfPoeHoodC5, sizeof(c));
+                SkinMatrix_MtxFMtxFMult(&headK, &c, &t);
+            }
+            Matrix_Push();
+            Matrix_Put(&t);
+            Matrix_ToMtx(&chin[i], __FILE__, __LINE__);
+            Matrix_Pop();
+        }
+        gSPSegment(POLY_OPA_DISP++, 0x0D, chin);
+        gSPMatrix(POLY_OPA_DISP++, &chin[5], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, sGdfPoeHoodDL[2]);
+    }
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
