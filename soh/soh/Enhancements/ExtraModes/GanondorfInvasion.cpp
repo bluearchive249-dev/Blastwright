@@ -15,6 +15,7 @@
 //  - A small HUD for the Invader: where the Hero is (his area, and an arrow toward him in the same area).
 // See the project doc "PlayAsGanondorf-InvasionMode" for the rest of the plan (Resolve, the Dark Arts menu, ...).
 
+#include "soh/ActorDB.h"
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -3663,6 +3664,30 @@ static void SendWorldHit(uint32_t host, int key, u8 hp);
 static std::map<std::pair<uint32_t, int>, Ghost> sGhosts;
 static std::map<std::pair<uint32_t, int>, bool> sGhostsGone; // killed in his game: not brought back
 
+// Whether a copy of another game's actor may be made here: its id comes from the network, so only a real actor of a
+// kind these copies ever are (monsters, people, pickups, bombs, small props), never a player, boss, door or scenery
+// (an unknown id would otherwise reach Actor_Spawn, whose check is only an assert)
+static bool GhostIdOk(int id) {
+    if ((id < 0) || (id > 0x7FFF) || (id == ACTOR_PLAYER)) {
+        return false;
+    }
+    ActorDBEntry* entry = ActorDB_Retrieve(id);
+    if ((entry == nullptr) || !entry->valid) {
+        return false;
+    }
+    switch (entry->category) {
+        case ACTORCAT_ENEMY:
+        case ACTORCAT_NPC:
+        case ACTORCAT_MISC:
+        case ACTORCAT_EXPLOSIVE:
+        case ACTORCAT_PROP:
+        case ACTORCAT_ITEMACTION:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static void ReadMirror(uint32_t from, const nlohmann::json& list) {
     PlayState* play = gPlayState;
 
@@ -3670,7 +3695,7 @@ static void ReadMirror(uint32_t from, const nlohmann::json& list) {
         return;
     }
     for (const auto& e : list) {
-        if (!e.is_array() || (e.size() < 7)) {
+        if (!e.is_array() || (e.size() < 7) || !e[1].is_number_integer() || !GhostIdOk(e[1].get<int>())) {
             continue;
         }
         auto key = std::make_pair(from, e[0].get<int>());
@@ -4053,7 +4078,7 @@ static void ReadWorld(uint32_t from, const nlohmann::json& world) {
         sWorldRooms.push_back((s8)r.get<int>());
     }
     for (const auto& e : world.value("a", nlohmann::json::array())) {
-        if (!e.is_array() || (e.size() < 8)) {
+        if (!e.is_array() || (e.size() < 8) || !e[1].is_number_integer() || !GhostIdOk(e[1].get<int>())) {
             continue;
         }
         auto key = std::make_pair(from, e[0].get<int>());
