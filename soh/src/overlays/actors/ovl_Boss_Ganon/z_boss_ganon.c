@@ -5364,13 +5364,21 @@ static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
     // (the mask's eye holes and brow: their own textures, laid on as they were, no luster, in the metal's colors)
     gSPClearGeometryMode(POLY_OPA_DISP++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR);
     gSPSegment(POLY_OPA_DISP++, 0x08, BossGanon_Pg_NullDL(play->state.gfxCtx));
+    // (in the trim's color, gold or ice blue, as the armour's own markings are: in the dark metal, the holes didn't
+    // show)
+    g = POLY_OPA_DISP;
+    BossGanon_Player_ArmorPrimEnv(&g, GdfTune("helmet.marks_trim", 1.0f) != 0.0f);
+    POLY_OPA_DISP = g;
     POLY_OPA_DISP->words.w0 = 0xFC30FE04;
     POLY_OPA_DISP->words.w1 = 0x5FFEFFFE;
     POLY_OPA_DISP++;
     gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[3]);
     // (his flaming hair, its eyes and jewel in their own colors: its list calls segment 8 for a render mode)
     gDPPipeSync(POLY_OPA_DISP++);
-    gDPSetEnvColor(POLY_OPA_DISP++, 255, 255, 255, 255);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, 255);
+    // (its eyes' glow, as Phantom Ganon's own eye brightness)
+    gDPSetEnvColor(POLY_OPA_DISP++, GdfTuneAt("helmet.eye_color", 0, 255.0f), GdfTuneAt("helmet.eye_color", 1, 255.0f),
+                   GdfTuneAt("helmet.eye_color", 2, 255.0f), 255);
     gSPClearGeometryMode(POLY_OPA_DISP++, G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR);
     if (GdfTune("helmet.crest", 1.0f) != 0.0f) {
         gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[1]);
