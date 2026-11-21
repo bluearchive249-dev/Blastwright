@@ -4910,6 +4910,23 @@ s32 BossGanon_Player_GoronLook(void) {
            (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_GORON) && !BossGanon_Player_IsPhantom();
 }
 
+// SoH: "Play as Ganondorf", the front of his throat (just above his collarbones, a little out from his neck), for the
+// chain that fastens his cape round his neck (z_en_ganon_mant.c)
+s32 BossGanon_Player_GetNeckFront(Vec3f* out) {
+    MtxF* m;
+    Vec3f local;
+
+    if ((sPlayerGanondorf == NULL) || !sGdfLimbWorldValid || sPlayerGanondorf->playerHidden) {
+        return false;
+    }
+    m = &sGdfLimbWorld[1];
+    local.x = GdfTuneAt("clasp.neck_point", 0, 2750.0f); // (his torso's space: x up, y forward, z across)
+    local.y = GdfTuneAt("clasp.neck_point", 1, 900.0f);
+    local.z = GdfTuneAt("clasp.neck_point", 2, 0.0f);
+    SkinMatrix_Vec3fMtxFMultXYZ(m, &local, out);
+    return true;
+}
+
 // SoH: "Play as Ganondorf", either tunic's knight: the Iron Knuckle's armour, his shoulders under it, its footsteps
 // (Goron: black and gold under the flame cape; Zora: frost silver and ice blue under the ice cape)
 s32 BossGanon_Player_KnightLook(void) {

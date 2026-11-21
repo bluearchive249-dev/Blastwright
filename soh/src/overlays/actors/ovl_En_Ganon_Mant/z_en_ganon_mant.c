@@ -1122,6 +1122,94 @@ static void EnGanonMant_DrawCollar(PlayState* play, EnGanonMant* this, Mtx* mtx,
     }
 }
 
+// SoH: "Play as Ganondorf", the cape fastened round his neck: from the cape's two top corners a chain of plumes (fire
+// or frost, like the cape's) runs forward over his shoulders and across the front of his throat, so the cape hangs
+// from it instead of in the air beside him. Each link a small plume laid along the chain, out of step with the next.
+static void EnGanonMant_DrawClasp(PlayState* play, EnGanonMant* this, s32 ice) {
+    Vec3f neck;
+    Vec3f a;
+    Vec3f b;
+    s32 links = (s32)GdfTune("clasp.links", 14.0f);
+    f32 sag = GdfTune("clasp.sag", 3.0f);
+    f32 thick = GdfTune("clasp.thickness", 1.0f);
+    Vec3f prev;
+    s32 k;
+
+    if ((GdfTune("clasp.on", 1.0f) == 0.0f) || !BossGanon_Player_GetNeckFront(&neck) || (links < 2)) {
+        return;
+    }
+    a = this->strands[0].joints[0];
+    b = this->strands[GANON_MANT_NUM_STRANDS - 1].joints[0];
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeMaterialDL);
+    gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH);
+    if (ice) {
+        gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("frost.glow_color", 0, 60), (u8)GdfTuneAt("frost.glow_color", 1, 140),
+                       (u8)GdfTuneAt("frost.glow_color", 2, 255), 0);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, (u8)GdfTuneAt("frost.color", 0, 200), (u8)GdfTuneAt("frost.color", 1, 235),
+                        (u8)GdfTuneAt("frost.color", 2, 255), 255);
+    } else {
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 170, 0, 255);
+    }
+    // A curve through the neck point: corner, throat, corner (quadratic, its middle pulled to pass through the throat)
+    for (k = 0; k <= links; k++) {
+        f32 t = (f32)k / links;
+        f32 u = 1.0f - t;
+        Vec3f c = { 2.0f * neck.x - 0.5f * (a.x + b.x), 2.0f * neck.y - 0.5f * (a.y + b.y) - sag,
+                    2.0f * neck.z - 0.5f * (a.z + b.z) };
+        Vec3f p = { u * u * a.x + 2 * u * t * c.x + t * t * b.x, u * u * a.y + 2 * u * t * c.y + t * t * b.y,
+                    u * u * a.z + 2 * u * t * c.z + t * t * b.z };
+
+        if (k > 0) {
+            Vec3f d = { p.x - prev.x, p.y - prev.y, p.z - prev.z };
+            f32 len = sqrtf(SQ(d.x) + SQ(d.y) + SQ(d.z));
+            Vec3f side;
+            Vec3f out;
+            f32 sl;
+            f32 pulse = 1.0f + (ice ? 0.06f : 0.25f) * Math_SinS(play->gameplayFrames * (ice ? 900 : 5000) + k * 9000);
+            f32 sy;
+            f32 sx;
+            MtxF mf;
+
+            if (len < 0.01f) {
+                prev = p;
+                continue;
+            }
+            d.x /= len;
+            d.y /= len;
+            d.z /= len;
+            // (lying flat on him: its width across the chain, sideways to world up)
+            side.x = d.z;
+            side.y = 0.0f;
+            side.z = -d.x;
+            sl = sqrtf(SQ(side.x) + SQ(side.z));
+            if (sl < 0.01f) {
+                side.x = 1.0f;
+                side.z = 0.0f;
+                sl = 1.0f;
+            }
+            side.x /= sl;
+            side.z /= sl;
+            out.x = side.y * d.z - side.z * d.y;
+            out.y = side.z * d.x - side.x * d.z;
+            out.z = side.x * d.y - side.y * d.x;
+            sy = len * 1.7f / 6750.0f * pulse;
+            sx = 3.0f * thick / 3900.0f * pulse;
+            mf.xx = side.x * sx; mf.yx = side.y * sx; mf.zx = side.z * sx; mf.wx = 0.0f;
+            mf.xy = d.x * sy;    mf.yy = d.y * sy;    mf.zy = d.z * sy;    mf.wy = 0.0f;
+            mf.xz = out.x * sx;  mf.yz = out.y * sx;  mf.zz = out.z * sx;  mf.wz = 0.0f;
+            mf.xw = prev.x;      mf.yw = prev.y;      mf.zw = prev.z;      mf.ww = 1.0f;
+            Matrix_Put(&mf);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeModelDL);
+        }
+        prev = p;
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 // (for the mage's hood, drawn by Ganondorf: the same cloth)
 u8* EnGanonMant_GetRobeTex(void) {
     return EnGanonMant_BuildRobeTex() ? sRobeMantTex : NULL;
@@ -1185,6 +1273,7 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
             if (ice) {
                 EnGanonMant_DrawCollar(play, this, mtx, ice);
             }
+            EnGanonMant_DrawClasp(play, this, ice);
         }
     } else {
         gSPDisplayList(POLY_OPA_DISP++, gMantDL);
