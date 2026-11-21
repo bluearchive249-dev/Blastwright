@@ -587,6 +587,94 @@ void EnGanonMant_UpdateVertices(EnGanonMant* this) {
     }
 }
 
+// SoH: "Play as Ganondorf", the elemental capes meeting their opposites. Under water the flame cape fizzles: bubbles
+// stream off it and steam hisses up where it meets the surface. Under water the ice cape freezes the water round it:
+// cold mist, frost glints and little shards of ice. In a hot room (Death Mountain's crater, the Fire Temple) the ice
+// cape drips as it melts, its hem shedding drops, a haze rising off it. A few points of the cape each frame, its own
+// sounds now and then. Only the player's own cape (the flame or ice look).
+static void EnGanonMant_ElementFx(EnGanonMant* this, PlayState* play) {
+    static u32 sSound = 0;
+    Player* player = GET_PLAYER(play);
+    s32 ice = BossGanon_Player_ZoraLook();
+    s32 fire = BossGanon_Player_GoronLook();
+    f32 waterY;
+    s32 inWater;
+    s32 hot = (play->roomCtx.curRoom.behaviorType2 == ROOM_BEHAVIOR_TYPE2_3);
+    s32 k;
+
+    if ((this->actor.params != PLAYER_GANONDORF_CAPE_PARAMS) || !this->ownVertices || (!ice && !fire) ||
+        (GdfTune("fx.on", 1.0f) == 0.0f) || (this->actor.draw == NULL)) {
+        return;
+    }
+    inWater = (player->actor.bgCheckFlags & BGCHECKFLAG_WATER) || (player->actor.yDistToWater > 0.0f);
+    waterY = player->actor.world.pos.y + player->actor.yDistToWater;
+    sSound++;
+
+    for (k = 0; k < (s32)GdfTune("fx.amount", 3.0f); k++) {
+        s32 i = Rand_ZeroOne() * GANON_MANT_NUM_STRANDS;
+        s32 j = 1 + (s32)(Rand_ZeroOne() * (GANON_MANT_NUM_JOINTS - 1));
+        Vec3f p;
+        Vec3f zero = { 0.0f, 0.0f, 0.0f };
+
+        i = CLAMP(i, 0, GANON_MANT_NUM_STRANDS - 1);
+        j = CLAMP(j, 1, GANON_MANT_NUM_JOINTS - 1);
+        p = this->strands[i].joints[j];
+
+        if (inWater && (p.y < waterY)) {
+            if (fire) {
+                // (fizzling: bubbles off it, steam where the surface is)
+                EffectSsBubble_Spawn(play, &p, 0.0f, 4.0f, 4.0f, 0.4f + Rand_ZeroOne() * 0.3f);
+                if ((k == 0) && ((sSound % 3) == 0)) {
+                    Vec3f steam = { p.x, waterY + 2.0f, p.z };
+                    Vec3f up = { 0.0f, 1.2f, 0.0f };
+
+                    EffectSsIceSmoke_Spawn(play, &steam, &up, &zero, 160);
+                }
+            } else {
+                // (freezing: cold mist, glints, a shard now and then)
+                Vec3f drift = { Rand_CenteredFloat(0.6f), 0.4f, Rand_CenteredFloat(0.6f) };
+                Color_RGBA8 prim = { 220, 245, 255, 255 };
+                Color_RGBA8 env = { 100, 180, 255, 255 };
+
+                EffectSsIceSmoke_Spawn(play, &p, &drift, &zero, 120 + Rand_ZeroOne() * 80);
+                EffectSsKiraKira_SpawnDispersed(play, &p, &drift, &zero, &prim, &env, 1200, 16);
+                if (Rand_ZeroOne() < 0.15f) {
+                    Vec3f shard = { Rand_CenteredFloat(2.0f), 1.5f, Rand_CenteredFloat(2.0f) };
+                    Vec3f rise = { 0.0f, 0.1f, 0.0f };
+
+                    EffectSsIcePiece_Spawn(play, &p, 0.2f + Rand_ZeroOne() * 0.3f, &shard, &rise, 25);
+                }
+            }
+        } else if (ice && hot) {
+            // (melting: drops off the hem, a haze off the rest)
+            Vec3f hem = this->strands[i].joints[GANON_MANT_NUM_JOINTS - 1];
+            Vec3f fall = { 0.0f, -1.0f, 0.0f };
+            Vec3f grav = { 0.0f, -0.4f, 0.0f };
+            Color_RGBA8 prim = { 200, 235, 255, 255 };
+            Color_RGBA8 env = { 120, 180, 255, 255 };
+
+            EffectSsDtBubble_SpawnCustomColor(play, &hem, &fall, &grav, &prim, &env, 25 + Rand_ZeroOne() * 20, 18,
+                                              false);
+            if ((k == 0) && ((sSound % 4) == 0)) {
+                Vec3f up = { 0.0f, 0.8f, 0.0f };
+
+                EffectSsIceSmoke_Spawn(play, &p, &up, &zero, 100);
+            }
+        }
+    }
+
+    // Its sounds: the hiss of fire put out, the crackle of water freezing, ice melting (each every couple of seconds)
+    if ((sSound % 40) == 0) {
+        if (inWater && fire) {
+            Audio_PlayActorSound2(&player->actor, NA_SE_EN_EXTINCT);
+        } else if (inWater && ice) {
+            Audio_PlayActorSound2(&player->actor, NA_SE_EV_ICE_FREEZE);
+        } else if (ice && hot) {
+            Audio_PlayActorSound2(&player->actor, NA_SE_EV_ICE_MELT);
+        }
+    }
+}
+
 void EnGanonMant_Update(Actor* thisx, PlayState* play) {
     EnGanonMant* this = (EnGanonMant*)thisx;
     BossGanon* ganon = (BossGanon*)this->actor.parent;
@@ -611,6 +699,7 @@ void EnGanonMant_Update(Actor* thisx, PlayState* play) {
         this->tearTimer--;
         EnGanonMant_Tear(this);
     }
+    EnGanonMant_ElementFx(this, play);
 }
 
 // SoH: "Play as Ganondorf", the Goron Tunic: his cape is pure flame. The cloth isn't drawn; its mesh is, see-through,
