@@ -1359,9 +1359,7 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         EnGanonMant_DrawFire(play, mtx, EnGanonMant_GetOwnVertices(this), ice);
         if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
             EnGanonMant_DrawMane(play, this, ice);
-            if (ice) {
-                EnGanonMant_DrawCollar(play, this, mtx, ice);
-            }
+            EnGanonMant_DrawCollar(play, this, mtx, ice); // (of ice, or of flame on the flame cape)
             EnGanonMant_DrawClasp(play, this, ice);
         }
     } else {
