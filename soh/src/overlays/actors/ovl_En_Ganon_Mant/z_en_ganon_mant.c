@@ -885,6 +885,26 @@ static s32 EnGanonMant_LoadDeathFlames(void) {
 // of icicles, no flames over it)
 static Gfx* sFireGeomOverride = NULL; // (another mesh in the cape's space to draw in the fire or ice: the collar)
 
+// SoH: "Play as Ganondorf", the flame and ice capes, their plumes, collar and chain are translucent and so, like all
+// the game's translucent things, wrote nothing to the depth buffer: the footstep dust, drawn after them, showed through
+// them as if in front. Now the solid-enough parts of them (past a small alpha threshold) write their depth too, so dust
+// behind the cape stays behind it; the faintest wisps at their edges still don't.
+#define GDF_RM_XLU_ZUPD(clk)                                                                   \
+    (AA_EN | Z_CMP | Z_UPD | IM_RD | CVG_DST_WRAP | CLR_ON_CVG | FORCE_BL | ZMODE_XLU | \
+     GBL_c##clk(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA))
+
+static void EnGanonMant_XluDepth(PlayState* play) {
+    if (GdfTune("fx.depth_write", 1.0f) == 0.0f) {
+        return;
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    gDPPipeSync(POLY_XLU_DISP++);
+    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, GDF_RM_XLU_ZUPD(2));
+    gDPSetAlphaCompare(POLY_XLU_DISP++, G_AC_THRESHOLD);
+    gDPSetBlendColor(POLY_XLU_DISP++, 0, 0, 0, (u8)GdfTune("fx.depth_alpha", 40.0f));
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) {
     // Two layers: the body of the fire, then a brighter flicker over it. Prim color, scroll speed down the cape
     static const u8 sFireLayers[2][4] = { { 200, 30, 0, 9 }, { 255, 110, 0, 15 } };
@@ -950,6 +970,9 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
     gDPLoadMultiBlock_4b(POLY_XLU_DISP++, sFlameMaskTex, 0x100, 1, G_IM_FMT_I, FLAME_TEX_S, FLAME_TEX_T, 0,
                          G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 0, 1);
     gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_SURF2);
+    CLOSE_DISPS(play->state.gfxCtx);
+    EnGanonMant_XluDepth(play);
+    OPEN_DISPS(play->state.gfxCtx);
     if (ice) {
         gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("ice.glow_color", 0, 240), (u8)GdfTuneAt("ice.glow_color", 1, 250),
                        (u8)GdfTuneAt("ice.glow_color", 2, 255), 255);
@@ -1025,6 +1048,9 @@ static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this, s32 ice) {
 
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
     gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeMaterialDL);
+    CLOSE_DISPS(play->state.gfxCtx);
+    EnGanonMant_XluDepth(play);
+    OPEN_DISPS(play->state.gfxCtx);
     gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH);
     if (ice) {
         gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("frost.glow_color", 0, 60), (u8)GdfTuneAt("frost.glow_color", 1, 140),
@@ -1240,6 +1266,9 @@ static void EnGanonMant_DrawCollar(PlayState* play, EnGanonMant* this, Mtx* mtx,
         OPEN_DISPS(play->state.gfxCtx);
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
         gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeMaterialDL);
+        CLOSE_DISPS(play->state.gfxCtx);
+        EnGanonMant_XluDepth(play);
+        OPEN_DISPS(play->state.gfxCtx);
         gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH);
         if (ice) {
             gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("frost.glow_color", 0, 60),
@@ -1319,6 +1348,9 @@ static void EnGanonMant_DrawClasp(PlayState* play, EnGanonMant* this, s32 ice) {
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
     gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeMaterialDL);
+    CLOSE_DISPS(play->state.gfxCtx);
+    EnGanonMant_XluDepth(play);
+    OPEN_DISPS(play->state.gfxCtx);
     gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH);
     if (ice) {
         gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("frost.glow_color", 0, 60), (u8)GdfTuneAt("frost.glow_color", 1, 140),
