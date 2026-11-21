@@ -19540,7 +19540,7 @@ s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot) {
     Matrix_SetTranslateRotateYXZ(GdfTuneAt("pause.position", 0, 25.0f), GdfTuneAt("pause.position", 1, -232.0f),
                                  GdfTuneAt("pause.position", 2, 60.0f), rot);
     {
-        f32 sc = GdfTune("pause.scale", 0.026f);
+        f32 sc = GdfTune("pause.scale", 0.036f);
 
         Matrix_Scale(sc * (CVarGetInteger(CVAR_ENHANCEMENT("MirroredWorld"), 0) ? -1 : 1), sc, sc, MTXMODE_APPLY);
     }
