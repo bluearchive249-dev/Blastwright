@@ -20,6 +20,8 @@ s32 BossGanon_Player_GetHoodFrame(EnGanonMant* cape, MtxF* head, Vec3f* collar);
 s32 BossGanon_Player_RobeHoodOn(void);
 }
 
+#include "GanondorfTuning.h"
+
 #define GDF_HOOD_COLS GANON_MANT_NUM_STRANDS
 #define GDF_HOOD_ROWS GANON_MANT_NUM_JOINTS
 #define GDF_HOOD_SHELL_ROWS 9
@@ -47,6 +49,26 @@ static const s16 sGdfHoodShell[GDF_HOOD_SHELL_ROWS][GDF_HOOD_COLS][3] = {
 #define GDF_HOOD_TC_U(row) (186 * ((row) - (GDF_HOOD_ROWS - 2)))
 
 static const Vec3f sGdfHoodCenter = { 300.0f, -420.0f, 0.0f };
+
+// The robe's hood (21 Nov): the shell above came out flat and narrow at the back (his hair through it), so the shell
+// is now a dome round his head and hair (their extent in his face limb: x forward, y down, z across), measured from
+// his model: a part ellipsoid round the middle of his head, cut open round his face; rows from the brim over his
+// crown to the back of his head, columns from one side round over the top to the other, down past his ears.
+static Vec3f Gh_ShellPoint(s32 row, s32 col) {
+    f32 size = GdfTune("robe.hood_size", 1.0f);
+    f32 cx = GdfTuneAt("robe.hood_center", 0, 250.0f);
+    f32 cy = GdfTuneAt("robe.hood_center", 1, -350.0f);
+    f32 cz = GdfTuneAt("robe.hood_center", 2, 0.0f);
+    f32 rx = GdfTuneAt("robe.hood_radii", 0, 1350.0f) * size;
+    f32 ry = GdfTuneAt("robe.hood_radii", 1, 1150.0f) * size;
+    f32 rz = GdfTuneAt("robe.hood_radii", 2, 1100.0f) * size;
+    f32 brim = DEG_TO_RAD(GdfTune("robe.hood_opening", 55.0f)); // (how far round from his face the brim starts)
+    f32 sides = DEG_TO_RAD(GdfTune("robe.hood_reach", 120.0f)); // (how far down his sides it comes)
+    f32 a = brim + (DEG_TO_RAD(178.0f) - brim) * row / (GDF_HOOD_SHELL_ROWS - 1.0f);
+    f32 b = -sides + 2.0f * sides * col / (GDF_HOOD_COLS - 1.0f);
+
+    return { cx + rx * cosf(a), cy - ry * sinf(a) * cosf(b), cz + rz * sinf(a) * sinf(b) };
+}
 
 static Vec3f Gh_Normalize(Vec3f v) {
     f32 len = sqrtf(SQ(v.x) + SQ(v.y) + SQ(v.z));
@@ -81,20 +103,20 @@ extern "C" void* GanondorfHood_Build(EnGanonMant* cape, PlayState* play) {
 
     // Which side of his head is the collar's first point on? Mirror the hood to match.
     Vec3f side0;
-    Vec3f local0 = { (f32)sGdfHoodShell[GDF_HOOD_SHELL_ROWS - 1][0][0], (f32)sGdfHoodShell[GDF_HOOD_SHELL_ROWS - 1][0][1],
-                     (f32)sGdfHoodShell[GDF_HOOD_SHELL_ROWS - 1][0][2] };
+    Vec3f local0 = Gh_ShellPoint(GDF_HOOD_SHELL_ROWS - 1, 0);
     SkinMatrix_Vec3fMtxFMultXYZ(&head, &local0, &side0);
     bool mirror = Gh_Dist2(side0, collar[0]) > Gh_Dist2(side0, collar[GDF_HOOD_COLS - 1]);
 
     Vec3f center;
-    SkinMatrix_Vec3fMtxFMultXYZ(&head, (Vec3f*)&sGdfHoodCenter, &center);
+    Vec3f localCenter = { GdfTuneAt("robe.hood_center", 0, 250.0f), GdfTuneAt("robe.hood_center", 1, -350.0f),
+                          GdfTuneAt("robe.hood_center", 2, 0.0f) };
+    SkinMatrix_Vec3fMtxFMultXYZ(&head, &localCenter, &center);
 
     for (s32 col = 0; col < GDF_HOOD_COLS; col++) {
         s32 shellCol = mirror ? (GDF_HOOD_COLS - 1 - col) : col;
 
         for (s32 row = 0; row < GDF_HOOD_SHELL_ROWS; row++) {
-            Vec3f local = { (f32)sGdfHoodShell[row][shellCol][0], (f32)sGdfHoodShell[row][shellCol][1],
-                            (f32)sGdfHoodShell[row][shellCol][2] };
+            Vec3f local = Gh_ShellPoint(row, shellCol);
             SkinMatrix_Vec3fMtxFMultXYZ(&head, &local, &sPos[row][col]);
         }
         // Down from the shell's bottom to the collar, bowing out a little

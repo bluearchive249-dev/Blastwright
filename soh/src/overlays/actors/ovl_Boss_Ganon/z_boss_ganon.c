@@ -4371,7 +4371,8 @@ void BossGanon_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
                 Matrix_Pop();
             }
             // SoH: "Play as Ganondorf", under his hood the shadow over his brow and eyes
-            if ((this == sPlayerGanondorf) && BossGanon_Player_HoodOn()) {
+            if ((this == sPlayerGanondorf) && BossGanon_Player_HoodOn() &&
+                (GdfTune("robe.hood_shadow", 0.0f) != 0.0f)) { // (off: it drew as a black box, 21 Nov)
                 BossGanon_Player_DrawHoodShadow(play);
             }
         }
