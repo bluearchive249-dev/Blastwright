@@ -7,6 +7,7 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <iterator>
 #include <string>
 #include <ship/Context.h>
 #include <nlohmann/json.hpp>
@@ -15,6 +16,7 @@ namespace {
 
 nlohmann::json sTune = nlohmann::json::object();
 std::filesystem::file_time_type sTuneTime{};
+uintmax_t sTuneSize = 0;
 std::string sTunePath;
 std::chrono::steady_clock::time_point sLastCheck{};
 std::map<std::string, nlohmann::json> sUsed; // every key asked for, with the value in use
@@ -44,14 +46,19 @@ void Refresh() {
             }
         } else {
             auto t = std::filesystem::last_write_time(found);
-            if ((found != sTunePath) || (t != sTuneTime)) {
-                std::ifstream in(found);
-                nlohmann::json j = nlohmann::json::parse(in, nullptr, false, true); // (comments allowed)
+            auto size = std::filesystem::file_size(found);
+            if ((found != sTunePath) || (t != sTuneTime) || (size != sTuneSize)) {
+                std::ifstream in(found, std::ios::binary);
+                std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                nlohmann::json j = nlohmann::json::parse(text, nullptr, false, true); // (comments allowed)
+                // Only taken (and the file marked as read) once it parses: a file caught half written, while it's
+                // being saved or copied in, is read again on the next check instead of being skipped for good
                 if (j.is_object()) {
                     sTune = j;
+                    sTunePath = found;
+                    sTuneTime = t;
+                    sTuneSize = size;
                 }
-                sTunePath = found;
-                sTuneTime = t;
             }
         }
         // The list of keys, for whoever edits the file
