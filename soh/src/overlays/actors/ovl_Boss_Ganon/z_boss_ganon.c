@@ -5037,7 +5037,16 @@ static void BossGanon_Player_DrawPoeHood(PlayState* play, MtxF* limbs) {
 
         memcpy(&c, body ? sGdfPoeHoodC9 : sGdfPoeHoodC5, sizeof(c));
         Matrix_Put(&limbs[body ? 1 : 10]);
-        if (!body) {
+        if (body) {
+            // (its drape down his back, in his torso's space (x up, y forward, z across): drawn in tighter to his back
+            // and shorter so it stays under the cape)
+            Matrix_Translate(GdfTuneAt("robe.hood_drape_offset", 0, 0.0f), GdfTuneAt("robe.hood_drape_offset", 1, 0.0f),
+                             GdfTuneAt("robe.hood_drape_offset", 2, 0.0f), MTXMODE_APPLY);
+            Matrix_Translate(2000.0f, 0.0f, 0.0f, MTXMODE_APPLY);
+            Matrix_Scale(GdfTuneAt("robe.hood_drape_scale", 0, 1.0f), GdfTuneAt("robe.hood_drape_scale", 1, 1.0f),
+                         GdfTuneAt("robe.hood_drape_scale", 2, 1.0f), MTXMODE_APPLY);
+            Matrix_Translate(-2000.0f, 0.0f, 0.0f, MTXMODE_APPLY);
+        } else {
             Matrix_Translate(GdfTuneAt("robe.hood_offset", 0, 0.0f), GdfTuneAt("robe.hood_offset", 1, 0.0f),
                              GdfTuneAt("robe.hood_offset", 2, 0.0f), MTXMODE_APPLY);
             Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
@@ -5061,8 +5070,10 @@ static void BossGanon_Player_DrawPoeHood(PlayState* play, MtxF* limbs) {
     gSPSegment(POLY_OPA_DISP++, 0x0D, mtx);
     gSPMatrix(POLY_OPA_DISP++, &mtx[5], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, sGdfPoeHoodDL[0]);
-    gSPMatrix(POLY_OPA_DISP++, &mtx[9], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, sGdfPoeHoodDL[1]);
+    if (GdfTune("robe.hood_drape", 1.0f) != 0.0f) {
+        gSPMatrix(POLY_OPA_DISP++, &mtx[9], G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, sGdfPoeHoodDL[1]);
+    }
 
     // The chin wrap, snug round his throat: the hood's chin piece, widened round his neck and drawn up under his jaw
     // (in his head's space: scaled about his neck's middle, then moved), its welds to the body following along
