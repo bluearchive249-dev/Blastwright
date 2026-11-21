@@ -653,8 +653,30 @@ static void EnGanonMant_ElementFx(EnGanonMant* this, PlayState* play) {
             Color_RGBA8 prim = { 200, 235, 255, 255 };
             Color_RGBA8 env = { 120, 180, 255, 255 };
 
-            EffectSsDtBubble_SpawnCustomColor(play, &hem, &fall, &grav, &prim, &env, 25 + Rand_ZeroOne() * 20, 18,
-                                              false);
+            f32 dripSize = GdfTune("fx.hot_drip_size", 45.0f);
+            s32 d;
+
+            // (more drops and bigger ones, from all along the hem and a few off the cape's lower half)
+            for (d = 0; d < (s32)GdfTune("fx.hot_drips", 2.0f); d++) {
+                s32 di = CLAMP((s32)(Rand_ZeroOne() * GANON_MANT_NUM_STRANDS), 0, GANON_MANT_NUM_STRANDS - 1);
+                s32 dj = GANON_MANT_NUM_JOINTS - 1 - ((Rand_ZeroOne() < 0.3f) ? (s32)(Rand_ZeroOne() * 4.0f) : 0);
+
+                hem = this->strands[di].joints[dj];
+                fall.x = Rand_CenteredFloat(0.3f);
+                fall.z = Rand_CenteredFloat(0.3f);
+                EffectSsDtBubble_SpawnCustomColor(play, &hem, &fall, &grav, &prim, &env,
+                                                  dripSize + Rand_ZeroOne() * dripSize * 0.5f, 22, false);
+            }
+            // (steam: pale clouds rolling up off the whole cape, the game's own dust puffs in white)
+            if (Rand_ZeroOne() < GdfTune("fx.steam_chance", 0.7f)) {
+                Vec3f rise = { Rand_CenteredFloat(0.4f), 0.6f + Rand_ZeroOne() * 0.6f, Rand_CenteredFloat(0.4f) };
+                Vec3f lift = { 0.0f, 0.05f, 0.0f };
+                Color_RGBA8 sprim = { 255, 255, 255, (u8)GdfTune("fx.steam_alpha", 120.0f) };
+                Color_RGBA8 senv = { 200, 220, 235, 0 };
+                s16 ss = (s16)GdfTune("fx.steam_size", 120.0f);
+
+                EffectSsDust_Spawn(play, 1, &p, &rise, &lift, &sprim, &senv, ss, (s16)GdfTune("fx.steam_grow", 8.0f), 22 + Rand_ZeroOne() * 10, 0);
+            }
             if ((k == 0) && ((sSound % 4) == 0)) {
                 Vec3f up = { 0.0f, 0.8f, 0.0f };
 
