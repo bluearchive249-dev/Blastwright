@@ -3671,8 +3671,8 @@ static bool GhostIdOk(int id) {
     if ((id < 0) || (id > 0x7FFF) || (id == ACTOR_PLAYER)) {
         return false;
     }
-    ActorDBEntry* entry = ActorDB_Retrieve(id);
-    if ((entry == nullptr) || !entry->valid) {
+    ActorDBEntry* entry = &ActorDB::Instance->RetrieveEntry(id).entry;
+    if (!entry->valid) {
         return false;
     }
     switch (entry->category) {
