@@ -5192,6 +5192,12 @@ static const u64 sGdfHelmMarkTex[] = {
 static const u64 sGdfHelmHairTex[] = { 0xDDB63AE9FE6A56BFULL }; // 00B780: his flaming hair, as it is
 static Gfx sGdfHelmDL[4][400];
 static u8 sGdfHelmReady = false;
+// (its ears, the fins out the sides of the mask by its cheeks: left off unless tuned back. Their triangles, counted
+// through its list: 14, 16 to 19 and 21)
+static u8 sGdfHelmEars = false;
+static s32 BossGanon_Player_HelmEar(s32 tri) {
+    return !sGdfHelmEars && ((tri == 14) || ((tri >= 16) && (tri <= 19)) || (tri == 21));
+}
 static Gfx* BossGanon_Pg_NullDL(GraphicsContext* gfxCtx);
 
 // mode 0: keep vertices and the lit triangles with one of `keep`'s textures. mode 1: everything (materials too) but only
@@ -5203,6 +5209,7 @@ static s32 BossGanon_Player_CutHelm(const char* path, Gfx* out, s32 max, const u
     s32 i = 0;
     u8 on = false;
     u32 geo = 0;
+    s32 tri = 0;
 
     if (src == NULL) {
         return false;
@@ -5234,8 +5241,23 @@ static s32 BossGanon_Player_CutHelm(const char* path, Gfx* out, s32 max, const u
             s32 lit = (geo & G_LIGHTING) != 0;
 
             if ((mode == 1) ? !lit : (on && lit)) {
-                out[n++] = src[i];
+                s32 drop0 = BossGanon_Player_HelmEar(tri);
+                s32 drop1 = (op == G_TRI2) && BossGanon_Player_HelmEar(tri + 1);
+
+                if (op == G_TRI1) {
+                    if (!drop0) {
+                        out[n++] = src[i];
+                    }
+                } else if (!drop0 && !drop1) {
+                    out[n++] = src[i];
+                } else if (!drop0 || !drop1) {
+                    // (one of the pair: on its own)
+                    out[n].words.w0 = (G_TRI1 << 24) | ((drop0 ? src[i].words.w1 : src[i].words.w0) & 0xFFFFFF);
+                    out[n].words.w1 = 0;
+                    n++;
+                }
             }
+            tri += (op == G_TRI2) ? 2 : 1;
         } else if ((mode == 2) && ((op == G_SETCOMBINE) || (op == G_SETPRIMCOLOR) || (op == G_SETENVCOLOR))) {
             // (left to the metal)
         } else if ((op == G_VTX_OTR_HASH) || (op == G_VTX) || (mode != 0)) {
@@ -5306,6 +5328,10 @@ static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
     f32 sc = (5132.0f / 4133.0f) * GdfTune("helmet.scale", 1.0f);
     Gfx* g;
 
+    if (sGdfHelmEars != (GdfTune("helmet.ears", 0.0f) != 0.0f)) {
+        sGdfHelmEars = !sGdfHelmEars;
+        sGdfHelmReady = false;
+    }
     if (!sGdfHelmReady) {
         if (!BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[0], ARRAY_COUNT(sGdfHelmDL[0]), sGdfHelmMetalTex,
                                       ARRAY_COUNT(sGdfHelmMetalTex), 0) ||
