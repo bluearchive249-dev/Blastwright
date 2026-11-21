@@ -663,6 +663,70 @@ static void EnGanonMant_ElementFx(EnGanonMant* this, PlayState* play) {
         }
     }
 
+    // Out of the water: the hem trails its element, more of it the faster he moves. The flame cape sheds Volvagia's
+    // own trail flames (the ones off his body as he flies) and embers; the ice cape sheds the same flame in its cold
+    // blue (the game's own colour for it), frost glints and a sinking wisp of cold mist. The ice cape also drips now
+    // and then everywhere (faster in a hot room, above).
+    if (!inWater && (GdfTune("fx.trail", 1.0f) != 0.0f)) {
+        f32 speed = CLAMP(player->linearVelocity / 10.0f, 0.0f, 1.0f);
+        f32 rate = GdfTune("fx.trail_idle", 0.25f) + (GdfTune("fx.trail_moving", 1.2f) - GdfTune("fx.trail_idle", 0.25f)) * speed;
+        f32 size = GdfTune("fx.trail_size", 22.0f);
+        s32 n = (s32)rate + ((Rand_ZeroOne() < (rate - (s32)rate)) ? 1 : 0);
+
+        for (k = 0; k < n; k++) {
+            s32 i = CLAMP((s32)(Rand_ZeroOne() * GANON_MANT_NUM_STRANDS), 0, GANON_MANT_NUM_STRANDS - 1);
+            s32 j = GANON_MANT_NUM_JOINTS - 1 - (s32)(Rand_ZeroOne() * GdfTune("fx.trail_rows", 2.0f));
+            Vec3f p;
+            Vec3f vel = { Rand_CenteredFloat(0.4f), 0.0f, Rand_CenteredFloat(0.4f) };
+            Vec3f acc = { 0.0f, 0.0f, 0.0f };
+
+            j = CLAMP(j, 1, GANON_MANT_NUM_JOINTS - 1);
+            p = this->strands[i].joints[j];
+
+            if (fire) {
+                acc.y = 0.03f;
+                EffectSsKFire_Spawn(play, &p, &vel, &acc, (s16)(size + Rand_ZeroFloat(size * 0.6f)), 100);
+                if (Rand_ZeroOne() < GdfTune("fx.ember_chance", 0.2f)) {
+                    Vec3f up = { Rand_CenteredFloat(1.5f), 1.0f + Rand_ZeroOne(), Rand_CenteredFloat(1.5f) };
+                    Vec3f g = { 0.0f, -0.05f, 0.0f };
+                    Color_RGBA8 prim = { 255, 220, 120, 255 };
+                    Color_RGBA8 env = { 255, 60, 0, 0 };
+
+                    EffectSsGSpk_SpawnAccel(play, &player->actor, &p, &up, &g, &prim, &env, 60, 0);
+                }
+            } else {
+                acc.y = -0.02f;
+                if (GdfTune("fx.ice_flame", 1.0f) != 0.0f) {
+                    EffectSsKFire_Spawn(play, &p, &vel, &acc, (s16)(size * 0.8f + Rand_ZeroFloat(size * 0.5f)), 0);
+                }
+                if (Rand_ZeroOne() < GdfTune("fx.glint_chance", 0.5f)) {
+                    Color_RGBA8 prim = { 230, 250, 255, 255 };
+                    Color_RGBA8 env = { 100, 190, 255, 255 };
+
+                    EffectSsKiraKira_SpawnDispersed(play, &p, &vel, &acc, &prim, &env, 1000, 20);
+                }
+                if (Rand_ZeroOne() < GdfTune("fx.mist_chance", 0.1f)) {
+                    Vec3f sink = { 0.0f, -0.3f, 0.0f };
+                    Vec3f zero = { 0.0f, 0.0f, 0.0f };
+
+                    EffectSsIceSmoke_Spawn(play, &p, &sink, &zero, 90);
+                }
+            }
+        }
+
+        if (ice && !hot && (Rand_ZeroOne() < GdfTune("fx.drip_always", 0.15f))) {
+            s32 i = CLAMP((s32)(Rand_ZeroOne() * GANON_MANT_NUM_STRANDS), 0, GANON_MANT_NUM_STRANDS - 1);
+            Vec3f hem = this->strands[i].joints[GANON_MANT_NUM_JOINTS - 1];
+            Vec3f fall = { 0.0f, -1.0f, 0.0f };
+            Vec3f grav = { 0.0f, -0.4f, 0.0f };
+            Color_RGBA8 prim = { 200, 235, 255, 255 };
+            Color_RGBA8 env = { 120, 180, 255, 255 };
+
+            EffectSsDtBubble_SpawnCustomColor(play, &hem, &fall, &grav, &prim, &env, 25 + Rand_ZeroOne() * 20, 18,
+                                              false);
+        }
+    }
+
     // Its sounds: the hiss of fire put out, the crackle of water freezing, ice melting (each every couple of seconds)
     if ((sSound % 40) == 0) {
         if (inWater && fire) {
