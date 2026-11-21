@@ -4158,6 +4158,11 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
         BossGanon_Player_RobeHoodOn()) {
         *dList = NULL;
     }
+    // (and his whole head, face, hair and all, under the knight's helmet)
+    if ((limbIndex >= 11) && (limbIndex <= 18) && (this == sPlayerGanondorf) && !sGdfPgCapture &&
+        BossGanon_Player_HelmetOn() && (GdfTune("helmet.hide_head", 1.0f) != 0.0f)) {
+        *dList = NULL;
+    }
 
     // SoH: "Play as Ganondorf", the upper half of his hair (limb 14) hangs from his torso's way, not his head's
     if ((limbIndex == 15) && GDF_IS_PLAYER(this) && sGdfHairTorsoValid) {
@@ -5161,6 +5166,178 @@ static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
 }
 
 // (on his limbs as drawn: their matrices, his limb order)
+// SoH: "Play as Ganondorf", the knight's helmet: Phantom Ganon's own head (object_gnd), horns, mask and all, worn over
+// his in place of his own, in the armour's metal with the same luster (the Iron Knuckle's metal texture, mapped by
+// the light as on the plate). Its swept-back crest goes in the armour's trim, its glowing eyes and the jewel on its
+// brow stay as they are. Cut from Phantom Ganon's head limb at first use, three ways:
+//  - the metal: the lit triangles of the mask, horns and helmet (their own textures dropped, only their geometry kept)
+//  - the trim: the crest
+//  - as it is: the unlit triangles (its eyes, the jewel, the dark inside of the mask) with their own textures
+// His head limb's axes are Ganondorf's head's (the Phantom Ganon skin poses it that way), so it sits on his head as is,
+// in the skin's scale (GDF_PG_SCALE).
+#define GDF_PG_HEAD_DL gPhantomGanonSkelLimbsLimb_00C628DL_0080F8
+static const u64 sGdfHelmMetalTex[] = {
+    0x7C53D11588839A26ULL, // 00BE80: horns, helmet
+    0x5FBD268AB25482E1ULL, // 00BD80: the mask's brow
+    0xB435E0571671C8B4ULL, // 00BC80: its cheeks
+    0x74074132A207416BULL, // 00A800: the helmet's shell
+    0x485756B91FCAF486ULL, // 00B980: the mask's teeth
+    0x7434FD547B3E3C41ULL, // 00AF80: its band
+};
+static const u64 sGdfHelmTrimTex[] = { 0xDDB63AE9FE6A56BFULL }; // 00B780: the crest
+static Gfx sGdfHelmDL[3][400];
+static u8 sGdfHelmReady = false;
+static Gfx* BossGanon_Pg_NullDL(GraphicsContext* gfxCtx);
+
+// mode 0: keep vertices and the lit triangles with one of `keep`'s textures. mode 1: everything (materials too) but only
+// the unlit triangles
+static s32 BossGanon_Player_CutHelm(const char* path, Gfx* out, s32 max, const u64* keep, s32 nkeep, s32 mode) {
+    Gfx* src = ResourceMgr_LoadGfxByName(path);
+    s32 n = 0;
+    s32 i = 0;
+    u8 on = false;
+    u32 geo = 0;
+
+    if (src == NULL) {
+        return false;
+    }
+    while ((i < 1024) && (n < max - 3)) {
+        u8 op = src[i].words.w0 >> 24;
+        s32 size = ((op == G_DL_OTR_HASH) || (op == G_MARKER) || (op == G_MTX_OTR) || (op == G_BRANCH_Z_OTR) ||
+                    (op == G_MOVEMEM_OTR) || (op == G_SETTIMG_OTR_HASH) || (op == G_VTX_OTR_HASH) ||
+                    (op == G_SETTIMG_OTR_FILEPATH) || (op == G_VTX_OTR_FILEPATH) || (op == G_DL_OTR_FILEPATH))
+                       ? 2
+                       : 1;
+        s32 k;
+
+        if (op == 0xDF) {
+            break;
+        }
+        if (op == G_GEOMETRYMODE) {
+            geo = (geo & (src[i].words.w0 & 0xFFFFFF)) | src[i].words.w1;
+        }
+        if (op == G_SETTIMG_OTR_HASH) {
+            u64 hash = ((u64)src[i + 1].words.w0 << 32) | (u32)src[i + 1].words.w1;
+
+            on = false;
+            for (k = 0; k < nkeep; k++) {
+                on |= (hash == keep[k]);
+            }
+        }
+        if ((op == G_TRI1) || (op == G_TRI2)) {
+            s32 lit = (geo & G_LIGHTING) != 0;
+
+            if ((mode == 0) ? (on && lit) : !lit) {
+                out[n++] = src[i];
+            }
+        } else if ((op == G_VTX_OTR_HASH) || (op == G_VTX) || (mode == 1)) {
+            for (k = 0; k < size; k++) {
+                out[n++] = src[i + k];
+            }
+        }
+        i += size;
+    }
+    gSPEndDisplayList(&out[n]);
+    return true;
+}
+
+s32 BossGanon_Player_HelmetOn(void) {
+    return BossGanon_Player_KnightLook() && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.KnightHelmet"), 1);
+}
+
+// The armour's colors: its metal (dark iron, or frost silver) or its trim (gold, or ice blue)
+static void BossGanon_Player_ArmorPrimEnv(Gfx** gfx, s32 trim) {
+    Gfx* g = *gfx;
+
+    gDPPipeSync(g++);
+    if (BossGanon_Player_ZoraLook()) {
+        if (trim) {
+            gDPSetPrimColor(g++, 0, 0, GdfTuneAt("armor.ice_trim_color", 0, 170), GdfTuneAt("armor.ice_trim_color", 1, 225),
+                            GdfTuneAt("armor.ice_trim_color", 2, 255), 255);
+            gDPSetEnvColor(g++, 20, 40, 80, 255);
+        } else {
+            gDPSetPrimColor(g++, 0, 0, GdfTuneAt("armor.ice_metal_color", 0, 140),
+                            GdfTuneAt("armor.ice_metal_color", 1, 165), GdfTuneAt("armor.ice_metal_color", 2, 190), 255);
+            gDPSetEnvColor(g++, 0, 10, 30, 255);
+        }
+    } else {
+        if (trim) {
+            gDPSetPrimColor(g++, 0, 0, GdfTuneAt("armor.trim_color", 0, 205), GdfTuneAt("armor.trim_color", 1, 165),
+                            GdfTuneAt("armor.trim_color", 2, 75), 255);
+            gDPSetEnvColor(g++, 25, 20, 0, 255);
+        } else {
+            gDPSetPrimColor(g++, 0, 0, GdfTuneAt("armor.metal_color", 0, 55), GdfTuneAt("armor.metal_color", 1, 65),
+                            GdfTuneAt("armor.metal_color", 2, 55), 255);
+            gDPSetEnvColor(g++, 0, 0, 0, 255);
+        }
+    }
+    *gfx = g;
+}
+
+// The Iron Knuckle plate's own material: its metal texture mapped by the light (the luster), between the two colors
+static void BossGanon_Player_PlateMaterial(Gfx** gfx, s32 trim) {
+    Gfx* g = *gfx;
+
+    gDPPipeSync(g++);
+    gSPTexture(g++, 0x0BB8, 0x0BB8, 0, G_TX_RENDERTILE, G_ON);
+    gDPLoadTextureBlock_4b(g++, gIronKnuckleMetalTex, G_IM_FMT_I, 32, 64, 0, G_TX_MIRROR | G_TX_WRAP,
+                           G_TX_MIRROR | G_TX_WRAP, 5, 6, G_TX_NOLOD, G_TX_NOLOD);
+    // (its combiner, as the Iron Knuckle's: (prim - env) * texel + env, by the light)
+    g->words.w0 = 0xFC30FE04;
+    g->words.w1 = 0x5FFEFFFE;
+    g++;
+    gDPSetRenderMode(g++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_OPA_SURF2);
+    gSPClearGeometryMode(g++, G_CULL_FRONT);
+    gSPSetGeometryMode(g++, G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_SHADE | G_SHADING_SMOOTH | G_FOG |
+                                G_CULL_BACK);
+    *gfx = g;
+    BossGanon_Player_ArmorPrimEnv(gfx, trim);
+}
+
+static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
+    f32 sc = (5132.0f / 4133.0f) * GdfTune("helmet.scale", 1.0f);
+    Gfx* g;
+
+    if (!sGdfHelmReady) {
+        if (!BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[0], ARRAY_COUNT(sGdfHelmDL[0]), sGdfHelmMetalTex,
+                                      ARRAY_COUNT(sGdfHelmMetalTex), 0) ||
+            !BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[1], ARRAY_COUNT(sGdfHelmDL[1]), sGdfHelmTrimTex,
+                                      ARRAY_COUNT(sGdfHelmTrimTex), 0) ||
+            !BossGanon_Player_CutHelm(GDF_PG_HEAD_DL, sGdfHelmDL[2], ARRAY_COUNT(sGdfHelmDL[2]), NULL, 0, 1)) {
+            return;
+        }
+        sGdfHelmReady = true;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_Put(&limbs[10]);
+    // (in his head's space: x forward, y down, z across)
+    Matrix_Translate(GdfTuneAt("helmet.offset", 0, 0.0f), GdfTuneAt("helmet.offset", 1, 0.0f),
+                     GdfTuneAt("helmet.offset", 2, 0.0f), MTXMODE_APPLY);
+    Matrix_RotateZ(DEG_TO_RAD(GdfTune("helmet.tilt", 0.0f)), MTXMODE_APPLY);
+    Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    Matrix_Pop();
+
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    g = POLY_OPA_DISP;
+    BossGanon_Player_PlateMaterial(&g, false);
+    POLY_OPA_DISP = g;
+    gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[0]);
+    if (GdfTune("helmet.crest", 1.0f) != 0.0f) {
+        g = POLY_OPA_DISP;
+        BossGanon_Player_ArmorPrimEnv(&g, true);
+        POLY_OPA_DISP = g;
+        gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[1]);
+    }
+    // (its eyes and jewel in their own colors: its list calls segment 8 for a render mode, nothing needed there)
+    gSPSegment(POLY_OPA_DISP++, 0x08, BossGanon_Pg_NullDL(play->state.gfxCtx));
+    gDPSetEnvColor(POLY_OPA_DISP++, 255, 255, 255, 255);
+    gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[2]);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp) {
     static const char* sDLs[GDF_ARMOR_SLOTS] = {
         object_ik_DL_01C7B8, object_ik_DL_01CEE0, object_ik_DL_01CB58, object_ik_DL_01CCA0, object_ik_DL_01D638,
@@ -5259,6 +5436,11 @@ static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp) {
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
+
+    // (the helmet, unless he's looking out from under it)
+    if (!fp && BossGanon_Player_HelmetOn()) {
+        BossGanon_Player_DrawHelmet(play, limbs);
+    }
 }
 
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {
@@ -19299,6 +19481,10 @@ static s32 BossGanon_Player_PauseOverrideLimbDraw(PlayState* play, s32 limbIndex
     }
     if (((limbIndex == 15) || (limbIndex == 16)) && BossGanon_Player_RobeHoodOn()) {
         *dList = NULL; // (his hair, under the hood)
+    }
+    if ((limbIndex >= 11) && (limbIndex <= 18) && BossGanon_Player_HelmetOn() &&
+        (GdfTune("helmet.hide_head", 1.0f) != 0.0f)) {
+        *dList = NULL; // (his head, under the helmet)
     }
     return false;
 }

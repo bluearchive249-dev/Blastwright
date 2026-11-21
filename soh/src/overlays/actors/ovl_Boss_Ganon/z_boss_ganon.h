@@ -256,6 +256,7 @@ s32 BossGanon_Player_GoronLook(void); // the Goron Tunic look: Iron Knuckle armo
 s32 BossGanon_Player_ZoraLook(void);  // the Zora Tunic look: a mage, with a great cape of ice
 s32 BossGanon_Player_RobeHoodOn(void);
 s32 BossGanon_Player_KnightLook(void);
+s32 BossGanon_Player_HelmetOn(void);   // the knight's helmet: Phantom Ganon's head in the armour's metal
 s32 BossGanon_Player_GetNeckFront(Vec3f* out); // where the cape's clasp chain crosses his throat // either tunic's Iron Knuckle armour // the mage robe's hood (GanondorfHood.cpp)
 // The guards hunt him (he murdered someone in the market and hasn't left by the drawbridge)
 s32 BossGanon_Player_IsWanted(void);

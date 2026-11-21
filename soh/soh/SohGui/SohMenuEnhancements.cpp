@@ -2293,7 +2293,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Goron Tunic: Heavy Knight", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.GoronTunicLook"))
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "With the Goron Tunic on, he wears an Iron Knuckle's armour in black and gold (no helmet) and his cape "
+            "With the Goron Tunic on, he wears an Iron Knuckle's armour in black and gold and his cape "
             "burns with Koume's flames. Only a look."));
     AddWidget(path, "Flame Cape: Volvagia's Mane", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.FlameCapeMane"))
@@ -2306,6 +2306,11 @@ void SohMenu::AddMenuEnhancements() {
             "With the Zora Tunic on, he wears the Iron Knuckle's armour in frost silver and ice blue, and his cape "
             "becomes a great sheet of ice in Kotake's colors with a standing ice collar and Volvagia's plumes as "
             "frost. Only a look."));
+    AddWidget(path, "Knight Helmet", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.KnightHelmet"))
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "With either knight's armour on (Goron or Zora Tunic), he wears Phantom Ganon's horned helmet and mask in "
+            "the armour's metal and luster, its crest in the armour's trim. Only a look."));
     AddWidget(path, "Phantom Ganon Skin", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.PhantomGanon"))
         .PreFunc([](WidgetInfo& info) {
