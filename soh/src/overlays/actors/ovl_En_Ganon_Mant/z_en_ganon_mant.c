@@ -482,6 +482,39 @@ void EnGanonMant_UpdateStrand(PlayState* play, EnGanonMant* this, Vec3f* root, V
             // Enforces minY constraint
             if (pos->y < this->minY) {
                 pos->y = this->minY;
+
+                // SoH: "Play as Ganondorf", the player's long cape: where it lies on the ground it pools out behind him
+                // like a train, each strand carrying on outward and back from his body (the middle straight back, the
+                // edges fanning out to the back corners), instead of smearing sideways across the floor
+                if ((this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) && (GdfTune("ground.spread", 1.0f) != 0.0f)) {
+                    f32 back = GdfTune("ground.back", 1.2f);
+                    f32 ry = Math_SinS(this->actor.shape.rot.y);
+                    f32 rx = Math_CosS(this->actor.shape.rot.y);
+                    f32 ox = (pos - 1)->x - this->actor.world.pos.x;
+                    f32 oz = (pos - 1)->z - this->actor.world.pos.z;
+                    f32 ol = sqrtf(SQ(ox) + SQ(oz));
+                    f32 dirX;
+                    f32 dirZ;
+                    f32 dl;
+                    f32 dy = (pos - 1)->y - pos->y;
+                    f32 flat = SQ(jointLength) - SQ(dy);
+
+                    if (ol > 0.001f) {
+                        ox /= ol;
+                        oz /= ol;
+                    }
+                    // (outward from him, plus backward: his facing is (sin, cos) of his yaw)
+                    dirX = ox - ry * back;
+                    dirZ = oz - rx * back;
+                    dl = sqrtf(SQ(dirX) + SQ(dirZ));
+                    if ((dl > 0.001f) && (flat > 0.0f)) {
+                        f32 w = GdfTune("ground.strength", 0.6f);
+
+                        flat = sqrtf(flat);
+                        pos->x += (((pos - 1)->x + dirX / dl * flat) - pos->x) * w;
+                        pos->z += (((pos - 1)->z + dirZ / dl * flat) - pos->z) * w;
+                    }
+                }
             }
 
             // Calculate next velocity
