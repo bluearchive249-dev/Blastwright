@@ -5041,6 +5041,8 @@ static void BossGanon_Player_DrawPoeHood(PlayState* play, MtxF* limbs) {
             Matrix_Translate(GdfTuneAt("robe.hood_offset", 0, 0.0f), GdfTuneAt("robe.hood_offset", 1, 0.0f),
                              GdfTuneAt("robe.hood_offset", 2, 0.0f), MTXMODE_APPLY);
             Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+            // (squashed toward his head: less room above it; his head's y runs down)
+            Matrix_Scale(1.0f, GdfTune("robe.hood_squash", 1.0f), 1.0f, MTXMODE_APPLY);
         }
         Matrix_Mult(&c, MTXMODE_APPLY);
         Matrix_ToMtx(&mtx[i], __FILE__, __LINE__);

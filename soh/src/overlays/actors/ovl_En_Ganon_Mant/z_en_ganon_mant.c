@@ -708,6 +708,8 @@ static s32 EnGanonMant_LoadDeathFlames(void) {
 
 // (ice: the Zora Tunic's cape, the same in Kotake's colors: ice blue to white, drifting slowly, its hem a still edge
 // of icicles, no flames over it)
+static Gfx* sFireGeomOverride = NULL; // (another mesh in the cape's space to draw in the fire or ice: the collar)
+
 static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) {
     // Two layers: the body of the fire, then a brighter flicker over it. Prim color, scroll speed down the cape
     static const u8 sFireLayers[2][4] = { { 200, 30, 0, 9 }, { 255, 110, 0, 15 } };
@@ -741,7 +743,9 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
                  ? 2
                  : 1;
     }
-    if ((geom == NULL) || (vtx == NULL)) {
+    if (sFireGeomOverride != NULL) {
+        geom = sFireGeomOverride;
+    } else if ((geom == NULL) || (vtx == NULL)) {
         return;
     }
     EnGanonMant_BuildFlameMask(frames, ice);
@@ -759,7 +763,9 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
     gSPInvalidateTexCache(POLY_XLU_DISP++, sFlameMaskTex);
     gSPMatrix(POLY_XLU_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPSegment(POLY_XLU_DISP++, 0x0C, vtx);
+    if (vtx != NULL) {
+        gSPSegment(POLY_XLU_DISP++, 0x0C, vtx);
+    }
     gDPPipeSync(POLY_XLU_DISP++);
     gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH | G_LIGHTING);
     gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
@@ -974,6 +980,148 @@ static s32 EnGanonMant_BuildRobeTex(void) {
     return true;
 }
 
+// SoH: "Play as Ganondorf", the ice cape's collar: a standing collar of ice where the cape begins, rising from its top
+// edge and bending up and out behind his neck, its top a jagged edge of icicles (the hem's own), with frost plumes
+// standing up along it. Three rows of the cape's twelve strands: its roots, then higher and further out.
+static void EnGanonMant_DrawCollar(PlayState* play, EnGanonMant* this, Mtx* mtx, s32 ice) {
+    Vtx* v = Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * 3 * GANON_MANT_NUM_STRANDS);
+    Gfx* dl = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 32);
+    Gfx* g = dl;
+    f32 height = GdfTune("collar.height", 14.0f);
+    f32 flare = GdfTune("collar.flare", 7.0f);
+    f32 lean = GdfTune("collar.lean_back", 3.0f);
+    Vec3f mid = { 0.0f, 0.0f, 0.0f };
+    Vec3f back;
+    Vec3f top[GANON_MANT_NUM_STRANDS];
+    f32 len;
+    s32 i;
+    s32 r;
+
+    if (GdfTune("collar.on", 1.0f) == 0.0f) {
+        return;
+    }
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        mid.x += this->strands[i].joints[0].x / GANON_MANT_NUM_STRANDS;
+        mid.z += this->strands[i].joints[0].z / GANON_MANT_NUM_STRANDS;
+    }
+    // (behind him: the way the cape falls from its top)
+    back.x = this->strands[GANON_MANT_NUM_STRANDS / 2].joints[2].x - this->strands[GANON_MANT_NUM_STRANDS / 2].joints[0].x;
+    back.z = this->strands[GANON_MANT_NUM_STRANDS / 2].joints[2].z - this->strands[GANON_MANT_NUM_STRANDS / 2].joints[0].z;
+    len = sqrtf(SQ(back.x) + SQ(back.z));
+    if (len > 0.01f) {
+        back.x /= len;
+        back.z /= len;
+    } else {
+        back.x = back.z = 0.0f;
+    }
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        Vec3f* root = &this->strands[i].joints[0];
+        f32 ox = root->x - mid.x;
+        f32 oz = root->z - mid.z;
+        f32 ol = sqrtf(SQ(ox) + SQ(oz));
+
+        if (ol > 0.01f) {
+            ox /= ol;
+            oz /= ol;
+        }
+        for (r = 0; r < 3; r++) {
+            f32 t = r / 2.0f;
+            // (bending: straight up at first, then out, more toward the top)
+            Vec3f p = { root->x + (ox * flare + back.x * lean) * t * t, root->y + height * t,
+                        root->z + (oz * flare + back.z * lean) * t * t };
+            Vtx* vt = &v[r * GANON_MANT_NUM_STRANDS + i];
+
+            vt->v.ob[0] = CLAMP((p.x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            vt->v.ob[1] = CLAMP((p.y - this->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            vt->v.ob[2] = CLAMP((p.z - this->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            vt->v.flag = 0;
+            // (s across like the cape; t from solid at its root to the icicle edge at its top)
+            vt->v.tc[0] = (s16)(i * 2048 / (GANON_MANT_NUM_STRANDS - 1));
+            vt->v.tc[1] = (s16)(r * 34 * 32 + 0);
+            vt->v.cn[0] = vt->v.cn[1] = vt->v.cn[2] = vt->v.cn[3] = 255;
+            if (r == 2) {
+                top[i] = p;
+            }
+        }
+    }
+    gSPVertex(g++, v, 3 * GANON_MANT_NUM_STRANDS, 0);
+    for (r = 0; r < 2; r++) {
+        for (i = 0; i < GANON_MANT_NUM_STRANDS - 1; i++) {
+            s32 a = r * GANON_MANT_NUM_STRANDS + i;
+            s32 b = a + GANON_MANT_NUM_STRANDS;
+
+            gSP2Triangles(g++, a, a + 1, b + 1, 0, a, b + 1, b, 0);
+        }
+    }
+    gSPEndDisplayList(g++);
+
+    sFireGeomOverride = dl;
+    EnGanonMant_DrawFire(play, mtx, NULL, ice);
+    sFireGeomOverride = NULL;
+
+    // Frost plumes standing up along it, from its top edge
+    if (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.FlameCapeMane"), 1) &&
+        (GdfTune("collar.plumes", 1.0f) != 0.0f)) {
+        OPEN_DISPS(play->state.gfxCtx);
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeMaterialDL);
+        gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH);
+        if (ice) {
+            gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("frost.glow_color", 0, 60),
+                           (u8)GdfTuneAt("frost.glow_color", 1, 140), (u8)GdfTuneAt("frost.glow_color", 2, 255), 0);
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, (u8)GdfTuneAt("frost.color", 0, 200),
+                            (u8)GdfTuneAt("frost.color", 1, 235), (u8)GdfTuneAt("frost.color", 2, 255), 255);
+        } else {
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 160, 0, 255);
+        }
+        for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+            Vtx* base = &v[GANON_MANT_NUM_STRANDS + i];
+            Vec3f* p = &top[i];
+            Vec3f* q = &top[MIN(i + 1, GANON_MANT_NUM_STRANDS - 1)];
+            Vec3f* o = &top[MAX(i - 1, 0)];
+            Vec3f up = { p->x - (base->v.ob[0] / LINK_GANON_CAPE_VTX_SCALE + this->anchor.x),
+                         p->y - (base->v.ob[1] / LINK_GANON_CAPE_VTX_SCALE + this->anchor.y),
+                         p->z - (base->v.ob[2] / LINK_GANON_CAPE_VTX_SCALE + this->anchor.z) };
+            Vec3f across = { q->x - o->x, q->y - o->y, q->z - o->z };
+            Vec3f out;
+            f32 ul = sqrtf(SQ(up.x) + SQ(up.y) + SQ(up.z));
+            f32 al = sqrtf(SQ(across.x) + SQ(across.y) + SQ(across.z));
+            f32 pulse = 1.0f + 0.06f * Math_SinS(play->gameplayFrames * 900 + i * 7000);
+            f32 sx;
+            f32 sy;
+            MtxF mf;
+
+            if ((ul < 0.01f) || (al < 0.01f)) {
+                continue;
+            }
+            up.x /= ul;
+            up.y /= ul;
+            up.z /= ul;
+            across.x /= al;
+            across.y /= al;
+            across.z /= al;
+            out.x = across.y * up.z - across.z * up.y;
+            out.y = across.z * up.x - across.x * up.z;
+            out.z = across.x * up.y - across.y * up.x;
+            sx = (al / ((i == 0 || i == GANON_MANT_NUM_STRANDS - 1) ? 1.0f : 2.0f)) * GdfTune("collar.plume_width", 1.4f) /
+                 3900.0f * pulse;
+            sy = height * GdfTune("collar.plume_length", 0.9f) / 6750.0f * pulse;
+            // (from the collar's middle row, tip up past its edge)
+            mf.xx = across.x * sx; mf.yx = across.y * sx; mf.zx = across.z * sx; mf.wx = 0.0f;
+            mf.xy = up.x * sy;     mf.yy = up.y * sy;     mf.zy = up.z * sy;     mf.wy = 0.0f;
+            mf.xz = out.x * sx * 0.6f; mf.yz = out.y * sx * 0.6f; mf.zz = out.z * sx * 0.6f; mf.wz = 0.0f;
+            mf.xw = base->v.ob[0] / LINK_GANON_CAPE_VTX_SCALE + this->anchor.x;
+            mf.yw = base->v.ob[1] / LINK_GANON_CAPE_VTX_SCALE + this->anchor.y;
+            mf.zw = base->v.ob[2] / LINK_GANON_CAPE_VTX_SCALE + this->anchor.z;
+            mf.ww = 1.0f;
+            Matrix_Put(&mf);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeModelDL);
+        }
+        CLOSE_DISPS(play->state.gfxCtx);
+    }
+}
+
 // (for the mage's hood, drawn by Ganondorf: the same cloth)
 u8* EnGanonMant_GetRobeTex(void) {
     return EnGanonMant_BuildRobeTex() ? sRobeMantTex : NULL;
@@ -1034,6 +1182,9 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         EnGanonMant_DrawFire(play, mtx, EnGanonMant_GetOwnVertices(this), ice);
         if (this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) {
             EnGanonMant_DrawMane(play, this, ice);
+            if (ice) {
+                EnGanonMant_DrawCollar(play, this, mtx, ice);
+            }
         }
     } else {
         gSPDisplayList(POLY_OPA_DISP++, gMantDL);
