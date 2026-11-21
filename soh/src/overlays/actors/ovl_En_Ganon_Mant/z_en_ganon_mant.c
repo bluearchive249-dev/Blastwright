@@ -13,6 +13,7 @@
 #include "soh/Enhancements/Graphics/LinkGanonCape.h"
 #include "assets/objects/object_tw/object_tw.h" // SoH: Koume's burning hair, for the Goron Tunic's cape
 #include "assets/objects/gameplay_keep/gameplay_keep.h" // SoH: ...and the burning enemies' fire
+#include "soh/Enhancements/ExtraModes/GanondorfTuning.h"
 #include "assets/objects/object_fd/object_fd.h"             // SoH: ...and Volvagia's fiery mane
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -623,6 +624,11 @@ static u8 sFlameMaskTex[FLAME_TEX_S * FLAME_TEX_T / 2]; // I4
 static u32 sFlameMaskFrame = 0xFFFFFFFF;
 
 static void EnGanonMant_BuildFlameMask(u32 frame, s32 ice) {
+    static f32 sLastStart = -1.0f;
+    static f32 sLastTongue = -1.0f;
+    // (where the hem's tongues start, in half texels down the cape, the hem being at 34, and how long they reach)
+    f32 hemStart = GdfTune(ice ? "ice.hem_start" : "fire.hem_start", 26.0f);
+    f32 hemTongue = GdfTune(ice ? "ice.hem_tongue_length" : "fire.hem_tongue_length", 8.0f);
     s32 s;
     s32 r;
 
@@ -630,17 +636,19 @@ static void EnGanonMant_BuildFlameMask(u32 frame, s32 ice) {
     if (ice) {
         frame = 0;
     }
-    if ((frame | (ice << 31)) == sFlameMaskFrame) {
+    if (((frame | (ice << 31)) == sFlameMaskFrame) && (hemStart == sLastStart) && (hemTongue == sLastTongue)) {
         return;
     }
     sFlameMaskFrame = frame | (ice << 31);
+    sLastStart = hemStart;
+    sLastTongue = hemTongue;
     for (s = 0; s < FLAME_TEX_S; s++) {
         // Where this strip of the cape's flame ends (in half texels down it, the hem is at 34): tongues along the
         // hem, each lengthening and shortening at its own pace
         f32 u = s * (2.0f * M_PI / FLAME_TEX_S);
         f32 tongue = 0.55f * fabsf(sinf(u * 2.0f + frame * 0.09f)) + 0.3f * fabsf(sinf(u * 3.5f - frame * 0.13f + 1.7f)) +
                      0.15f * sinf(u * 9.0f + frame * 0.31f);
-        f32 hem = 26.0f + 8.0f * tongue;
+        f32 hem = hemStart + hemTongue * tongue;
 
         for (r = 0; r < FLAME_TEX_T; r++) {
             f32 t = (r < 48) ? r : (r - 64); // (half texels down the cape)
@@ -704,7 +712,14 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
     // Two layers: the body of the fire, then a brighter flicker over it. Prim color, scroll speed down the cape
     static const u8 sFireLayers[2][4] = { { 200, 30, 0, 9 }, { 255, 110, 0, 15 } };
     static const u8 sIceLayers[2][4] = { { 70, 130, 220, 2 }, { 195, 225, 235, 3 } };
-    const u8(*sLayers)[4] = ice ? sIceLayers : sFireLayers;
+    static const char* sKeys[2][2][2] = { { { "fire.layer1_color", "fire.layer1_speed" },
+                                            { "fire.layer2_color", "fire.layer2_speed" } },
+                                          { { "ice.layer1_color", "ice.layer1_speed" },
+                                            { "ice.layer2_color", "ice.layer2_speed" } } };
+    const u8(*sDefault)[4] = ice ? sIceLayers : sFireLayers;
+    u8 sLayers[2][3];
+    f32 speed[2];
+    f32 flow = GdfTune(ice ? "ice.flow_direction" : "fire.flow_direction", 1.0f); // (1: neck to hem, -1: up)
     Gfx* mant = ResourceMgr_LoadGfxByName(gMantDL);
     Gfx* geom = NULL;
     u32 frames = play->gameplayFrames;
@@ -730,6 +745,14 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
         return;
     }
     EnGanonMant_BuildFlameMask(frames, ice);
+    for (i = 0; i < 2; i++) {
+        s32 c;
+
+        for (c = 0; c < 3; c++) {
+            sLayers[i][c] = CLAMP((s32)GdfTuneAt(sKeys[ice ? 1 : 0][i][0], c, sDefault[i][c]), 0, 255);
+        }
+        speed[i] = GdfTune(sKeys[ice ? 1 : 0][i][1], sDefault[i][3]) * flow;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -747,9 +770,11 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
                          G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 0, 1);
     gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_SURF2);
     if (ice) {
-        gDPSetEnvColor(POLY_XLU_DISP++, 240, 250, 255, 255);
+        gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("ice.glow_color", 0, 240), (u8)GdfTuneAt("ice.glow_color", 1, 250),
+                       (u8)GdfTuneAt("ice.glow_color", 2, 255), 255);
     } else {
-        gDPSetEnvColor(POLY_XLU_DISP++, 255, 235, 40, 255);
+        gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("fire.glow_color", 0, 255), (u8)GdfTuneAt("fire.glow_color", 1, 235),
+                       (u8)GdfTuneAt("fire.glow_color", 2, 40), 255);
     }
     for (i = 0; i < 2; i++) {
         gDPPipeSync(POLY_XLU_DISP++);
@@ -766,7 +791,7 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
         }
         // (pouring from his neck down the cape: the tile's offset grows, which moves the picture toward the hem)
         gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (i * 45) & 0x7F,
-                                                         (frames * sLayers[i][3]) & 0x7F, 32, 32, 1, 0, 0,
+                                                         ((s32)(frames * speed[i])) & 0x7F, 32, 32, 1, 0, 0,
                                                          FLAME_TEX_S, FLAME_TEX_T));
         gSPDisplayList(POLY_XLU_DISP++, geom);
     }
@@ -775,7 +800,7 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
     // tongues lick down the cape with the rest, four across it and two and a half down. Two sets, out of step and
     // offset half a flame, so they don't all flicker together. Their color runs from red at the edges to yellow at
     // the core; the hem's outline cuts them off too.
-    if (!ice && EnGanonMant_LoadDeathFlames()) {
+    if (!ice && (GdfTune("fire.live_flames", 1.0f) != 0.0f) && EnGanonMant_LoadDeathFlames()) {
         for (i = 0; i < 2; i++) {
             u32 f = (frames + i * 5) % 10;
 
@@ -784,10 +809,15 @@ static void EnGanonMant_DrawFire(PlayState* play, Mtx* mtx, void* vtx, s32 ice) 
                                 G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 5, 6, 15, 15);
             gDPSetCombineLERP(POLY_XLU_DISP++, ENVIRONMENT, PRIMITIVE, TEXEL0, PRIMITIVE, TEXEL0, 0, TEXEL1, 0, 0, 0,
                               0, COMBINED, 0, 0, 0, COMBINED);
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 230, 40, 0, 255);
-            gDPSetEnvColor(POLY_XLU_DISP++, 255, 230, 90, 255);
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, (u8)GdfTuneAt("fire.live_flames_edge_color", 0, 230),
+                            (u8)GdfTuneAt("fire.live_flames_edge_color", 1, 40),
+                            (u8)GdfTuneAt("fire.live_flames_edge_color", 2, 0), 255);
+            gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("fire.live_flames_core_color", 0, 255),
+                           (u8)GdfTuneAt("fire.live_flames_core_color", 1, 230),
+                           (u8)GdfTuneAt("fire.live_flames_core_color", 2, 90), 255);
             gSPDisplayList(POLY_XLU_DISP++, Gfx_TwoTexScroll(play->state.gfxCtx, 0, (i * 64) & 0x7F,
-                                                             (frames * 6 + i * 128) & 0xFF, 32, 64, 1, 0, 0,
+                                                             ((s32)(frames * GdfTune("fire.live_flames_speed", 6.0f) * flow) + i * 128) & 0xFF,
+                                                             32, 64, 1, 0, 0,
                                                              FLAME_TEX_S, FLAME_TEX_T));
             gSPDisplayList(POLY_XLU_DISP++, geom);
         }
@@ -816,7 +846,8 @@ static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this, s32 ice) {
     gSPDisplayList(POLY_XLU_DISP++, gVolvagiaManeMaterialDL);
     gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH);
     if (ice) {
-        gDPSetEnvColor(POLY_XLU_DISP++, 60, 140, 255, 0);
+        gDPSetEnvColor(POLY_XLU_DISP++, (u8)GdfTuneAt("frost.glow_color", 0, 60), (u8)GdfTuneAt("frost.glow_color", 1, 140),
+                       (u8)GdfTuneAt("frost.glow_color", 2, 255), 0);
     }
     for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
         MantStrand* strand = &this->strands[i];
@@ -826,7 +857,8 @@ static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this, s32 ice) {
 
         gDPPipeSync(POLY_XLU_DISP++);
         if (ice) {
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 200, 235, 255, 255);
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, (u8)GdfTuneAt("frost.color", 0, 200), (u8)GdfTuneAt("frost.color", 1, 235),
+                            (u8)GdfTuneAt("frost.color", 2, 255), 255);
         } else {
             gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255,
                             (glow + 128 + (s32)(Math_SinS(frames * 3000 + i * 9000) * 60.0f)) / 2, 0, 255);
@@ -876,11 +908,23 @@ static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this, s32 ice) {
             out.z = across.x * down.y - across.y * down.x;
 
             // Her plume is 3900 wide and 6750 long; each overlaps the next joint's, the lower ones longer
-            pulse = 1.0f + (ice ? 0.06f : 0.3f) * Math_SinS(frames * (ice ? 900 : 5596) + i * 7000 + j * 11000);
+            pulse = 1.0f + GdfTune(ice ? "frost.pulse" : "mane.pulse", ice ? 0.06f : 0.3f) *
+                               Math_SinS(frames * (ice ? 900 : 5596) + i * 7000 + j * 11000);
             {
-                f32 sx = (wid * 1.6f / 3900.0f) * pulse;
-                f32 sy = (len * (1.5f + j * 0.06f) / 6750.0f) * pulse;
-                f32 sz = sx * 0.6f;
+                const char* pre = ice ? "frost" : "mane";
+                char k[40];
+                f32 sx;
+                f32 sy;
+                f32 sz;
+
+                snprintf(k, sizeof(k), "%s.width", pre);
+                sx = (wid * GdfTune(k, 1.6f) / 3900.0f) * pulse;
+                snprintf(k, sizeof(k), "%s.length", pre);
+                sy = len * GdfTune(k, 1.5f);
+                snprintf(k, sizeof(k), "%s.length_grow", pre);
+                sy = ((sy + len * j * GdfTune(k, 0.06f)) / 6750.0f) * pulse;
+                snprintf(k, sizeof(k), "%s.depth", pre);
+                sz = sx * GdfTune(k, 0.6f);
 
                 mf.xx = across.x * sx; mf.yx = across.y * sx; mf.zx = across.z * sx; mf.wx = 0.0f;
                 mf.xy = down.x * sy;   mf.yy = down.y * sy;   mf.zy = down.z * sy;   mf.wy = 0.0f;

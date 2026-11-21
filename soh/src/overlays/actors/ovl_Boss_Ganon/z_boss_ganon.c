@@ -12,7 +12,8 @@
 #include "assets/objects/object_ganon_anime2/object_ganon_anime2.h"
 #include "assets/objects/object_gndd/object_gndd.h"
 #include "assets/objects/object_gnd/object_gnd.h" // SoH: Phantom Ganon skin for "Play as Ganondorf"
-#include "assets/objects/object_ik/object_ik.h"   // SoH: Iron Knuckle armour with the Goron Tunic
+#include "assets/objects/object_ik/object_ik.h"
+#include "soh/Enhancements/ExtraModes/GanondorfTuning.h"   // SoH: Iron Knuckle armour with the Goron Tunic
 #include "soh/Enhancements/ExtraModes/GanondorfSword.h"
 #include "soh/Enhancements/ExtraModes/GanondorfTrident.h"
 #include "soh/Enhancements/ExtraModes/PlayAsGanondorf.h"
@@ -471,7 +472,8 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
         f32 go = this->playerGrounded ? this->playerWalkWeight * CLAMP(sGdfWalkSpeed / 10.0f, 0.0f, 1.0f) : 0.0f;
 
         // (the Zora Tunic's ice cape spreads twice as broad: half again at his shoulders, the rest at the hem)
-        sCape->hemFlare = GDF_CAPE_HEM_FLARE * ((!cloak && BossGanon_Player_ZoraLook()) ? 2.5f : 1.0f);
+        sCape->hemFlare =
+            GDF_CAPE_HEM_FLARE * ((!cloak && BossGanon_Player_ZoraLook()) ? GdfTune("ice.cape_hem_flare", 2.5f) : 1.0f);
         Math_ApproachF(&sCape->billow, GDF_CAPE_BILLOW * go, 0.2f, 0.3f);
         sCape->billowPhase += 0.18f + 0.22f * go;
         if (sCape->billowPhase > 2.0f * M_PI * 100.0f) {
@@ -510,8 +512,8 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
         sCape->rootOverride = false;
         sCape->capsules = NULL;
         sCape->linkedCount = 0;
-        sCape->jointLength = BossGanon_Player_ZoraLook() ? 19.0f : 0.0f;
-        sCape->widthScale = BossGanon_Player_ZoraLook() ? 1.5f : 0.0f;
+        sCape->jointLength = BossGanon_Player_ZoraLook() ? GdfTune("ice.cape_length", 19.0f) : 0.0f;
+        sCape->widthScale = BossGanon_Player_ZoraLook() ? GdfTune("ice.cape_width", 1.5f) : 0.0f;
         if (sGdfCapelet[0] != NULL) {
             sGdfCapelet[0]->actor.draw = NULL;
         }
@@ -4807,6 +4809,24 @@ static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp) {
         memcpy(&c, sGdfArmorMtx[i], sizeof(c));
         Matrix_Put(&limbs[sGdfArmorLimb[i]]);
         Matrix_Mult(&c, MTXMODE_APPLY);
+        // (tuning: each group of pieces sized and moved, in the piece's own space)
+        {
+            static const char* sGroupScale[] = { "armor.skirt_scale", "armor.legs_scale", "armor.arms_scale",
+                                                 "armor.pauldrons_scale", "armor.chest_scale" };
+            static const char* sGroupOffset[] = { "armor.skirt_offset", "armor.legs_offset", "armor.arms_offset",
+                                                  "armor.pauldrons_offset", "armor.chest_offset" };
+            static const s8 sGroup[GDF_ARMOR_SLOTS] = { 0, 0, 1, 1, 0, 1, 1, -1, -1, 2, 2, -1,
+                                                        2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4 };
+            s32 g = sGroup[i];
+
+            if (g >= 0) {
+                f32 sc = GdfTune(sGroupScale[g], 1.0f);
+
+                Matrix_Translate(GdfTuneAt(sGroupOffset[g], 0, 0.0f), GdfTuneAt(sGroupOffset[g], 1, 0.0f),
+                                 GdfTuneAt(sGroupOffset[g], 2, 0.0f), MTXMODE_APPLY);
+                Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+            }
+        }
         Matrix_ToMtx(&mtx[i], __FILE__, __LINE__);
     }
     Matrix_Pop();
@@ -4815,8 +4835,14 @@ static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp) {
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     // A black knight's colors: dark iron, gold trim
-    gSPSegment(POLY_OPA_DISP++, 0x08, BossGanon_Player_ArmorColor(play->state.gfxCtx, 55, 65, 55, 0, 0, 0));
-    gSPSegment(POLY_OPA_DISP++, 0x09, BossGanon_Player_ArmorColor(play->state.gfxCtx, 205, 165, 75, 25, 20, 0));
+    gSPSegment(POLY_OPA_DISP++, 0x08,
+               BossGanon_Player_ArmorColor(play->state.gfxCtx, GdfTuneAt("armor.metal_color", 0, 55),
+                                           GdfTuneAt("armor.metal_color", 1, 65), GdfTuneAt("armor.metal_color", 2, 55),
+                                           0, 0, 0));
+    gSPSegment(POLY_OPA_DISP++, 0x09,
+               BossGanon_Player_ArmorColor(play->state.gfxCtx, GdfTuneAt("armor.trim_color", 0, 205),
+                                           GdfTuneAt("armor.trim_color", 1, 165), GdfTuneAt("armor.trim_color", 2, 75),
+                                           25, 20, 0));
     // (the pieces are an Iron Knuckle's skinned limbs: some of their vertices go by the limb above's matrix)
     gSPSegment(POLY_OPA_DISP++, 0x0D, mtx);
     for (i = 0; i < ARRAY_COUNT(sGdfArmorDrawn); i++) {
@@ -18910,9 +18936,13 @@ s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot) {
     sJoints[0].z = 0;
 
     // (framed like adult Link: feet at the bottom of the box, scaled down since he's much taller)
-    Matrix_SetTranslateRotateYXZ(25.0f, -232.0f, 60.0f, rot);
-    Matrix_Scale(0.026f * (CVarGetInteger(CVAR_ENHANCEMENT("MirroredWorld"), 0) ? -1 : 1), 0.026f, 0.026f,
-                 MTXMODE_APPLY);
+    Matrix_SetTranslateRotateYXZ(GdfTuneAt("pause.position", 0, 25.0f), GdfTuneAt("pause.position", 1, -232.0f),
+                                 GdfTuneAt("pause.position", 2, 60.0f), rot);
+    {
+        f32 sc = GdfTune("pause.scale", 0.026f);
+
+        Matrix_Scale(sc * (CVarGetInteger(CVAR_ENHANCEMENT("MirroredWorld"), 0) ? -1 : 1), sc, sc, MTXMODE_APPLY);
+    }
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     SkelAnime_DrawFlexOpa(play, gdf->skelAnime.skeleton, sJoints, gdf->skelAnime.dListCount,
