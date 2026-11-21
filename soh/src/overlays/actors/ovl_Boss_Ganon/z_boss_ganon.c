@@ -4920,8 +4920,10 @@ s32 BossGanon_Player_GetNeckFront(Vec3f* out) {
         return false;
     }
     m = &sGdfLimbWorld[1];
-    local.x = GdfTuneAt("clasp.neck_point", 0, 2750.0f); // (his torso's space: x up, y forward, z across)
-    local.y = GdfTuneAt("clasp.neck_point", 1, 900.0f);
+    // (his torso's space: x up, y forward, z across; by default the Iron Knuckle breastplate's emblem, where the V of
+    // the chain is clasped)
+    local.x = GdfTuneAt("clasp.neck_point", 0, 1850.0f);
+    local.y = GdfTuneAt("clasp.neck_point", 1, 1600.0f);
     local.z = GdfTuneAt("clasp.neck_point", 2, 0.0f);
     SkinMatrix_Vec3fMtxFMultXYZ(m, &local, out);
     return true;

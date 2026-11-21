@@ -1251,6 +1251,18 @@ static void EnGanonMant_DrawClasp(PlayState* play, EnGanonMant* this, s32 ice) {
         Vec3f p = { u * u * a.x + 2 * u * t * c.x + t * t * b.x, u * u * a.y + 2 * u * t * c.y + t * t * b.y,
                     u * u * a.z + 2 * u * t * c.z + t * t * b.z };
 
+        // (the V: straight from each corner down to the point, which sits on the breastplate's emblem, the two
+        // halves clasped together there)
+        if (GdfTune("clasp.shape", 1.0f) == 1.0f) {
+            f32 h = (t < 0.5f) ? (t * 2.0f) : ((t - 0.5f) * 2.0f);
+            Vec3f* from = (t < 0.5f) ? &a : &neck;
+            Vec3f* to = (t < 0.5f) ? &neck : &b;
+
+            p.x = from->x + (to->x - from->x) * h;
+            p.y = from->y + (to->y - from->y) * h;
+            p.z = from->z + (to->z - from->z) * h;
+        }
+
         if (k > 0) {
             Vec3f d = { p.x - prev.x, p.y - prev.y, p.z - prev.z };
             f32 len = sqrtf(SQ(d.x) + SQ(d.y) + SQ(d.z));
