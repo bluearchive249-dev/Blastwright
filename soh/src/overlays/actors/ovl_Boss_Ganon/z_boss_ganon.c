@@ -649,7 +649,9 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
 
         // (the Zora Tunic's ice cape spreads twice as broad: half again at his shoulders, the rest at the hem)
         sCape->hemFlare =
-            GDF_CAPE_HEM_FLARE * ((!cloak && BossGanon_Player_ZoraLook()) ? GdfTune("ice.cape_hem_flare", 2.5f) : 1.0f);
+            GDF_CAPE_HEM_FLARE * ((!cloak && BossGanon_Player_ZoraLook())    ? GdfTune("ice.cape_hem_flare", 2.5f)
+                                  : (!cloak && BossGanon_Player_GoronLook()) ? GdfTune("fire.cape_hem_flare", 2.5f)
+                                                                             : 1.0f);
         Math_ApproachF(&sCape->billow, GDF_CAPE_BILLOW * go, 0.2f, 0.3f);
         sCape->billowPhase += 0.18f + 0.22f * go;
         if (sCape->billowPhase > 2.0f * M_PI * 100.0f) {
@@ -693,8 +695,13 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
         sCape->rootOverride = false;
         sCape->capsules = NULL;
         sCape->linkedCount = 0;
-        sCape->jointLength = BossGanon_Player_ZoraLook() ? GdfTune("ice.cape_length", 19.0f) : 0.0f;
-        sCape->widthScale = BossGanon_Player_ZoraLook() ? GdfTune("ice.cape_width", 1.5f) : 0.0f;
+        // (the flame cape as long and broad as the ice cape too: 21 Nov)
+        sCape->jointLength = BossGanon_Player_ZoraLook()    ? GdfTune("ice.cape_length", 19.0f)
+                             : BossGanon_Player_GoronLook() ? GdfTune("fire.cape_length", 19.0f)
+                                                            : 0.0f;
+        sCape->widthScale = BossGanon_Player_ZoraLook()    ? GdfTune("ice.cape_width", 1.5f)
+                            : BossGanon_Player_GoronLook() ? GdfTune("fire.cape_width", 1.5f)
+                                                           : 0.0f;
         return;
     }
 
