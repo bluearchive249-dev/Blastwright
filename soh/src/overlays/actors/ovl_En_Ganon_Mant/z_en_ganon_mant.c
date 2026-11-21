@@ -940,6 +940,40 @@ static void EnGanonMant_DrawMane(PlayState* play, EnGanonMant* this, s32 ice) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// SoH: "Play as Ganondorf", the Zora Tunic's mage robe: the cape's own cloth in a dark blue (its weave's light and
+// shade kept), for the robe's skirt and the hood
+static u8 sRobeMantTex[MANT_TEX_WIDTH * MANT_TEX_HEIGHT * 2];
+
+static s32 EnGanonMant_IsRobe(EnGanonMant* this) {
+    return this->ownVertices && (this->actor.params >= PLAYER_GANONDORF_CAPELET_PARAMS) &&
+           (this->actor.params <= PLAYER_GANONDORF_CAPELET_PARAMS + 2) && BossGanon_Player_ZoraLook();
+}
+
+static s32 EnGanonMant_BuildRobeTex(void) {
+    u8* src = (u8*)ResourceGetDataByName(gMantTex);
+    f32 cr = GdfTuneAt("robe.cloth_color", 0, 30.0f);
+    f32 cg = GdfTuneAt("robe.cloth_color", 1, 45.0f);
+    f32 cb = GdfTuneAt("robe.cloth_color", 2, 110.0f);
+    s32 i;
+
+    if (src == NULL) {
+        return false;
+    }
+    for (i = 0; i < MANT_TEX_WIDTH * MANT_TEX_HEIGHT; i++) {
+        u16 c = (src[2 * i] << 8) | src[2 * i + 1];
+        f32 lum = (((c >> 11) & 0x1F) * 0.30f + ((c >> 6) & 0x1F) * 0.59f + ((c >> 1) & 0x1F) * 0.11f) / 31.0f;
+        f32 k = 0.45f + 1.4f * lum; // (the red cloth is dark: lifted so its weave shows in the blue)
+        s32 r = CLAMP((s32)(cr * k) >> 3, 0, 31);
+        s32 g = CLAMP((s32)(cg * k) >> 3, 0, 31);
+        s32 b = CLAMP((s32)(cb * k) >> 3, 0, 31);
+        u16 o = (r << 11) | (g << 6) | (b << 1) | (c & 1);
+
+        sRobeMantTex[2 * i] = o >> 8;
+        sRobeMantTex[2 * i + 1] = o & 0xFF;
+    }
+    return true;
+}
+
 void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     s32 pad;
     Mtx* mtx;
@@ -968,6 +1002,12 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         gDPLoadTextureBlock(POLY_OPA_DISP++, sPhantomMantTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, MANT_TEX_WIDTH,
                             MANT_TEX_HEIGHT, 0, G_TX_MIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_CLAMP, 5, 6, G_TX_NOLOD,
                             G_TX_NOLOD);
+    } else if (EnGanonMant_IsRobe(this) && EnGanonMant_BuildRobeTex()) {
+        gSPDisplayList(POLY_OPA_DISP++, gMantMaterialDL);
+        gSPInvalidateTexCache(POLY_OPA_DISP++, sRobeMantTex);
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, sRobeMantTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, MANT_TEX_WIDTH, MANT_TEX_HEIGHT,
+                            0, G_TX_MIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_CLAMP, 5, 6, G_TX_NOLOD, G_TX_NOLOD);
     } else {
         gSPDisplayList(POLY_OPA_DISP++, gMantMaterialDL);
     }
@@ -983,7 +1023,7 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
     }
 
     // draw cloak (SoH: with the Goron Tunic, flame in its place)
-    if (this->ownVertices && (BossGanon_Player_GoronLook() || BossGanon_Player_ZoraLook())) {
+    if (this->ownVertices && !EnGanonMant_IsRobe(this) && (BossGanon_Player_GoronLook() || BossGanon_Player_ZoraLook())) {
         s32 ice = BossGanon_Player_ZoraLook();
 
         EnGanonMant_DrawFire(play, mtx, EnGanonMant_GetOwnVertices(this), ice);
@@ -999,8 +1039,18 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
         void* hoodVtx = GanondorfHood_Build(this, play);
 
         if (hoodVtx != NULL) {
-            if (BossGanon_Player_GoronLook() || BossGanon_Player_ZoraLook()) {
-                EnGanonMant_DrawFire(play, mtx, hoodVtx, BossGanon_Player_ZoraLook());
+            if (BossGanon_Player_ZoraLook() && EnGanonMant_BuildRobeTex()) {
+                // (the mage's hood: the robe's dark blue cloth)
+                gSPDisplayList(POLY_OPA_DISP++, gMantMaterialDL);
+                gSPInvalidateTexCache(POLY_OPA_DISP++, sRobeMantTex);
+                gDPPipeSync(POLY_OPA_DISP++);
+                gDPLoadTextureBlock(POLY_OPA_DISP++, sRobeMantTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, MANT_TEX_WIDTH,
+                                    MANT_TEX_HEIGHT, 0, G_TX_MIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_CLAMP, 5, 6,
+                                    G_TX_NOLOD, G_TX_NOLOD);
+                gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
+                gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+            } else if (BossGanon_Player_GoronLook()) {
+                EnGanonMant_DrawFire(play, mtx, hoodVtx, false);
             } else {
                 gSPSegment(POLY_OPA_DISP++, 0x0C, hoodVtx);
                 gSPDisplayList(POLY_OPA_DISP++, gMantDL);

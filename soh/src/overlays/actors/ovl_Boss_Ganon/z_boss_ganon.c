@@ -314,8 +314,13 @@ static s32 BossGanon_Player_CloakOn(void) {
     return false;
 }
 
+// (back for the Zora Tunic's mage robe: its hood, unless tuned off)
+s32 BossGanon_Player_RobeHoodOn(void) {
+    return BossGanon_Player_ZoraLook() && (GdfTune("robe.hood", 1.0f) != 0.0f);
+}
+
 static s32 BossGanon_Player_HoodOn(void) {
-    return false;
+    return BossGanon_Player_RobeHoodOn();
 }
 
 // For the hood (GanondorfHood.cpp): his face limb's matrix and the collar it drapes down to (only on his own cape: the
@@ -436,6 +441,177 @@ static void BossGanon_Player_SetPiece(EnGanonMant* piece, Vec3f* center, Vec3f* 
     piece->jointLength = jointLength;
 }
 
+// SoH: "Play as Ganondorf", the Zora Tunic's mage robe. Its skirt: the capelet's three cloth pieces (otherwise unused
+// while the Cloak option is set aside) sewn edge to edge into a ring round his waist, open at the front, falling to his
+// ankles, kept out of his hips and legs. The cloth is the cape's in dark blue (z_en_ganon_mant.c). His own clothes
+// go dark blue and his metal gold (the blended textures below).
+#define GDF_SKIRT_CAPSULES 5
+static GanonMantCapsule sGdfSkirtCaps[GDF_SKIRT_CAPSULES];
+
+static Vec3f BossGanon_Player_Ring(Vec3f* center, Vec3f* fwd, Vec3f* right, f32 rf, f32 rs, f32 alpha,
+                                   GanonMantCapsule* caps, s32 count) {
+    Vec3f p;
+    s32 i;
+
+    p.x = center->x + fwd->x * cosf(alpha) * rf + right->x * sinf(alpha) * rs;
+    p.y = center->y;
+    p.z = center->z + fwd->z * cosf(alpha) * rf + right->z * sinf(alpha) * rs;
+    for (i = 0; i < count; i++) {
+        GanonMantCapsule* c = &caps[i];
+        f32 abx = c->b.x - c->a.x;
+        f32 aby = c->b.y - c->a.y;
+        f32 abz = c->b.z - c->a.z;
+        f32 len2 = SQ(abx) + SQ(aby) + SQ(abz);
+        f32 t = (len2 > 0.0001f) ? CLAMP(((p.x - c->a.x) * abx + (p.y - c->a.y) * aby + (p.z - c->a.z) * abz) / len2,
+                                         0.0f, 1.0f)
+                                 : 0.0f;
+        Vec3f d = { p.x - (c->a.x + abx * t), p.y - (c->a.y + aby * t), p.z - (c->a.z + abz * t) };
+        f32 len = sqrtf(SQ(d.x) + SQ(d.y) + SQ(d.z));
+
+        if ((len < c->r + 0.6f) && (len > 0.001f)) {
+            p.x += d.x / len * (c->r + 0.6f - len);
+            p.y += d.y / len * (c->r + 0.6f - len);
+            p.z += d.z / len * (c->r + 0.6f - len);
+        }
+    }
+    return p;
+}
+
+static void BossGanon_Player_RobeRecolor(s32 on);
+
+static s32 BossGanon_Player_UpdateRobe(BossGanon* this, Vec3f* fwd, Vec3f* right) {
+    // limb, from and to along its bone, radius (model units)
+    static const s16 sSpec[GDF_SKIRT_CAPSULES][4] = {
+        { 18, 0, 1700, 1050 }, { 19, 0, 2452, 950 }, { 20, 0, 2680, 800 }, { 22, 0, 2452, 950 }, { 23, 0, 2680, 800 },
+    };
+    static const f32 sPieces[3][2] = { { 10.0f, 120.0f }, { 120.0f, 240.0f }, { 240.0f, 350.0f } };
+    s32 on = BossGanon_Player_ZoraLook() && (GdfTune("robe.on", 1.0f) != 0.0f);
+    Vec3f center;
+    f32 rf;
+    f32 rs;
+    s32 i;
+    s32 k;
+
+    BossGanon_Player_RobeRecolor(on);
+    if (!on || (sGdfCapelet[0] == NULL) || (sGdfCapelet[1] == NULL) || (sGdfCapelet[2] == NULL)) {
+        return false;
+    }
+    for (i = 0; i < GDF_SKIRT_CAPSULES; i++) {
+        MtxF* m = &sGdfLimbWorld[sSpec[i][0]];
+        f32 scale = sqrtf(SQ(m->xx) + SQ(m->yx) + SQ(m->zx));
+
+        sGdfSkirtCaps[i].a = BossGanon_Player_LimbPoint(sSpec[i][0], sSpec[i][1]);
+        sGdfSkirtCaps[i].b = BossGanon_Player_LimbPoint(sSpec[i][0], sSpec[i][2]);
+        sGdfSkirtCaps[i].r = (sSpec[i][3] + 150.0f) * scale * GdfTune("robe.body_clearance", 1.1f);
+    }
+    // Its waistband: round his waist (his torso's root), a little above his hips
+    center = BossGanon_Player_LimbPoint(1, GdfTune("robe.waist_height", 200.0f));
+    rf = GdfTune("robe.waist_depth", 12.0f);
+    rs = GdfTune("robe.waist_width", 14.0f);
+    for (k = 0; k < 3; k++) {
+        EnGanonMant* piece = sGdfCapelet[k];
+
+        for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+            f32 alpha = DEG_TO_RAD(sPieces[k][0] + (sPieces[k][1] - sPieces[k][0]) * i / (GANON_MANT_NUM_STRANDS - 1.0f));
+
+            piece->overrideRoots[i] =
+                BossGanon_Player_Ring(&center, fwd, right, rf, rs, alpha, sGdfSkirtCaps, GDF_SKIRT_CAPSULES);
+        }
+        piece->rootOverride = true;
+        piece->overrideBaseYaw = BossGanon_Player_OutwardYaw(&piece->overrideRoots[GANON_MANT_NUM_STRANDS / 2]);
+        piece->capsules = sGdfSkirtCaps;
+        piece->capsuleCount = GDF_SKIRT_CAPSULES;
+        piece->actor.world.pos = sCape->actor.world.pos;
+        piece->backPush = GdfTune("robe.push", 0.0f);
+        piece->backSwayMagnitude = sCape->backSwayMagnitude * GdfTune("robe.sway", 0.5f);
+        piece->sideSwayMagnitude = sCape->sideSwayMagnitude * GdfTune("robe.sway", 0.5f);
+        piece->gravity = sCape->gravity;
+        piece->minY = sCape->minY;
+        piece->minDist = 0.0f;
+        piece->jointLength = GdfTune("robe.length_step", 4.6f); // (11 steps: from his waist to his ankles)
+        piece->hemFlare = GdfTune("robe.hem_flare", 0.5f);
+        piece->billow = 0.0f;
+        piece->widthScale = 0.0f;
+    }
+    sGdfCapelet[1]->isLinked = true;
+    sGdfCapelet[2]->isLinked = true;
+    sGdfCapelet[0]->linked[0] = sGdfCapelet[1];
+    sGdfCapelet[0]->linked[1] = sGdfCapelet[2];
+    sGdfCapelet[0]->linkedCount = GANON_MANT_MAX_LINKED;
+    sGdfCapelet[0]->actor.draw = this->playerHidden ? NULL : sGdfCapeletDraw;
+    return true;
+}
+
+// His own clothes for the robe: the fabrics and leathers dark blue, his metal (gauntlets, pauldrons, the cape's
+// fastenings) gold, each by its own light and shade; swapped in through the renderer's blended textures (a full mask:
+// the replacement everywhere) and swapped back when the robe comes off
+static void BossGanon_Player_RobeRecolor(s32 on) {
+    static const struct {
+        const char* tex;
+        u8 metal;
+    } sTex[] = {
+        { gGanondorfBodysuitTex, false },       { gGanondorfGerudoFabricTex, false },
+        { gGanondorfGerudoFabricWithSunTex, false }, { gGanondorfRedFabricTex, false },
+        { gGanondorfLeatherTex, false },        { gGanondorfBlackLeatherTex, false },
+        { gGanondorfGauntletAndPauldronTex, true }, { gGanondorfCapeFasteningTex, true },
+    };
+    static u8 sMask[32 * 16];
+    static u8 sRepl[ARRAY_COUNT(sTex)][32 * 16 * 2];
+    static u8 sOn = false;
+    static f32 sMade[6] = { -1.0f };
+    f32 cloth[3] = { GdfTuneAt("robe.cloth_color", 0, 30.0f), GdfTuneAt("robe.cloth_color", 1, 45.0f),
+                     GdfTuneAt("robe.cloth_color", 2, 110.0f) };
+    f32 gold[3] = { GdfTuneAt("robe.ornament_color", 0, 215.0f), GdfTuneAt("robe.ornament_color", 1, 170.0f),
+                    GdfTuneAt("robe.ornament_color", 2, 70.0f) };
+    s32 i;
+    s32 j;
+
+    on = on && (GdfTune("robe.recolor_clothes", 1.0f) != 0.0f);
+    if (on && ((sMade[0] != cloth[0]) || (sMade[1] != cloth[1]) || (sMade[2] != cloth[2]) || (sMade[3] != gold[0]) ||
+               (sMade[4] != gold[1]) || (sMade[5] != gold[2]))) {
+        memset(sMask, 0xFF, sizeof(sMask));
+        for (i = 0; i < ARRAY_COUNT(sTex); i++) {
+            u8* src = (u8*)ResourceGetDataByName(sTex[i].tex);
+            s32 w = ResourceGetTexWidthByName(sTex[i].tex);
+            s32 h = ResourceGetTexHeightByName(sTex[i].tex);
+            f32* c = sTex[i].metal ? gold : cloth;
+
+            if ((src == NULL) || (w * h > 32 * 16)) {
+                continue;
+            }
+            for (j = 0; j < w * h; j++) {
+                u16 px = (src[2 * j] << 8) | src[2 * j + 1];
+                f32 lum = (((px >> 11) & 0x1F) * 0.30f + ((px >> 6) & 0x1F) * 0.59f + ((px >> 1) & 0x1F) * 0.11f) / 31.0f;
+                f32 k = sTex[i].metal ? (0.35f + 0.9f * lum) : (0.4f + 1.1f * lum);
+                u16 o = (CLAMP((s32)(c[0] * k) >> 3, 0, 31) << 11) | (CLAMP((s32)(c[1] * k) >> 3, 0, 31) << 6) |
+                        (CLAMP((s32)(c[2] * k) >> 3, 0, 31) << 1) | (px & 1);
+
+                sRepl[i][2 * j] = o >> 8;
+                sRepl[i][2 * j + 1] = o & 0xFF;
+            }
+            Gfx_TextureCacheDelete(sRepl[i]);
+        }
+        sMade[0] = cloth[0];
+        sMade[1] = cloth[1];
+        sMade[2] = cloth[2];
+        sMade[3] = gold[0];
+        sMade[4] = gold[1];
+        sMade[5] = gold[2];
+        sOn = false; // (registered again below with the new colors)
+    }
+    if (on == sOn) {
+        return;
+    }
+    for (i = 0; i < ARRAY_COUNT(sTex); i++) {
+        if (on) {
+            Gfx_RegisterBlendedTexture(sTex[i].tex, sMask, sRepl[i]);
+        } else {
+            Gfx_UnregisterBlendedTexture(sTex[i].tex);
+        }
+    }
+    sOn = on;
+}
+
 // Each frame (from his draw): his body as capsules, and the cloak on it. The cloak is two layers of three pieces sewn
 // edge to edge round the neckline: the cloak itself (right front, back, left front: closed at his throat, falling open
 // down his front) and over it a shorter capelet on his shoulders. His cape is the cloak's first piece.
@@ -507,6 +683,11 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
     }
     sGdfCollarValid = true;
 
+    if (!cloak && BossGanon_Player_UpdateRobe(this, &fwd, &right)) {
+        cloak = false; // (the robe's skirt took the capelet's pieces; the cape itself hangs as always, below)
+    } else if (!cloak && (sGdfCapelet[0] != NULL)) {
+        sGdfCapelet[0]->actor.draw = NULL;
+    }
     if (!cloak) {
         // The plain cape, as it always hung (the Zora Tunic's ice cape twice as long, and broader)
         sCape->rootOverride = false;
@@ -514,9 +695,6 @@ static void BossGanon_Player_UpdateCloak(BossGanon* this) {
         sCape->linkedCount = 0;
         sCape->jointLength = BossGanon_Player_ZoraLook() ? GdfTune("ice.cape_length", 19.0f) : 0.0f;
         sCape->widthScale = BossGanon_Player_ZoraLook() ? GdfTune("ice.cape_width", 1.5f) : 0.0f;
-        if (sGdfCapelet[0] != NULL) {
-            sGdfCapelet[0]->actor.draw = NULL;
-        }
         return;
     }
 

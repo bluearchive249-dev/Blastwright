@@ -17,6 +17,7 @@ extern "C" {
 #include "overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h"
 // z_boss_ganon.c: his face limb's matrix (last draw) and the cape's collar (12 points along his shoulders)
 s32 BossGanon_Player_GetHoodFrame(EnGanonMant* cape, MtxF* head, Vec3f* collar);
+s32 BossGanon_Player_RobeHoodOn(void);
 }
 
 #define GDF_HOOD_COLS GANON_MANT_NUM_STRANDS
@@ -73,7 +74,8 @@ extern "C" void* GanondorfHood_Build(EnGanonMant* cape, PlayState* play) {
     MtxF head;
     Vec3f collar[GDF_HOOD_COLS];
 
-    if (true || !BossGanon_Player_GetHoodFrame(cape, &head, collar)) { // (set aside on 9 Nov 2026)
+    // (set aside on 9 Nov 2026; back on 21 Nov for the Zora Tunic's mage robe)
+    if (!BossGanon_Player_RobeHoodOn() || !BossGanon_Player_GetHoodFrame(cape, &head, collar)) {
         return NULL;
     }
 
