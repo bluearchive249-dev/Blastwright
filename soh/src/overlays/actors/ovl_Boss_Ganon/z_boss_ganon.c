@@ -4949,7 +4949,8 @@ s32 BossGanon_Player_KnightLook(void) {
 }
 
 // His limbs hidden under the knight's armour (as the draw callbacks count them): upper arms 4/8 and forearms 5/9, his
-// hands 6/10 (kept unless tuned: the gauntlets cover them), his shins 21/24 (kept unless tuned) and his feet 22/25
+// hands 6/10 (kept unless tuned: the gauntlets cover them), his thighs 20/23, his shins 21/24 (kept unless tuned) and
+// his feet 22/25
 static s32 BossGanon_Player_UnderArmor(s32 limbIndex) {
     switch (limbIndex) {
         case 4:
@@ -4960,6 +4961,9 @@ static s32 BossGanon_Player_UnderArmor(s32 limbIndex) {
         case 6:
         case 10:
             return GdfTune("armor.hide_hands", 0.0f) != 0.0f;
+        case 20:
+        case 23:
+            return GdfTune("armor.hide_thighs", 1.0f) != 0.0f; // (from the knee up)
         case 21:
         case 24:
             return GdfTune("armor.hide_shins", 0.0f) != 0.0f;
@@ -7820,7 +7824,7 @@ static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 lim
         MtxF cur;
         Vec3f w;
         f32 dx, dz, d;
-        f32 push = GdfTune("armor.dagger_push", 14.0f);
+        f32 push = GdfTune("armor.dagger_push", 2.0f);
 
         Matrix_MultVec3f(&sGdfKnifePos, &w);
         dx = w.x - this->actor.world.pos.x;
@@ -7830,16 +7834,16 @@ static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 lim
             Matrix_Get(&cur);
             cur.xw += dx / d * push;
             cur.zw += dz / d * push;
-            cur.yw += GdfTune("armor.dagger_lift", 0.0f);
+            cur.yw += GdfTune("armor.dagger_lift", 2.0f);
             Matrix_Put(&cur);
         }
     }
     Matrix_TranslateRotateZYX(&sGdfKnifePos, &sGdfKnifeRot);
     // (and, over the armour, turned as tuned: degrees about the sheath's own axes, x across the blade's thickness)
     if ((this == sPlayerGanondorf) && BossGanon_Player_KnightLook()) {
-        Matrix_RotateZ(DEG_TO_RAD(GdfTuneAt("armor.dagger_rot", 2, 0.0f)), MTXMODE_APPLY);
+        Matrix_RotateZ(DEG_TO_RAD(GdfTuneAt("armor.dagger_rot", 2, 50.0f)), MTXMODE_APPLY);
         Matrix_RotateY(DEG_TO_RAD(GdfTuneAt("armor.dagger_rot", 1, 0.0f)), MTXMODE_APPLY);
-        Matrix_RotateX(DEG_TO_RAD(GdfTuneAt("armor.dagger_rot", 0, 0.0f)), MTXMODE_APPLY);
+        Matrix_RotateX(DEG_TO_RAD(GdfTuneAt("armor.dagger_rot", 0, 20.0f)), MTXMODE_APPLY);
     }
     Matrix_Scale(sGdfKnifeScale, sGdfKnifeScale, sGdfKnifeScale, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
