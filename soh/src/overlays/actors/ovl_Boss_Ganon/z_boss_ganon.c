@@ -19685,6 +19685,10 @@ static void BossGanon_Player_PausePostLimbDraw(PlayState* play, s32 limbIndex, G
 
 // SoH: "Play as Ganondorf", single player (not Invasion): his own equipment screen, without the sword, shield and boots
 // rows (he has none of them)
+s32 BossGanon_Player_IsSoloGanondorf(void) {
+    return (sPlayerGanondorf != NULL) && (GdfInvasion_Role() == 0);
+}
+
 s32 BossGanon_Player_PauseIsGanondorf(void) {
     return (sPlayerGanondorf != NULL) && (GdfInvasion_Role() == 0) && (GdfTune("equip.hide_rows", 1.0f) != 0.0f);
 }

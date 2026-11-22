@@ -15,6 +15,7 @@
 #include "assets/objects/gameplay_keep/gameplay_keep.h" // SoH: ...and the burning enemies' fire
 #include "soh/Enhancements/ExtraModes/GanondorfTuning.h"
 #include "textures/icon_item_static/icon_item_static.h" // SoH: the tunics' icons as his capes
+#include "textures/item_name_static/item_name_static.h"
 #include "assets/objects/object_fd/object_fd.h"             // SoH: ...and Volvagia's fiery mane
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -1876,6 +1877,99 @@ static void EnGanonMant_MakeCapeIcon(s32 kind, u8* out) {
     }
 }
 
+// ...and their names on that screen: "Royal Cape", "Fire Mantle" and "Ice Mantle" (a mantle being the longer of the
+// two), written in the game's own message font the way the names are drawn (128x16, light letters outlined in dark,
+// centered)
+extern f32 sFontWidths[];
+static u8 sCapeName[3][128 * 16 / 2];
+static u8 sCapeNameMask[128 * 16];
+
+static void EnGanonMant_MakeCapeName(const char* text, u8* out) {
+    static u8 val[16][128];
+    f32 width = 0.0f;
+    f32 x;
+    s32 i, gx, gy;
+
+    memset(val, 0, sizeof(val));
+    for (i = 0; text[i] != '\0'; i++) {
+        width += sFontWidths[text[i] - ' '];
+    }
+    x = (s32)((128.0f - width) * 0.5f);
+    for (i = 0; text[i] != '\0'; i++) {
+        char c = text[i];
+        char name[96];
+        u8* glyph;
+
+        if ((c >= 'A') && (c <= 'Z')) {
+            snprintf(name, sizeof(name), "__OTR__textures/nes_font_static/gMsgChar%02XLatinCapitalLetter%cTex", c, c);
+        } else if ((c >= 'a') && (c <= 'z')) {
+            snprintf(name, sizeof(name), "__OTR__textures/nes_font_static/gMsgChar%02XLatinSmallLetter%cTex", c,
+                     c - 'a' + 'A');
+        } else {
+            name[0] = '\0';
+        }
+        glyph = (name[0] != '\0') ? (u8*)ResourceGetDataByName(name) : NULL;
+        if (glyph != NULL) {
+            for (gy = 0; gy < 16; gy++) {
+                for (gx = 0; gx < 16; gx++) {
+                    s32 X = (s32)x + gx;
+                    u8 v = (glyph[(gy * 16 + gx) / 2] >> (((gx & 1) == 0) ? 4 : 0)) & 0xF;
+
+                    if ((X >= 0) && (X < 128) && (v > val[gy][X])) {
+                        val[gy][X] = v;
+                    }
+                }
+            }
+        }
+        x += sFontWidths[c - ' '];
+    }
+    // IA4: 3 bits of light, 1 of cover; the letters, then a dark outline around them
+    memset(out, 0, 128 * 16 / 2);
+    for (gy = 0; gy < 16; gy++) {
+        for (gx = 0; gx < 128; gx++) {
+            u8 px = 0;
+
+            if (val[gy][gx] >= 6) {
+                px = (MIN(7, val[gy][gx] >> 1) << 1) | 1;
+            } else {
+                s32 dy, dx;
+
+                for (dy = -1; dy <= 1; dy++) {
+                    for (dx = -1; dx <= 1; dx++) {
+                        if ((gy + dy >= 0) && (gy + dy < 16) && (gx + dx >= 0) && (gx + dx < 128) &&
+                            (val[gy + dy][gx + dx] >= 6)) {
+                            px = 1;
+                        }
+                    }
+                }
+            }
+            out[(gy * 128 + gx) / 2] |= ((gx & 1) == 0) ? (px << 4) : px;
+        }
+    }
+}
+
+static void EnGanonMant_CapeNames(s32 on) {
+    static const char* sNames[3] = { gKokiriTunicItemNameENGTex, gGoronTunicItemNameENGTex, gZoraTunicItemNameENGTex };
+    static const char* sText[3] = { "Royal Cape", "Fire Mantle", "Ice Mantle" };
+    static s8 sMade = false;
+    s32 i;
+
+    if (on && !sMade) {
+        memset(sCapeNameMask, 0xFF, sizeof(sCapeNameMask));
+        for (i = 0; i < 3; i++) {
+            EnGanonMant_MakeCapeName(sText[i], sCapeName[i]);
+        }
+        sMade = true;
+    }
+    for (i = 0; i < 3; i++) {
+        if (on) {
+            Gfx_RegisterBlendedTexture(sNames[i], sCapeNameMask, sCapeName[i]);
+        } else {
+            Gfx_UnregisterBlendedTexture(sNames[i]);
+        }
+    }
+}
+
 void EnGanonMant_CapeIcons(s32 on) {
     static const char* sIcons[3] = { gItemIconTunicKokiriTex, gItemIconTunicGoronTex, gItemIconTunicZoraTex };
     s32 i;
@@ -1898,5 +1992,6 @@ void EnGanonMant_CapeIcons(s32 on) {
             Gfx_UnregisterBlendedTexture(sIcons[i]);
         }
     }
+    EnGanonMant_CapeNames(on);
     sCapeIconsOn = on;
 }

@@ -12,12 +12,14 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "GanondorfText.h"
+#include "GanondorfTuning.h"
 #include "soh/ShipInit.hpp"
 
 extern "C" {
 #include "z64.h"
 #include "variables.h"
 extern PlayState* gPlayState;
+s32 BossGanon_Player_IsSoloGanondorf(void);
 }
 
 namespace {
@@ -167,6 +169,30 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     msg.LoadIntoFont();
 }
 
+// The tunics, renamed in what the game says of them (as on his equipment screen): the Kokiri Tunic his Royal Cape, the
+// Goron Tunic his Fire Mantle, the Zora Tunic his Ice Mantle. Any line the other hooks left alone that names one.
+void OnOpenTextCapes(uint16_t* textId, bool* loadFromMessageTable) {
+    if (!*loadFromMessageTable || (gSaveContext.language != LANGUAGE_ENG) || !BossGanon_Player_IsSoloGanondorf() ||
+        (GdfTune("icons.capes", 1.0f) == 0.0f)) {
+        return;
+    }
+    CustomMessage msg = CustomMessage::LoadVanillaMessageTableEntry(*textId);
+    std::string text = msg.GetEnglish(MF_RAW);
+
+    if ((text.find("Tunic") == std::string::npos) && (text.find("tunic") == std::string::npos)) {
+        return;
+    }
+    msg.Replace("Kokiri Tunic", "Royal Cape");
+    msg.Replace("Goron Tunic", "Fire Mantle");
+    msg.Replace("Zora Tunic", "Ice Mantle");
+    msg.Replace("Tunics", "Mantles");
+    msg.Replace("tunics", "mantles");
+    msg.Replace("Tunic", "Mantle");
+    msg.Replace("tunic", "mantle");
+    *loadFromMessageTable = false;
+    msg.LoadIntoFont();
+}
+
 void RegisterNpcs() {
     // Off by default while it's reworked (once only: it used to be on, and a saved setting kept it on)
     if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogueReset"), 0)) {
@@ -175,6 +201,7 @@ void RegisterNpcs() {
         Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(OnOpenText);
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(OnOpenTextCapes);
 }
 
 } // namespace
