@@ -14,6 +14,7 @@
 #include "assets/objects/object_tw/object_tw.h" // SoH: Koume's burning hair, for the Goron Tunic's cape
 #include "assets/objects/gameplay_keep/gameplay_keep.h" // SoH: ...and the burning enemies' fire
 #include "soh/Enhancements/ExtraModes/GanondorfTuning.h"
+#include "textures/icon_item_static/icon_item_static.h" // SoH: the tunics' icons as his capes
 #include "assets/objects/object_fd/object_fd.h"             // SoH: ...and Volvagia's fiery mane
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -1746,4 +1747,146 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
     for (strandIdx = 0; strandIdx < this->linkedCount; strandIdx++) {
         EnGanonMant_DrawCloak(play, this->linked[strandIdx]);
     }
+}
+
+// SoH: "Play as Ganondorf", the tunics' icons on the equipment screen as the capes they give him: his own red cloak
+// (drawn from the cape's own texture) for the Kokiri Tunic, the flame cape for the Goron Tunic and the ice cape for the
+// Zora Tunic. Drawn here once, 32x32 like the icons they stand in for: a cloak flaring from its collar to its hem
+// (flame tongues on the fire, icicles on the ice), folds and an outline, a gold clasp at the collar.
+static u8 sCapeIcon[3][32 * 32 * 4];
+static u8 sCapeIconMask[32 * 32];
+static s8 sCapeIconsOn = false;
+static s8 sCapeIconsMade = false;
+
+static f32 EnGanonMant_IconHalfWidth(s32 y) {
+    if (y < 4) {
+        return 0.0f;
+    }
+    if (y < 8) {
+        return 6.0f; // (the collar)
+    }
+    return 6.0f + (y - 8) * 0.42f;
+}
+
+static f32 EnGanonMant_IconHem(s32 x, s32 kind) {
+    f32 f;
+
+    switch (kind) {
+        case 0:
+            return 28.5f + 0.8f * sinf(x * 0.9f);
+        case 1: // (flame tongues)
+            f = x * 0.35f - floorf(x * 0.35f);
+            return 24.5f + 4.5f * (1.0f - fabsf(f * 2.0f - 1.0f));
+        default: // (icicles)
+            f = x * 0.5f - floorf(x * 0.5f);
+            return 26.0f + 3.5f * (1.0f - fabsf(f * 2.0f - 1.0f));
+    }
+}
+
+static void EnGanonMant_MakeCapeIcon(s32 kind, u8* out) {
+    u8* mant = (u8*)ResourceGetDataByName(gMantTex);
+    u8 in[32][32];
+    s32 x, y;
+
+    memset(out, 0, 32 * 32 * 4);
+    for (y = 0; y < 32; y++) {
+        for (x = 0; x < 32; x++) {
+            f32 h = EnGanonMant_IconHalfWidth(y);
+            f32 cx = x + 0.5f - 16.0f;
+            f32 u, v, k, t;
+            s32 r, g, b;
+            u8* o = &out[(y * 32 + x) * 4];
+
+            in[y][x] = false;
+            if ((h <= 0.0f) || (fabsf(cx) > h) || (y + 0.5f > EnGanonMant_IconHem(x, kind))) {
+                continue;
+            }
+            in[y][x] = true;
+            u = (cx + h) / (2.0f * h);
+            v = (y - 4) / 24.0f;
+            // (its folds, and darker toward its edges)
+            k = (0.8f + 0.2f * cosf(u * M_PI * 6.0f)) * (1.0f - 0.35f * powf(fabsf(cx) / h, 3.0f));
+            if (kind == 0) {
+                s32 tu = CLAMP((s32)(u * 32.0f), 0, 31);
+                s32 tv = CLAMP((s32)(v * 64.0f), 0, 63);
+                u16 px = (mant != NULL) ? ((mant[(tv * 32 + tu) * 2] << 8) | mant[(tv * 32 + tu) * 2 + 1]) : 0x9001;
+
+                r = ((px >> 11) & 0x1F) * 255 / 31;
+                g = ((px >> 6) & 0x1F) * 255 / 31;
+                b = ((px >> 1) & 0x1F) * 255 / 31;
+            } else if (kind == 1) {
+                t = v + 0.12f * sinf(u * 19.0f + v * 7.0f);
+                r = 255;
+                g = (s32)(240.0f - 200.0f * t);
+                b = (s32)(150.0f - 150.0f * CLAMP_MAX(t * 1.6f, 1.0f));
+                if (t > 0.75f) {
+                    r = 230;
+                    g = 40;
+                    b = 10;
+                }
+            } else {
+                t = v + 0.1f * sinf(u * 17.0f + v * 9.0f);
+                r = (s32)(225.0f - 170.0f * t);
+                g = (s32)(245.0f - 120.0f * t);
+                b = 255;
+            }
+            if (y < 8) {
+                k *= 1.15f;
+            }
+            o[0] = CLAMP((s32)(r * k), 0, 255);
+            o[1] = CLAMP((s32)(g * k), 0, 255);
+            o[2] = CLAMP((s32)(b * k), 0, 255);
+            o[3] = 255;
+        }
+    }
+    // (its outline)
+    for (y = 0; y < 32; y++) {
+        for (x = 0; x < 32; x++) {
+            if (!in[y][x] && (((y > 0) && in[y - 1][x]) || ((y < 31) && in[y + 1][x]) || ((x > 0) && in[y][x - 1]) ||
+                              ((x < 31) && in[y][x + 1]))) {
+                u8* o = &out[(y * 32 + x) * 4];
+
+                o[0] = 20;
+                o[1] = 10;
+                o[2] = 10;
+                o[3] = 255;
+            }
+        }
+    }
+    // (the gold clasp)
+    for (y = 5; y <= 6; y++) {
+        for (x = 15; x <= 16; x++) {
+            u8* o = &out[(y * 32 + x) * 4];
+
+            o[0] = 250;
+            o[1] = 210;
+            o[2] = 80;
+            o[3] = 255;
+        }
+    }
+}
+
+void EnGanonMant_CapeIcons(s32 on) {
+    static const char* sIcons[3] = { gItemIconTunicKokiriTex, gItemIconTunicGoronTex, gItemIconTunicZoraTex };
+    s32 i;
+
+    on = on && (GdfTune("icons.capes", 1.0f) != 0.0f);
+    if (on == sCapeIconsOn) {
+        return;
+    }
+    if (on && !sCapeIconsMade) {
+        memset(sCapeIconMask, 0xFF, sizeof(sCapeIconMask));
+        for (i = 0; i < 3; i++) {
+            EnGanonMant_MakeCapeIcon(i, sCapeIcon[i]);
+        }
+        sCapeIconsMade = true;
+    }
+    for (i = 0; i < 3; i++) {
+        if (on) {
+            Gfx_RegisterBlendedTexture(sIcons[i], sCapeIconMask, sCapeIcon[i]);
+        } else {
+            Gfx_UnregisterBlendedTexture(sIcons[i]);
+        }
+    }
+    sCapeIconsOn = on;
 }

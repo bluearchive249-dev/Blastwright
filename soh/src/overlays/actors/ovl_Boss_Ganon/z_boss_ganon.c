@@ -495,6 +495,7 @@ static s32 BossGanon_Player_UpdateRobe(BossGanon* this, Vec3f* fwd, Vec3f* right
     s32 k;
 
     BossGanon_Player_RobeRecolor(on);
+    EnGanonMant_CapeIcons(true); // (the tunics' icons as his capes, while he's played)
     if (!on || (sGdfCapelet[0] == NULL) || (sGdfCapelet[1] == NULL) || (sGdfCapelet[2] == NULL)) {
         return false;
     }
@@ -1295,6 +1296,7 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
             }
             sPlayerGanondorf = NULL;
             sPlayerCape = NULL;
+            EnGanonMant_CapeIcons(false);
         }
     }
 }
