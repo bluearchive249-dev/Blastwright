@@ -5311,7 +5311,25 @@ const char* digitTextures[] = { gCounterDigit0Tex, gCounterDigit1Tex, gCounterDi
                                 gCounterDigit2Tex, gCounterDigit3Tex, gCounterDigit4Tex, gCounterDigit5Tex,
                                 gCounterDigit6Tex, gCounterDigit7Tex, gCounterDigit8Tex };
 
+// SoH: "Play as Ganondorf", single player: his B button stays solid with nothing on it (it holds his spells and fists,
+// not a sword), instead of dimmed as Link's is without a sword. Only the drawing: its fades and states are left as
+// they are, its brightness following the A button's while it's dimmed.
+s32 BossGanon_Player_IsSoloGanondorf(void);
+static void Interface_DrawImpl(PlayState* play);
+
 void Interface_Draw(PlayState* play) {
+    InterfaceContext* interfaceCtx = &play->interfaceCtx;
+    u16 bAlpha = interfaceCtx->bAlpha;
+
+    if (BossGanon_Player_IsSoloGanondorf() && (gSaveContext.buttonStatus[0] == BTN_DISABLED) &&
+        (interfaceCtx->bAlpha == 70)) {
+        interfaceCtx->bAlpha = interfaceCtx->aAlpha;
+    }
+    Interface_DrawImpl(play);
+    interfaceCtx->bAlpha = bAlpha;
+}
+
+static void Interface_DrawImpl(PlayState* play) {
     static s16 magicArrowEffectsR[] = { 255, 100, 255 };
     static s16 magicArrowEffectsG[] = { 0, 100, 255 };
     static s16 magicArrowEffectsB[] = { 0, 255, 100 };
