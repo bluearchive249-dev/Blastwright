@@ -2991,6 +2991,20 @@ void FileChoose_Main(GameState* thisx) {
         sWindowContentColors[0][0] = backgroundColor.r;
         sWindowContentColors[0][1] = backgroundColor.g;
         sWindowContentColors[0][2] = backgroundColor.b;
+    } else if (FileChoose_GanondorfMode()) {
+        // (his: the windows in a dark blood red, gold where they're lit)
+        this->windowColor[0] = 150;
+        this->windowColor[1] = 25;
+        this->windowColor[2] = 35;
+        this->highlightColor[0] = 255;
+        this->highlightColor[1] = 200;
+        this->highlightColor[2] = 90;
+        helpTextColor.r = 255;
+        helpTextColor.g = 190;
+        helpTextColor.b = 90;
+        sWindowContentColors[0][0] = 150;
+        sWindowContentColors[0][1] = 25;
+        sWindowContentColors[0][2] = 35;
     } else {
         this->windowColor[0] = 100;
         this->windowColor[1] = 150;
