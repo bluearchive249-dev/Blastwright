@@ -1751,61 +1751,73 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
 
 // SoH: "Play as Ganondorf", the tunics' icons on the equipment screen as the capes they give him: his own red cloak
 // (drawn from the cape's own texture) for the Kokiri Tunic, the flame cape for the Goron Tunic and the ice cape for the
-// Zora Tunic. Drawn here once, 32x32 like the icons they stand in for: a cloak flaring from its collar to its hem
-// (flame tongues on the fire, icicles on the ice), folds and an outline, a gold clasp at the collar.
+// Zora Tunic. Drawn here once, 32x32 like the icons they stand in for: a wavy cloak from the front, turned a little to
+// the right (flame tongues on the fire, icicles on the ice), an outline and a gold clasp at the collar.
 static u8 sCapeIcon[3][32 * 32 * 4];
 static u8 sCapeIconMask[32 * 32];
 static s8 sCapeIconsOn = false;
 static s8 sCapeIconsMade = false;
 
-static f32 EnGanonMant_IconHalfWidth(s32 y) {
+// The cloak from the front, turned a little to its right (its right side recedes), leaning and swaying right as if
+// in the wind, wavy folds drifting down it and a wavy hem
+static s32 EnGanonMant_IconRow(s32 y, f32* v, f32* h, f32* cx) {
     if (y < 4) {
-        return 0.0f;
+        return false;
     }
-    if (y < 8) {
-        return 6.0f; // (the collar)
-    }
-    return 6.0f + (y - 8) * 0.42f;
+    *v = (y - 4) / 24.0f;
+    *h = (y < 8) ? 5.5f : (5.5f + (y - 8) * 0.45f);
+    *cx = 15.5f + 3.0f * SQ(*v) + 1.2f * sinf(*v * M_PI * 2.2f);
+    return true;
 }
 
 static f32 EnGanonMant_IconHem(s32 x, s32 kind) {
+    f32 base = 27.5f + 1.6f * sinf(x * 0.55f + 0.8f);
     f32 f;
 
     switch (kind) {
-        case 0:
-            return 28.5f + 0.8f * sinf(x * 0.9f);
         case 1: // (flame tongues)
-            f = x * 0.35f - floorf(x * 0.35f);
-            return 24.5f + 4.5f * (1.0f - fabsf(f * 2.0f - 1.0f));
-        default: // (icicles)
+            f = x * 0.37f - floorf(x * 0.37f);
+            return base - 4.5f + 4.5f * (1.0f - fabsf(f * 2.0f - 1.0f));
+        case 2: // (icicles)
             f = x * 0.5f - floorf(x * 0.5f);
-            return 26.0f + 3.5f * (1.0f - fabsf(f * 2.0f - 1.0f));
+            return base - 3.0f + 3.0f * (1.0f - fabsf(f * 2.0f - 1.0f));
+        default:
+            return base;
     }
 }
 
 static void EnGanonMant_MakeCapeIcon(s32 kind, u8* out) {
     u8* mant = (u8*)ResourceGetDataByName(gMantTex);
     u8 in[32][32];
+    f32 v, h, cx;
     s32 x, y;
 
     memset(out, 0, 32 * 32 * 4);
+    memset(in, 0, sizeof(in));
     for (y = 0; y < 32; y++) {
+        f32 hl, hr;
+
+        if (!EnGanonMant_IconRow(y, &v, &h, &cx)) {
+            continue;
+        }
+        hl = h * 1.12f;
+        hr = h * 0.82f;
         for (x = 0; x < 32; x++) {
-            f32 h = EnGanonMant_IconHalfWidth(y);
-            f32 cx = x + 0.5f - 16.0f;
-            f32 u, v, k, t;
+            f32 dx = x + 0.5f - cx;
+            f32 u, k, q;
             s32 r, g, b;
             u8* o = &out[(y * 32 + x) * 4];
 
-            in[y][x] = false;
-            if ((h <= 0.0f) || (fabsf(cx) > h) || (y + 0.5f > EnGanonMant_IconHem(x, kind))) {
+            if ((dx < -hl) || (dx > hr) || (y + 0.5f > EnGanonMant_IconHem(x, kind))) {
                 continue;
             }
             in[y][x] = true;
-            u = (cx + h) / (2.0f * h);
-            v = (y - 4) / 24.0f;
-            // (its folds, and darker toward its edges)
-            k = (0.8f + 0.2f * cosf(u * M_PI * 6.0f)) * (1.0f - 0.35f * powf(fabsf(cx) / h, 3.0f));
+            u = (dx + hl) / (hl + hr);
+            // (its folds, and lit from its left, its far side darker)
+            k = (0.7f + 0.3f * cosf(u * M_PI * 5.0f - v * 3.0f)) * (1.08f - 0.38f * u);
+            if (y < 8) {
+                k *= 1.15f;
+            }
             if (kind == 0) {
                 s32 tu = CLAMP((s32)(u * 32.0f), 0, 31);
                 s32 tv = CLAMP((s32)(v * 64.0f), 0, 63);
@@ -1815,23 +1827,20 @@ static void EnGanonMant_MakeCapeIcon(s32 kind, u8* out) {
                 g = ((px >> 6) & 0x1F) * 255 / 31;
                 b = ((px >> 1) & 0x1F) * 255 / 31;
             } else if (kind == 1) {
-                t = v + 0.12f * sinf(u * 19.0f + v * 7.0f);
+                q = v + 0.12f * sinf(u * 19.0f + v * 7.0f);
                 r = 255;
-                g = (s32)(240.0f - 200.0f * t);
-                b = (s32)(150.0f - 150.0f * CLAMP_MAX(t * 1.6f, 1.0f));
-                if (t > 0.75f) {
+                g = (s32)(240.0f - 200.0f * q);
+                b = (s32)(150.0f - 150.0f * CLAMP_MAX(q * 1.6f, 1.0f));
+                if (q > 0.75f) {
                     r = 230;
                     g = 40;
                     b = 10;
                 }
             } else {
-                t = v + 0.1f * sinf(u * 17.0f + v * 9.0f);
-                r = (s32)(225.0f - 170.0f * t);
-                g = (s32)(245.0f - 120.0f * t);
+                q = v + 0.1f * sinf(u * 17.0f + v * 9.0f);
+                r = (s32)(225.0f - 170.0f * q);
+                g = (s32)(245.0f - 120.0f * q);
                 b = 255;
-            }
-            if (y < 8) {
-                k *= 1.15f;
             }
             o[0] = CLAMP((s32)(r * k), 0, 255);
             o[1] = CLAMP((s32)(g * k), 0, 255);
@@ -1853,9 +1862,10 @@ static void EnGanonMant_MakeCapeIcon(s32 kind, u8* out) {
             }
         }
     }
-    // (the gold clasp)
+    // (the gold clasp, at the collar)
+    EnGanonMant_IconRow(5, &v, &h, &cx);
     for (y = 5; y <= 6; y++) {
-        for (x = 15; x <= 16; x++) {
+        for (x = (s32)cx - 1; x <= (s32)cx; x++) {
             u8* o = &out[(y * 32 + x) * 4];
 
             o[0] = 250;
