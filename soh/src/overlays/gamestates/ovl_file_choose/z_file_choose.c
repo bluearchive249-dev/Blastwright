@@ -155,6 +155,51 @@ static int FileChoose_IsSaveCompatible(const SaveFileMetaInfo* restrict meta) {
     return valid;
 }
 
+// SoH: "Play as Ganondorf": the file select as the sky over his tower, dark storm clouds lit now and then by lightning
+// with its thunder, and his own theme from the organ in his throne room (NA_BGM_GANON_TOWER) in place of the file
+// select's
+static s32 FileChoose_GanondorfMode(void) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) != 0;
+}
+
+static u16 FileChoose_Music(void) {
+    return FileChoose_GanondorfMode() ? NA_BGM_GANON_TOWER : NA_BGM_FILE_SELECT;
+}
+
+static void FileChoose_GanondorfSky(FileChooseContext* this) {
+    static s16 sFlash = 0;
+    static s16 sNext = 120;
+    u8 r = 25, g = 8, b = 30, a = 175;
+
+    if (!FileChoose_GanondorfMode()) {
+        return;
+    }
+    if (--sNext <= 0) {
+        sFlash = 8;
+        sNext = 150 + (s16)Rand_ZeroFloat(240.0f);
+        Sfx_PlaySfxCentered(NA_SE_EV_LIGHTNING);
+    }
+    if (sFlash > 0) {
+        // (the lightning: a white-violet flash, flickering)
+        sFlash--;
+        if ((sFlash % 3) != 1) {
+            r = 200;
+            g = 190;
+            b = 255;
+            a = 90;
+        }
+    }
+    OPEN_DISPS(this->state.gfxCtx);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCycleType(POLY_OPA_DISP++, G_CYC_1CYCLE);
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_XLU_SURF, G_RM_XLU_SURF2);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, a);
+    gDPFillRectangle(POLY_OPA_DISP++, 0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+    gDPPipeSync(POLY_OPA_DISP++);
+    CLOSE_DISPS(this->state.gfxCtx);
+}
+
 void FileChoose_SetView(FileChooseContext* this, f32 eyeX, f32 eyeY, f32 eyeZ) {
     Vec3f eye;
     Vec3f lookAt;
@@ -394,7 +439,7 @@ void FileChoose_UpdateRandomizer() {
         } else {
             Sfx_PlaySfxCentered(NA_SE_SY_OCARINA_ERROR);
         }
-        Audio_PlaySequenceWithSeqPlayerIO(SEQ_PLAYER_BGM_MAIN, NA_BGM_FILE_SELECT, 0, 7, 1);
+        Audio_PlaySequenceWithSeqPlayerIO(SEQ_PLAYER_BGM_MAIN, FileChoose_Music(), 0, 7, 1);
         generating = 0;
         return;
     } else if (generating) {
@@ -2304,6 +2349,7 @@ void FileChoose_ConfigModeDraw(GameState* thisx) {
     FileChoose_SetView(this, eyeX, eyeY, eyeZ);
     SkyboxDraw_Draw(&this->skyboxCtx, this->state.gfxCtx, 1, this->envCtx.skyboxBlend, eyeX, eyeY, eyeZ);
     gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_NONE);
+    FileChoose_GanondorfSky(this);
     ZREG(11) += ZREG(10);
     Environment_UpdateSkybox(NULL, SKYBOX_NORMAL_SKY, &this->envCtx, &this->skyboxCtx);
     gDPPipeSync(POLY_OPA_DISP++);
@@ -2811,6 +2857,7 @@ void FileChoose_SelectModeDraw(GameState* thisx) {
     FileChoose_SetView(this, eyeX, eyeY, eyeZ);
     SkyboxDraw_Draw(&this->skyboxCtx, this->state.gfxCtx, 1, this->envCtx.skyboxBlend, eyeX, eyeY, eyeZ);
     gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_NONE);
+    FileChoose_GanondorfSky(this);
     ZREG(11) += ZREG(10);
     Environment_UpdateSkybox(NULL, SKYBOX_NORMAL_SKY, &this->envCtx, &this->skyboxCtx);
     gDPPipeSync(POLY_OPA_DISP++);
@@ -3345,5 +3392,5 @@ void FileChoose_Init(GameState* thisx) {
         Font_LoadOrderedFontNTSC(&this->font);
     }
     Audio_QueueSeqCmd(0xF << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0xA);
-    Audio_PlaySequenceWithSeqPlayerIO(SEQ_PLAYER_BGM_MAIN, NA_BGM_FILE_SELECT, 0, 7, 1);
+    Audio_PlaySequenceWithSeqPlayerIO(SEQ_PLAYER_BGM_MAIN, FileChoose_Music(), 0, 7, 1);
 }
