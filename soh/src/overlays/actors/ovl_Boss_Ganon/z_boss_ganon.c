@@ -7139,6 +7139,34 @@ static u16 BossGanon_Player_Voice(u16 sfx) {
     u16 out;
 
     if (!BossGanon_Player_IsPhantom()) {
+        // The knight's armour (Goron or Zora Tunic): Phantom Ganon's voice, his lines only (his magic stays
+        // Ganondorf's). The lines he has none of are Ganondorf's own, played deeper (BossGanon_Player_Say).
+        if (BossGanon_Player_KnightLook() && (GdfTune("voice.knight", 1.0f) != 0.0f)) {
+            switch (id) {
+                case NA_SE_EN_GANON_LAUGH:
+                    out = NA_SE_EN_FANTOM_LAUGH;
+                    break;
+                case NA_SE_EN_GANON_THROW:
+                    out = NA_SE_EN_FANTOM_VOICE;
+                    break;
+                case NA_SE_EN_GANON_AT_RETURN:
+                case NA_SE_EN_GANON_THROW_BIG:
+                    out = NA_SE_EN_FANTOM_ATTACK;
+                    break;
+                case NA_SE_EN_GANON_DAMAGE1:
+                    out = NA_SE_EN_FANTOM_DAMAGE;
+                    break;
+                case NA_SE_EN_GANON_DAMAGE2:
+                    out = NA_SE_EN_FANTOM_DAMAGE2;
+                    break;
+                case NA_SE_EN_GANON_DEAD:
+                    out = NA_SE_EN_FANTOM_DEAD;
+                    break;
+                default:
+                    return sfx;
+            }
+            return looping ? (out - SFX_FLAG) : out;
+        }
         return sfx;
     }
     switch (id) {
@@ -7173,6 +7201,26 @@ static u16 BossGanon_Player_Voice(u16 sfx) {
             return sfx;
     }
     return looping ? (out - SFX_FLAG) : out;
+}
+
+// Plays one of his lines (as BossGanon_Player_Voice picks it). In the knight's armour, the lines Phantom Ganon has no
+// recording of (striking the ground, getting back up, the Warlock Punch's yell) are Ganondorf's, played deeper and
+// with more echo so they sit with Phantom Ganon's voice.
+static void BossGanon_Player_Say(Actor* actor, u16 sfx) {
+    static f32 sDeep;
+    static s8 sEcho;
+    u16 out = BossGanon_Player_Voice(sfx);
+    u16 id = (out & SFX_FLAG) ? out : (out + SFX_FLAG);
+
+    if (!BossGanon_Player_IsPhantom() && BossGanon_Player_KnightLook() && (GdfTune("voice.knight", 1.0f) != 0.0f) &&
+        ((id == NA_SE_EN_GANON_HIT_GND) || (id == NA_SE_EN_GANON_RESTORE) || (id == NA_SE_EN_GANON_DARKWAVE) ||
+         (id == NA_SE_EN_GANON_BIGMASIC))) {
+        sDeep = GdfTune("voice.deep_pitch", 0.8f);
+        sEcho = (s8)GdfTune("voice.deep_echo", 40.0f);
+        Audio_PlaySfxGeneral(out, &actor->projectedPos, 4, &sDeep, &gSfxDefaultFreqAndVolScale, &sEcho);
+        return;
+    }
+    Audio_PlayActorSound2(actor, out);
 }
 
 void BossGanon_Player_Update(Actor* thisx, PlayState* play);
@@ -9773,7 +9821,7 @@ void BossGanon_Player_SetupLand(BossGanon* this, PlayState* play, f32 height) {
     pos.y = this->playerFloorY;
     Actor_RequestQuakeAndRumble(&this->actor, play, (height > 250.0f) ? 5 : 3, 12);
     Actor_SpawnFloorDustRing(play, &this->actor, &pos, 40.0f, 10, 6.0f, 400, 25, true);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_GND);
 }
 
 // Down into a deep crouch, a moment, then he rises
@@ -9886,7 +9934,7 @@ static void BossGanon_Player_SetupSwordDash(BossGanon* this, PlayState* play, s1
         player->invincibilityTimer = -8;
     }
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FLOAT);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_AT_RETURN);
 }
 
 // Stick direction in the world (camera-relative), or -1 when the stick is neutral
@@ -9913,8 +9961,8 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
     // stance, a third time back to normal (from the stance, in BossGanon_Player_SwordIdle)
     if (!sPlayerDarkAuraMode && (sPlayerSwordState == GDF_SWORD_OFF)) {
         sPlayerDarkAuraMode = true;
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_LAUGH);
         BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
         BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
         return true;
@@ -9926,7 +9974,7 @@ static s32 BossGanon_Player_TryToggleSword(BossGanon* this, PlayState* play) {
     }
     if (sPlayerSwordState == GDF_SWORD_OFF) {
         sPlayerSwordState = GDF_SWORD_SHEATHED;
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
         BossGanon_Player_SetupSwordIdle(this, play);
         return true;
     }
@@ -10036,7 +10084,7 @@ void BossGanon_Player_SwordIdle(BossGanon* this, PlayState* play) {
         // Fists down: normal again
         sGdfFists = false;
         sPlayerSwordState = GDF_SWORD_OFF;
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
         BossGanon_Player_SetupFloat(this, play);
         return;
     }
@@ -10091,7 +10139,7 @@ static void BossGanon_Player_SwordImpact(BossGanon* this, PlayState* play, f32 r
 
     pos.y = this->playerFloorY + 2.0f;
     Actor_RequestQuakeAndRumble(&this->actor, play, 6, 20);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND_IMP));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
     EffectSsBlast_SpawnWhiteShockwave(play, &pos, &zero, &zero);
     Actor_SpawnFloorDustRing(play, &this->actor, &pos, radius * 0.4f, 16, 8.0f, 700, 30, true);
@@ -10321,7 +10369,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_PUTAWAY);
     }
     if ((this->playerSwordAttack == GDF_SWORD_ATK_DRAW) && (this->playerSwordTimer == 18)) {
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_LAUGH);
     }
 
     if (this->playerSwordTimer == atk->activeStart) {
@@ -10330,7 +10378,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_ATTACK);
         } else if ((this->playerSwordAttack != GDF_SWORD_ATK_DRAW) &&
                    (this->playerSwordAttack != GDF_SWORD_ATK_WARLOCK)) { // (it has its own cry)
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+            BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_AT_RETURN);
         }
     }
 
@@ -10347,7 +10395,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
     // The Warlock Punch's wind-up: dark fire gathering round his right fist, and his growl
     if (this->playerSwordAttack == GDF_SWORD_ATK_WARLOCK) {
         if (this->playerSwordTimer == 1) {
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_CHARGE_MASIC));
+            BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_CHARGE_MASIC);
         }
         if ((this->playerSwordTimer >= 2) && (this->playerSwordTimer < atk->impactFrame) && this->playerBladeValid) {
             Vec3f p = this->playerBladeTip;
@@ -10363,7 +10411,7 @@ void BossGanon_Player_SwordAttack(BossGanon* this, PlayState* play) {
             BossGanon_Player_WarlockImpact(this, play);
         } else if (this->playerSwordAttack == GDF_SWORD_ATK_WAVE) {
             // Dark energy flies off the blade towards whatever he's facing
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE));
+            BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DARKWAVE);
             BossGanon_Player_AimRot(&this->playerBladeTip, &this->playerAimPos, &rotX, &rotY);
             Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->playerBladeTip.x,
                                this->playerBladeTip.y, this->playerBladeTip.z, rotX, rotY, 0,
@@ -10866,7 +10914,7 @@ void BossGanon_Player_SpearStorm(BossGanon* this, PlayState* play) {
         if (bolt != NULL) {
             EnFhgFire_GdfArm((EnFhgFire*)bolt);
         }
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_BIG));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW_BIG);
         Rumble_Request(0.0f, 220, 20, 20);
     }
 
@@ -11208,7 +11256,7 @@ s32 BossGanon_Player_TryBreakKick(Actor* thisx, PlayState* play) {
     // He turns to it as he steps in (ApplyBreakKick)
     sGdfBreakYaw = Math_Vec3f_Yaw(&player->actor.world.pos, &door->world.pos);
     player->linearVelocity = 0.0f;
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW)); // (one grunt, not a loop)
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW); // (one grunt, not a loop)
     return true;
 }
 
@@ -11942,7 +11990,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
                     sGdfSwdShow = 0;
                     sGdfSwdPos = stone;
                     sGdfSwdRot = stoneRot;
-                    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+                    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW);
                 }
             } else if (!IS_RANDO && (swd->draw != BgTokiSwd_Draw) && !sGdfSwdReturn &&
                        BossGanon_Player_SwdFindWall(play, swd)) {
@@ -11970,7 +12018,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
                 Audio_PlayActorSound2(swd, NA_SE_IT_SHIELD_REFLECT_SW);
                 Audio_PlayActorSound2(swd, NA_SE_IT_HAMMER_HIT);
                 Audio_PlayActorSound2(swd, NA_SE_IT_SWORD_PICKOUT_GANON);
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_AT_RETURN);
                 sGdfSwdFrom = stone;
             }
             if (sGdfSwdTimer > GDF_SWD_KICK_CONTACT) {
@@ -12041,7 +12089,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
                 sGdfSwdTimer = 0;
                 sGdfSwdFrom = sGdfSwdWall;
                 sGdfSwdFromRot = sGdfSwdWallRot;
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
                 Audio_PlayActorSound2(swd, NA_SE_IT_SWORD_PICKOUT_GANON);
             }
             break;
@@ -12105,7 +12153,7 @@ static void BossGanon_Player_MasterSwordKick(BossGanon* this, PlayState* play) {
                 sGdfSwdTimer = 0;
                 sGdfSwdFrom = sGdfSwdPos;
                 sGdfSwdFromRot = sGdfSwdRot;
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW);
             }
             break;
 
@@ -12579,7 +12627,7 @@ static void BossGanon_Player_SetupSummonTrident(BossGanon* this, PlayState* play
     this->actionFunc = BossGanon_Player_SummonTrident;
     this->playerSwordTimer = 0;
     this->playerWalkWeight = 0.0f;
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
 }
 
 // The burst (on his screen, `own`, with his own flair on top: his shock and rays of light; the others' screens get the
@@ -12594,7 +12642,7 @@ static void BossGanon_Player_TridentBurst(BossGanon* this, PlayState* play, Vec3
 
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_LIGHT);
     Audio_PlayActorSound2(&this->actor, NA_SE_EV_LIGHTNING);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_BIG));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW_BIG);
     Actor_RequestQuakeAndRumble(&this->actor, play, 4, 10);
 
     // Dark fire bursting out of his fist
@@ -12685,7 +12733,7 @@ static void BossGanon_Player_SetupUnsummonTrident(BossGanon* this, PlayState* pl
     for (s32 i = 0; i < 3; i++) {
         this->playerArmFrom[i] = this->skelAnime.jointTable[1 + GDF_RIGHT_ARM_LIMB + i];
     }
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
 }
 
 // The trident coming apart (on his screen, `own`, with his shock over it too)
@@ -12699,7 +12747,7 @@ static void BossGanon_Player_TridentVanish(BossGanon* this, PlayState* play, Vec
     s32 i;
 
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_LIGHT);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
     // Dark fire rising off where it was, slow
     for (i = 0; i < 14; i++) {
         vel.x = Rand_CenteredFloat(3.0f);
@@ -13916,9 +13964,10 @@ static void BossGanon_Player_WarlockImpact(BossGanon* this, PlayState* play) {
     sGdfWarlockBurstScale = 1.0f;
     sGdfWarlockBurstFrames = GDF_WARLOCK_BURST_FRAMES;
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_FRAME); // (the fire arrow's burst)
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_THUNDER));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_THUNDER);
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_BOMB_EXPLOSION);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_BIG)); // his big shout
+    // his yell as the punch lands: "Ganondorf's Final Attack 2", which the game plays as NA_SE_EN_GANON_DARKWAVE
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DARKWAVE);
     EffectSsBlast_SpawnWhiteShockwave(play, &pos, &zero, &zero);
     BossGanonEff_SpawnShock(play, 700.0f, GDF_SHOCK_PLAYER_PURPLE);
     for (i = 0; i < 12; i++) {
@@ -14066,7 +14115,7 @@ static void BossGanon_Player_EnterFists(BossGanon* this, PlayState* play) {
     sPlayerSwordState = GDF_SWORD_DRAWN;
     sGdfFistIdleFrame = 0.0f;
     // (a short grunt as his guard comes up; the body spark is a looping sound and would never stop)
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW);
     BossGanon_Player_SetupSwordIdle(this, play);
 }
 
@@ -14181,13 +14230,13 @@ void BossGanon_Player_CurbStomp(BossGanon* this, PlayState* play) {
     boot.z = this->actor.world.pos.z + sinY * 14.0f + cosY * 26.0f;
 
     if (t == 3) {
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND)); // the knee comes up
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_GND); // the knee comes up
     }
     if (t == GDF_STOMP_IMPACT) {
         // Down: the pound's quake, its impact, the light bursting out of the ground and the shockwave, from his boot
         Actor_RequestQuakeAndRumble(&this->actor, play, 8, 16);
         Rumble_Request(0.0f, 255, 20, 30);
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND_IMP));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_HAMMER_HIT);
         this->unk_19C = 35;
         for (i = 0; i < 50; i++) {
@@ -14901,7 +14950,7 @@ void BossGanon_Player_ChargeLightBall(BossGanon* this, PlayState* play) {
     if (this->timers[0] == GDF_LIGHT_BALL_CHARGE - 4) {
         this->unk_26C = 10;
         this->unk_270 = Rand_ZeroFloat(M_PI);
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
     }
 
     if (this->timers[0] < 10) {
@@ -14953,8 +15002,8 @@ void BossGanon_Player_Throw(BossGanon* this, PlayState* play) {
 
     if (Animation_OnFrame(&this->skelAnime, 11.0f)) {
         this->unk_25C = 1;
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_MASIC));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW);
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW_MASIC);
         BossGanon_Player_AimRot(&this->unk_260, &this->playerAimPos, &rotX, &rotY);
         Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON, this->unk_260.x, this->unk_260.y,
                            this->unk_260.z, rotX, rotY, 0, GDF_PARAMS_PLAYER_LIGHT_BALL);
@@ -15018,7 +15067,7 @@ void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play) {
             break;
 
         case 2:
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_CHARGE_MASIC - SFX_FLAG));
+            BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_CHARGE_MASIC - SFX_FLAG);
             this->unk_278.x = this->unk_2EC[0].x;
             this->unk_278.y = this->unk_2EC[0].y + 50.0f + 30.0f;
             this->unk_278.z = this->unk_2EC[0].z;
@@ -15037,7 +15086,7 @@ void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play) {
                 this->unk_1C2 = 3;
                 this->timers[0] = 6;
                 this->timers[1] = 15;
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DARKWAVE);
                 break;
             }
 
@@ -15119,8 +15168,8 @@ void BossGanon_Player_ChargeBigMagic(BossGanon* this, PlayState* play) {
                                        GDF_PARAMS_PLAYER_BIG_MAGIC + i);
                 }
 
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_BIGMASIC));
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW_BIG));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_BIGMASIC);
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW_BIG);
             }
 
             if (Animation_OnFrame(&this->skelAnime, 3.0f)) {
@@ -15183,7 +15232,7 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
     switch (this->unk_1C2) {
         case 0:
             if (this->timers[0] == 5) {
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_GND);
             }
 
             if (this->timers[0] < 14) {
@@ -15220,7 +15269,7 @@ void BossGanon_Player_Pound(BossGanon* this, PlayState* play) {
                 this->timers[0] = 10;
                 Actor_RequestQuakeAndRumble(&this->actor, play, 0xA, 0x14);
                 this->unk_19C = 35;
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND_IMP));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
                 this->handLightBallScale = 0.0f;
                 sp60 = this->unk_260;
                 sp60.y = floorY;
@@ -15355,7 +15404,7 @@ static void BossGanon_Player_DeflectMagic(BossGanon* this, PlayState* play) {
             Vec3f vel;
 
             Audio_PlayActorSound2(actor, NA_SE_IT_SWORD_REFLECT_MG);
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN)); // "Hah!"
+            BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_AT_RETURN); // "Hah!"
             sCape->attachLeftArmTimer = 10.0f;
 
             for (i = 0; i < 30; i++) {
@@ -15444,7 +15493,7 @@ void BossGanon_Player_SetupBlock(BossGanon* this, PlayState* play) {
     this->unk_1C2 = 0;
     sCape->attachLeftArmTimer = this->timers[0] = GDF_BLOCK_MIN_FRAMES;
     Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW)); // "Huh"
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW); // "Huh"
     this->handLightBallScale = 0.0f;
     this->playerShieldPitch = 0;
 
@@ -15498,7 +15547,7 @@ void BossGanon_Player_Block(BossGanon* this, PlayState* play) {
             SkelAnime_Update(&this->skelAnime);
             sCape->attachShouldersTimer = 15.0f;
             Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN)); // "Hah!"
+            BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_AT_RETURN); // "Hah!"
         }
     } else {
         sCape->sideSwayMagnitude = -13.0f;
@@ -15506,7 +15555,7 @@ void BossGanon_Player_Block(BossGanon* this, PlayState* play) {
         // ...and his low, murmured snicker after the "Hah!" (the "Ganondorf Chuckles" sample: despite its name, this
         // sound is his, used in his fight)
         if (Animation_OnFrame(&this->skelAnime, 6.0f)) {
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_FANTOM_ST_LAUGH));
+            BossGanon_Player_Say(&this->actor, NA_SE_EN_FANTOM_ST_LAUGH);
         }
         if (Animation_OnFrame(&this->skelAnime, this->fwork[GDF_FWORK_1])) {
             BossGanon_Player_SetupFloat(this, play);
@@ -15549,7 +15598,7 @@ void BossGanon_Player_SetupHurt(BossGanon* this, PlayState* play) {
     this->unk_2E8 = 0;
     this->unk_508 = 3.0f;
 
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DAMAGE1));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DAMAGE1);
 }
 
 void BossGanon_Player_Hurt(BossGanon* this, PlayState* play) {
@@ -15705,7 +15754,7 @@ void BossGanon_Player_SetupDowned(BossGanon* this, PlayState* play) {
     this->actionFunc = BossGanon_Player_Downed;
     this->unk_1C2 = 0;
     this->actor.velocity.y = 0.0f;
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DAMAGE2));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DAMAGE2);
 }
 
 static s32 BossGanon_Player_IsLinkDead(PlayState* play) {
@@ -15763,7 +15812,7 @@ void BossGanon_Player_Downed(BossGanon* this, PlayState* play) {
                 SkelAnime_Update(&this->skelAnime);
                 sCape->attachShouldersTimer = 18.0f;
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_GANON_MANTLE);
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_RESTORE));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_RESTORE);
             }
             break;
 
@@ -15883,7 +15932,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
         Animation_MorphToLoop(&this->skelAnime, &gGanondorfStandIdleAnim, -5.0f);
         this->actionFunc = BossGanon_Player_ItemGet;
         this->playerItemWeight = 0.0f;
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_LAUGH);
     }
 
     // On his horse (or the Gerudo intro's)
@@ -16079,7 +16128,7 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
             pos.y += 20.0f;
             EffectSsDeadDb_Spawn(play, &pos, &zero, &zero, 150, 0, 200, 120, 255, 255, 60, 0, 120, 1, 9, false);
-            Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_SPARK));
+            BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_SPARK);
             this->playerCrawlFlame = flame;
         }
     }
@@ -16474,7 +16523,7 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
         return;
     }
 
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_FIRE - SFX_FLAG));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_FIRE - SFX_FLAG);
     Actor_SetScale(&this->actor, ((this->unk_1A2 % 2) != 0) ? 6.0f : 5.25f);
     if (this->actor.home.rot.z == 1) {
         BossGanon_FireballFlames(play, &this->actor.world.pos, this->unk_1A2); // the fireball ring's
@@ -16823,7 +16872,7 @@ void BossGanon_Player_SetupDarkAura(BossGanon* this, PlayState* play) {
     this->actionFunc = BossGanon_Player_DarkAura;
     this->playerAuraTimer = 0;
     memset(sGdfAuraVictims, 0, sizeof(sGdfAuraVictims));
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DARKWAVE);
     Audio_PlayActorSound2(&this->actor, NA_SE_EV_TRIFORCE_MARK);
 }
 
@@ -16966,7 +17015,7 @@ void BossGanon_Player_DarkAura(BossGanon* this, PlayState* play) {
     }
     // The deadly aura's sound as in the tower intro, when he turns it on Link: the dark wave once (on the press, in
     // BossGanon_Player_SetupDarkAura), then its deep throbbing hum held as long as the aura is
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DARKWAVE_M - SFX_FLAG));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DARKWAVE_M - SFX_FLAG);
 
     if (this->playerAuraScale > 0.05f) {
         BossGanon_Player_AuraKill(this, play);
@@ -17600,7 +17649,7 @@ void BossGanon_Player_SetupLedgeClimb(BossGanon* this, PlayState* play) {
     sGdfLedgeStart = this->actor.world.pos;
     sGdfLedgeTop = player->actor.world.pos;
     sGdfLedgeTop.y += this->playerGroundOffset;
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DAMAGE1));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DAMAGE1);
 }
 
 void BossGanon_Player_LedgeClimb(BossGanon* this, PlayState* play) {
@@ -17803,7 +17852,7 @@ void BossGanon_Player_SetupTridentSpin(BossGanon* this, PlayState* play) {
     sGdfTridentState = GDF_TRIDENT_OVERHEAD;
     sGdfTridentTimer = 0;
     this->playerWalkWeight = 0.0f;
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_AT_RETURN);
 }
 
 // Right arm poses for the trident, solved offline with inverse kinematics on his skeleton: the arm straight up, the fist
@@ -17849,7 +17898,7 @@ void BossGanon_Player_TridentSpin(BossGanon* this, PlayState* play) {
     if ((sGdfTridentTimer == GDF_FIRE_RING_FRAMES) && GdfInvasion_PayAttack(GDF_FIRE_RING_COST)) {
         s32 k;
 
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_LAUGH);
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_FIRE);
         for (k = 0; k < GDF_FIRE_RING_COUNT; k++) {
             BossGanon* ball = (BossGanon*)Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_GANON,
@@ -17907,7 +17956,7 @@ void BossGanon_Player_TridentSpin(BossGanon* this, PlayState* play) {
     sGdfTridentState = GDF_TRIDENT_OUT;
     this->actionFunc = BossGanon_Player_TridentThrow;
     Audio_PlayActorSound2(&this->actor, NA_SE_IT_BOOMERANG_THROW);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW);
 }
 
 void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play) {
@@ -18165,7 +18214,7 @@ s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play) {
         sGdfGrabArmWeight = 0.0f;
         this->actionFunc = BossGanon_Player_Grab;
         Audio_PlayActorSound2(&this->actor, NA_SE_PL_PULL_UP_ROCK);
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_AT_RETURN);
         return true;
     }
     sGdfGrabIsEnemy = target->category == ACTORCAT_ENEMY;
@@ -18178,7 +18227,7 @@ s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play) {
     target->freezeTimer = 2;
     this->actionFunc = BossGanon_Player_Grab;
     Audio_PlayActorSound2(&this->actor, NA_SE_PL_PULL_UP_ROCK);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_AT_RETURN));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_AT_RETURN);
     return true;
 }
 
@@ -18248,7 +18297,7 @@ void BossGanon_Player_GrabThrow(BossGanon* this, PlayState* play) {
     sCape->backSwayMagnitude = 1.0f;
 
     if (sGdfGrabTimer == 4) {
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_THROW));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_THROW);
     }
     if ((sGdfGrabTimer == GDF_GRAB_RELEASE_FRAME) && (sGdfGrabState == GDF_GRAB_HELD)) {
         // Let go on the way down: hurled at the ground ahead of him
@@ -18540,7 +18589,7 @@ void BossGanon_Player_SetupLaugh(BossGanon* this, PlayState* play) {
         this->fwork[GDF_TRIFORCE_ENV_G] = 100.0f;
     }
 
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_LAUGH);
 }
 
 void BossGanon_Player_Laugh(BossGanon* this, PlayState* play) {
@@ -18834,7 +18883,7 @@ void BossGanon_Player_Organ(BossGanon* this, PlayState* play) {
 
             if (this->playerOrganSink == 0.0f) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_STONE_BOUND);
-                Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_HIT_GND_IMP));
+                BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_GND_IMP);
                 Actor_RequestQuakeAndRumble(&this->actor, play, 6, 12);
                 BossGanon_SetAnimationObject(this, play, OBJECT_GANON_ANIME2);
                 Animation_MorphToLoop(&this->skelAnime, &gGanondorfPlayOrganAnim, -5.0f);
@@ -19290,7 +19339,7 @@ void BossGanon_Player_NetHurt(s32 heavy) {
         return;
     }
     Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, heavy ? 16 : 8);
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(heavy ? NA_SE_EN_GANON_DAMAGE2 : NA_SE_EN_GANON_DAMAGE1));
+    BossGanon_Player_Say(&this->actor, heavy ? NA_SE_EN_GANON_DAMAGE2 : NA_SE_EN_GANON_DAMAGE1);
 }
 
 // Casting a Dark Art: his laugh (when he's free to)
@@ -19303,7 +19352,7 @@ void BossGanon_Player_CastPose(void) {
     if ((this->actionFunc == BossGanon_Player_Float) || (this->actionFunc == BossGanon_Player_SwordIdle)) {
         BossGanon_Player_SetupLaugh(this, gPlayState);
     } else {
-        Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_LAUGH));
+        BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_LAUGH);
     }
 }
 
@@ -19324,7 +19373,7 @@ void BossGanon_Player_NetPacified(void) {
     if ((this == NULL) || (this->actor.update == NULL) || (gPlayState == NULL)) {
         return;
     }
-    Audio_PlayActorSound2(&this->actor, BossGanon_Player_Voice(NA_SE_EN_GANON_DEAD));
+    BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_DEAD);
     // He kneels (BossGanon_Player_Update starts it), then vanishes in smoke (BossGanon_Player_Pacified)
     (void)zero;
     (void)pos;
