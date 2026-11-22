@@ -5180,7 +5180,6 @@ static void BossGanon_Player_DrawArmor(BossGanon* this, PlayState* play) {
 static const u64 sGdfHelmMetalTex[] = {
     0x7C53D11588839A26ULL, // 00BE80: horns, helmet
     0x74074132A207416BULL, // 00A800: the helmet's shell
-    0x7434FD547B3E3C41ULL, // 00AF80: its band
 };
 // (the mask's own markings, its eye holes and brow, kept: their textures drawn in the metal's colors, light for its
 // ivory and dark for its holes)
@@ -5188,6 +5187,7 @@ static const u64 sGdfHelmMarkTex[] = {
     0x5FBD268AB25482E1ULL, // 00BD80: the mask's brow
     0xB435E0571671C8B4ULL, // 00BC80: its eye holes
     0x485756B91FCAF486ULL, // 00B980: its eye holes, lower
+    0x7434FD547B3E3C41ULL, // 00AF80: the mask's band, with its eye slits cut through it (see-through texels)
 };
 static const u64 sGdfHelmHairTex[] = { 0xDDB63AE9FE6A56BFULL }; // 00B780: his flaming hair, as it is
 static Gfx sGdfHelmDL[4][400];
