@@ -141,6 +141,7 @@ static u8 sGdfTridentWhirring = false; // its flying sound is playing
 void EnGanonMant_SetWear(f32 wear);
 static s16 sGdfRoamHold = 0;     // frames left to leave him standing on his own where he is (the Door of Time)
 static const Vec3s sGdfClipSwdKick[53][13];
+static s32 BossGanon_Player_UnderArmor(s32 limbIndex);
 static void BossGanon_Player_DrawWarlockFire(BossGanon* this, PlayState* play);
 static void BossGanon_Player_FootDust(BossGanon* this, PlayState* play, f32 side, f32 speed);
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play);
@@ -4158,6 +4159,11 @@ s32 BossGanon_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3
         BossGanon_Player_RobeHoodOn()) {
         *dList = NULL;
     }
+    // (and, under the armour's arm guards, gauntlets and sabatons, his own arms and feet, which poked through them)
+    if ((this == sPlayerGanondorf) && !sGdfPgCapture && BossGanon_Player_KnightLook() &&
+        BossGanon_Player_UnderArmor(limbIndex)) {
+        *dList = NULL;
+    }
     // (and his whole head, face, hair and all, under the knight's helmet)
     if ((limbIndex >= 11) && (limbIndex <= 18) && (this == sPlayerGanondorf) && !sGdfPgCapture &&
         BossGanon_Player_HelmetOn() && (GdfTune("helmet.hide_head", 1.0f) != 0.0f)) {
@@ -4938,6 +4944,28 @@ s32 BossGanon_Player_GetNeckFront(Vec3f* out) {
 // (Goron: black and gold under the flame cape; Zora: frost silver and ice blue under the ice cape)
 s32 BossGanon_Player_KnightLook(void) {
     return BossGanon_Player_GoronLook() || BossGanon_Player_ZoraLook();
+}
+
+// His limbs hidden under the knight's armour (as the draw callbacks count them): upper arms 4/8 and forearms 5/9, his
+// hands 6/10 (kept unless tuned: the gauntlets cover them), his shins 21/24 (kept unless tuned) and his feet 22/25
+static s32 BossGanon_Player_UnderArmor(s32 limbIndex) {
+    switch (limbIndex) {
+        case 4:
+        case 8:
+        case 5:
+        case 9:
+            return GdfTune("armor.hide_arms", 1.0f) != 0.0f;
+        case 6:
+        case 10:
+            return GdfTune("armor.hide_hands", 0.0f) != 0.0f;
+        case 21:
+        case 24:
+            return GdfTune("armor.hide_shins", 0.0f) != 0.0f;
+        case 22:
+        case 25:
+            return GdfTune("armor.hide_feet", 1.0f) != 0.0f;
+    }
+    return false;
 }
 
 // SoH: "Play as Ganondorf", the Zora Tunic: a mage, his cape a great sheet of ice, twice as long and twice as broad
@@ -7784,6 +7812,26 @@ static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 lim
     }
     OPEN_DISPS(play->state.gfxCtx);
     Matrix_Push();
+    // In the knight's armour: worn over the armour's skirt, not under it (moved straight out from his middle by the
+    // skirt's thickness)
+    if ((this == sPlayerGanondorf) && BossGanon_Player_KnightLook()) {
+        MtxF cur;
+        Vec3f w;
+        f32 dx, dz, d;
+        f32 push = GdfTune("armor.dagger_push", 14.0f);
+
+        Matrix_MultVec3f(&sGdfKnifePos, &w);
+        dx = w.x - this->actor.world.pos.x;
+        dz = w.z - this->actor.world.pos.z;
+        d = sqrtf(SQ(dx) + SQ(dz));
+        if (d > 0.01f) {
+            Matrix_Get(&cur);
+            cur.xw += dx / d * push;
+            cur.zw += dz / d * push;
+            cur.yw += GdfTune("armor.dagger_lift", 0.0f);
+            Matrix_Put(&cur);
+        }
+    }
     Matrix_TranslateRotateZYX(&sGdfKnifePos, &sGdfKnifeRot);
     Matrix_Scale(sGdfKnifeScale, sGdfKnifeScale, sGdfKnifeScale, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
@@ -19603,6 +19651,9 @@ static MtxF sGdfPauseLimbs[GDF_LIMB_COUNT_PLAYER];
 
 static s32 BossGanon_Player_PauseOverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos,
                                                   Vec3s* rot, void* arg) {
+    if (BossGanon_Player_KnightLook() && BossGanon_Player_UnderArmor(limbIndex)) {
+        *dList = NULL; // (his arms and feet, under the armour)
+    }
     if (((limbIndex == 3) || (limbIndex == 7)) && BossGanon_Player_KnightLook()) {
         *dList = NULL; // (his shoulders, under the armour)
     }
