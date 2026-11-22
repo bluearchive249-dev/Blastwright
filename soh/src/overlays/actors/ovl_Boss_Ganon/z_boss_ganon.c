@@ -5369,9 +5369,10 @@ static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
     g = POLY_OPA_DISP;
     BossGanon_Player_ArmorPrimEnv(&g, GdfTune("helmet.marks_trim", 1.0f) != 0.0f);
     POLY_OPA_DISP = g;
-    POLY_OPA_DISP->words.w0 = 0xFC30FE04;
-    POLY_OPA_DISP->words.w1 = 0x5FFEFFFE;
-    POLY_OPA_DISP++;
+    // (keeping the texture's alpha: its eye holes are see-through, cut by its own render mode, and the glowing eyes sit
+    // behind them)
+    gDPSetCombineLERP(POLY_OPA_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, 0, 0, 0, TEXEL0, COMBINED, 0, SHADE,
+                      0, 0, 0, 0, COMBINED);
     gSPDisplayList(POLY_OPA_DISP++, sGdfHelmDL[3]);
     // (his flaming hair, its eyes and jewel in their own colors: its list calls segment 8 for a render mode)
     gDPPipeSync(POLY_OPA_DISP++);
