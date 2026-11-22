@@ -933,9 +933,16 @@ extern "C" s32 PlayAsGanondorf_AdjustCutsceneView(Camera* camera, Vec3f* eye, Ve
         !ShouldHideLink(play, player) || (player->stateFlags1 & PLAYER_STATE1_FIRST_PERSON)) {
         return false;
     }
+    // (the shots framed for Link outside the cutscenes too: playing the ocarina (or his organ), opening doors and
+    // walking into a new area)
+    bool framedShot = (player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING) ||
+                      (player->stateFlags1 & PLAYER_STATE1_LOADING) || (camera->setting == CAM_SET_DOOR0) ||
+                      (camera->setting == CAM_SET_DOORC) || (camera->setting == CAM_SET_START0) ||
+                      (camera->setting == CAM_SET_START1) || (camera->setting == CAM_SET_SCENE_TRANSITION) ||
+                      (camera->mode == CAM_MODE_STILL);
     if ((play->csCtx.state == CS_STATE_IDLE) &&
         !(player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_TALKING)) &&
-        (camera->thisIdx == CAM_ID_MAIN)) {
+        (camera->thisIdx == CAM_ID_MAIN) && !framedShot) {
         return false; // play: his own camera already stands at his height
     }
 
