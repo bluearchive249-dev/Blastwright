@@ -7835,6 +7835,12 @@ static void BossGanon_Player_DrawKnife(BossGanon* this, PlayState* play, s32 lim
         }
     }
     Matrix_TranslateRotateZYX(&sGdfKnifePos, &sGdfKnifeRot);
+    // (and, over the armour, turned as tuned: degrees about the sheath's own axes, x across the blade's thickness)
+    if ((this == sPlayerGanondorf) && BossGanon_Player_KnightLook()) {
+        Matrix_RotateZ(DEG_TO_RAD(GdfTuneAt("armor.dagger_rot", 2, 0.0f)), MTXMODE_APPLY);
+        Matrix_RotateY(DEG_TO_RAD(GdfTuneAt("armor.dagger_rot", 1, 0.0f)), MTXMODE_APPLY);
+        Matrix_RotateX(DEG_TO_RAD(GdfTuneAt("armor.dagger_rot", 0, 0.0f)), MTXMODE_APPLY);
+    }
     Matrix_Scale(sGdfKnifeScale, sGdfKnifeScale, sGdfKnifeScale, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     // (drawn, only the sheath stays on his leg: the hilt is in his hand)
