@@ -7223,6 +7223,8 @@ static void BossGanon_Player_Say(Actor* actor, u16 sfx) {
     Audio_PlayActorSound2(actor, out);
 }
 
+static void BossGanon_Player_Thump(Actor* actor);
+
 void BossGanon_Player_Update(Actor* thisx, PlayState* play);
 void BossGanon_PlayerLightBall_Update(Actor* thisx, PlayState* play);
 void BossGanon_PlayerBigMagic_Update(Actor* thisx, PlayState* play);
@@ -10226,7 +10228,31 @@ static void BossGanon_Player_PunchLaunch(BossGanon* this, PlayState* play, f32 r
         vel.y = up;
         GdfRagdoll_BeginSlot(slot + 1, actor, &vel);
         Audio_PlayActorSound2(actor, NA_SE_PL_BODY_HIT);
-        Audio_PlayActorSound2(actor, NA_SE_EN_DARUNIA_HIT_BREAST);
+        BossGanon_Player_Thump(actor);
+    }
+}
+
+// The punches' thump: Darunia's chest beat, a sound that loops until it stops being asked for (his dance asks for it
+// every frame). Played once it never stopped, so it's asked for a few frames and then let go.
+#define GDF_THUMP_FRAMES 6
+static Actor* sGdfThumpActor[2];
+static s8 sGdfThumpFrames[2];
+
+static void BossGanon_Player_Thump(Actor* actor) {
+    s32 k = (sGdfThumpFrames[0] > 0) && (sGdfThumpActor[0] != actor) ? 1 : 0;
+
+    sGdfThumpActor[k] = actor;
+    sGdfThumpFrames[k] = GDF_THUMP_FRAMES;
+}
+
+static void BossGanon_Player_UpdateThumps(void) {
+    for (s32 k = 0; k < 2; k++) {
+        if (sGdfThumpFrames[k] > 0) {
+            sGdfThumpFrames[k]--;
+            if ((sGdfThumpActor[k] != NULL) && (sGdfThumpActor[k]->update != NULL)) {
+                Audio_PlayActorSound2(sGdfThumpActor[k], NA_SE_EN_DARUNIA_HIT_BREAST - SFX_FLAG);
+            }
+        }
     }
 }
 
@@ -10234,6 +10260,8 @@ static void BossGanon_Player_PunchLaunch(BossGanon* this, PlayState* play, f32 r
 // off meanwhile)
 static void BossGanon_Player_UpdateLaunched(BossGanon* this, PlayState* play) {
     s32 i;
+
+    BossGanon_Player_UpdateThumps();
 
     for (i = 0; i < GDF_LAUNCH_MAX; i++) {
         GdfLaunch* l = &sGdfLaunch[i];
@@ -10312,7 +10340,7 @@ static void BossGanon_Player_PunchImpact(BossGanon* this, PlayState* play) {
     u8 upper = (this->playerSwordAttack == GDF_SWORD_ATK_FIST3);
 
     sGdfPunchStop = upper ? 5 : 3;
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DARUNIA_HIT_BREAST);
+    BossGanon_Player_Thump(&this->actor);
     Audio_PlayActorSound2(&this->actor, NA_SE_PL_BODY_HIT);
     if (upper) {
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_WALL_HIT_HARD);
