@@ -21,11 +21,14 @@ extern u8 gAreaGsFlags[];
 #define AGE_REQ_CHILD LINK_AGE_CHILD
 #define AGE_REQ_NONE 9
 
+// (SoH: "Play as Ganondorf", single player: his capes and mantles at any age)
+s32 BossGanon_Player_IsSoloGanondorf(void);
 #define CHECK_AGE_REQ_EQUIP(i, j)                                           \
-    GameInteractor_Should(VB_PLAYER_MEETS_AGE_REQ,                          \
-                          (gEquipAgeReqs[i][j] == AGE_REQ_NONE) ||          \
-                              (gEquipAgeReqs[i][j] == ((void)0, gSaveContext.linkAge)), \
-                          gEquipAgeReqs[i][j])
+    (GameInteractor_Should(VB_PLAYER_MEETS_AGE_REQ,                         \
+                           (gEquipAgeReqs[i][j] == AGE_REQ_NONE) ||         \
+                               (gEquipAgeReqs[i][j] == ((void)0, gSaveContext.linkAge)), \
+                           gEquipAgeReqs[i][j]) ||                          \
+     (((i) == EQUIP_TYPE_TUNIC) && BossGanon_Player_IsSoloGanondorf()))
 
 #define CHECK_AGE_REQ_SLOT(slotIndex)                                       \
     GameInteractor_Should(VB_SLOT_MEETS_AGE_REQ,                            \
