@@ -167,7 +167,37 @@ void KaleidoScope_DrawPlayerWork(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// SoH: "Play as Ganondorf", single player: no sword, shield or boots rows (equipment types 0, 1 and 3)
+s32 BossGanon_Player_PauseIsGanondorf(void);
+#define GDF_HIDE_EQUIP_ROW(row) (((row) != EQUIP_TYPE_TUNIC) && BossGanon_Player_PauseIsGanondorf())
+#define GDF_HIDDEN_EQUIP_BITS 0xF0FF // (swords 0-3, shields 4-7, boots 12-15: the tunics' 8-11 stay)
+
+static void KaleidoScope_DrawEquipmentImpl(PlayState* play);
+
 void KaleidoScope_DrawEquipment(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u16 saved = gSaveContext.inventory.equipment;
+    s32 hide = BossGanon_Player_PauseIsGanondorf();
+
+    if (hide) {
+        // Not owned while this screen draws: nothing to show there, nowhere for the cursor to go
+        gSaveContext.inventory.equipment &= ~GDF_HIDDEN_EQUIP_BITS;
+        if ((pauseCtx->cursorSpecialPos == 0) && (pauseCtx->cursorX[PAUSE_EQUIP] != 0) &&
+            GDF_HIDE_EQUIP_ROW(pauseCtx->cursorY[PAUSE_EQUIP])) {
+            pauseCtx->cursorY[PAUSE_EQUIP] = EQUIP_TYPE_TUNIC;
+            pauseCtx->cursorX[PAUSE_EQUIP] = 1;
+            pauseCtx->cursorPoint[PAUSE_EQUIP] = EQUIP_TYPE_TUNIC * 4 + 1;
+            pauseCtx->cursorSlot[PAUSE_EQUIP] = pauseCtx->cursorPoint[PAUSE_EQUIP];
+        }
+    }
+    KaleidoScope_DrawEquipmentImpl(play);
+    if (hide) {
+        gSaveContext.inventory.equipment =
+            (gSaveContext.inventory.equipment & ~GDF_HIDDEN_EQUIP_BITS) | (saved & GDF_HIDDEN_EQUIP_BITS);
+    }
+}
+
+static void KaleidoScope_DrawEquipmentImpl(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
     u16 i;
@@ -193,7 +223,7 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
     gDPSetEnvColor(POLY_OPA_DISP++, ZREG(43), ZREG(44), ZREG(45), 0);
 
     for (i = 0, j = 64; i < 4; i++, j += 4) {
-        if (CUR_EQUIP_VALUE(i) != 0) {
+        if ((CUR_EQUIP_VALUE(i) != 0) && !GDF_HIDE_EQUIP_ROW(i)) {
             gDPPipeSync(POLY_OPA_DISP++);
             gSPVertex(POLY_OPA_DISP++, &pauseCtx->equipVtx[j], 4, 0);
 
@@ -820,6 +850,9 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
         }
         // Draw inventory screen icons
         for (k = 0, bit = rowStart, point = 4; k < 3; k++, point += 4, temp++, bit++) {
+            if (GDF_HIDE_EQUIP_ROW(i)) {
+                continue; // (SoH: "Play as Ganondorf")
+            }
 
             int itemId = ITEM_SWORD_KOKIRI + temp;
             bool age_restricted = !CHECK_AGE_REQ_ITEM(itemId);
