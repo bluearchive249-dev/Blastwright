@@ -277,6 +277,26 @@ void BossGanondrof_Destroy(Actor* thisx, PlayState* play) {
 
     osSyncPrintf("DT1\n");
     SkelAnime_Free(&this->skelAnime, play);
+
+    // SoH: his decay mask, laid over his textures, taken off them again once the real one is gone, so his fully faded
+    // look doesn't stay on them ("Play as Ganondorf": the knight's helmet is cut from his head, with his textures)
+    if (this->actor.params == GND_REAL_BOSS) {
+        for (int i = 0; i < 5; i++) {
+            Gfx_UnregisterBlendedTexture(sLimbTex_rgba16_8x8[i]);
+            Gfx_UnregisterBlendedTexture(sLimbTex_rgba16_16x8[i]);
+        }
+        for (int i = 0; i < ARRAY_COUNT(sLimbTex_rgba16_16x16); i++) {
+            Gfx_UnregisterBlendedTexture(sLimbTex_rgba16_16x16[i]);
+        }
+        for (int i = 0; i < ARRAY_COUNT(sLimbTex_rgba16_16x32); i++) {
+            Gfx_UnregisterBlendedTexture(sLimbTex_rgba16_16x32[i]);
+        }
+        Gfx_UnregisterBlendedTexture(gPhantomGanonLimbTex_00B380);
+        Gfx_UnregisterBlendedTexture(gPhantomGanonEyeTex);
+        for (int i = 0; i < ARRAY_COUNT(sMouthTex_ci8_16x16); i++) {
+            Gfx_UnregisterBlendedTexture(sMouthTex_ci8_16x16[i]);
+        }
+    }
     Collider_DestroyCylinder(play, &this->colliderBody);
     Collider_DestroyCylinder(play, &this->colliderSpear);
     if (this->actor.params == GND_REAL_BOSS) {
