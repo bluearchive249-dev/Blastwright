@@ -1569,7 +1569,7 @@ static void EnGanonMant_ClaspPoint(f32 t, Vec3f* a, Vec3f* b, Vec3f* neck, f32 s
         // toward the point, and "clasp.u_drop" how much lower still)
         f32 down = GdfTune("clasp.u_down", 0.55f);
         f32 pull = GdfTune("clasp.u_pull", -0.1f);
-        f32 fwd = GdfTune("clasp.u_forward", 0.5f);
+        f32 fwd = GdfTune("clasp.u_forward", 0.9f);
         f32 drop = GdfTune("clasp.u_drop", 0.0f);
         Vec3f mid = { (a->x + b->x) * 0.5f, (a->y + b->y) * 0.5f, (a->z + b->z) * 0.5f };
         Vec3f* corner = (t < 0.5f) ? a : b;
@@ -1613,9 +1613,9 @@ static s32 sChainCount = 0;
 static u32 sChainFrame = 0xFFFFFFFF;
 
 static void EnGanonMant_ChainPhysics(PlayState* play, Vec3f* pts, s32 links) {
-    f32 stiff = GdfTune("clasp.stiffness", 0.12f);
-    f32 damp = GdfTune("clasp.damping", 0.85f);
-    f32 grav = GdfTune("clasp.gravity", 0.5f);
+    f32 stiff = GdfTune("clasp.stiffness", 0.15f);
+    f32 damp = GdfTune("clasp.damping", 0.75f);
+    f32 grav = GdfTune("clasp.gravity", 0.4f);
     s32 k;
     s32 it;
 
@@ -1695,7 +1695,7 @@ static void EnGanonMant_ChainPhysics(PlayState* play, Vec3f* pts, s32 links) {
 static void EnGanonMant_DrawChain(PlayState* play, Vec3f* a, Vec3f* b, Vec3f* neck, f32 sag, s32 ice) {
     s32 links = MAX((s32)GdfTune("clasp.chain_links", 22.0f), 2);
     Vec3f pts[64];
-    f32 width = GdfTune("clasp.chain_width", 2.0f);
+    f32 width = GdfTune("clasp.chain_width", 3.0f);
     u32 frames = play->gameplayFrames;
     Vec3f p0;
     s32 k;
@@ -1715,8 +1715,8 @@ static void EnGanonMant_DrawChain(PlayState* play, Vec3f* a, Vec3f* b, Vec3f* ne
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, (u8)GdfTuneAt("clasp.ice_color", 0, 200),
                         (u8)GdfTuneAt("clasp.ice_color", 1, 235), (u8)GdfTuneAt("clasp.ice_color", 2, 255), 255);
     } else {
-        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, (u8)GdfTuneAt("clasp.fire_color", 0, 255),
-                        (u8)GdfTuneAt("clasp.fire_color", 1, 150), (u8)GdfTuneAt("clasp.fire_color", 2, 50), 255);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, (u8)GdfTuneAt("clasp.fire_color", 0, 200),
+                        (u8)GdfTuneAt("clasp.fire_color", 1, 200), (u8)GdfTuneAt("clasp.fire_color", 2, 200), 255);
     }
 
     // (the chain's points first, so the whole chain can be turned, stretched and shifted: "clasp.rot",

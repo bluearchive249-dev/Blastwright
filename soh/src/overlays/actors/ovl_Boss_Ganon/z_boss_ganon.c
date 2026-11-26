@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 #include "z_boss_ganon.h"
 #include <stdio.h>
+#include <string.h>
 #include "z_boss_ganon_crack.h"
 #include "overlays/ovl_Boss_Ganon/ovl_Boss_Ganon.h"
 #include "overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h"
@@ -4931,14 +4932,34 @@ s32 BossGanon_Player_GoronLook(void) {
 // forward, z across; the helmet's, his head's: x forward, y down, z across): "<piece>.rot", a turn in degrees about
 // x, y and z, and "<piece>.scale_xyz", a stretch along each. On the current matrix (after the piece is moved to its
 // place, before its own size).
+// (each piece's own defaults, settled in the user's tuning: the chain's stretch and shift)
+static f32 BossGanon_Player_PieceDefault(const char* piece, const char* kind, s32 i) {
+    if (strcmp(piece, "clasp") == 0) {
+        static const f32 sScale[3] = { 1.7f, 1.0f, 1.02f };
+        static const f32 sOffset[3] = { -110.0f, 130.0f, 0.0f };
+
+        if (strcmp(kind, "scale_xyz") == 0) {
+            return sScale[i];
+        }
+        if (strcmp(kind, "offset") == 0) {
+            return sOffset[i];
+        }
+    }
+    return (strcmp(kind, "scale_xyz") == 0) ? 1.0f : 0.0f;
+}
+
 static void BossGanon_Player_PieceAdjust(const char* piece) {
     char key[48];
 
     snprintf(key, sizeof(key), "%s.rot", piece);
-    Matrix_RotateZYX(DEGF_TO_BINANG(GdfTuneAt(key, 0, 0.0f)), DEGF_TO_BINANG(GdfTuneAt(key, 1, 0.0f)),
-                     DEGF_TO_BINANG(GdfTuneAt(key, 2, 0.0f)), MTXMODE_APPLY);
+    Matrix_RotateZYX(DEGF_TO_BINANG(GdfTuneAt(key, 0, BossGanon_Player_PieceDefault(piece, "rot", 0))),
+                     DEGF_TO_BINANG(GdfTuneAt(key, 1, BossGanon_Player_PieceDefault(piece, "rot", 1))),
+                     DEGF_TO_BINANG(GdfTuneAt(key, 2, BossGanon_Player_PieceDefault(piece, "rot", 2))),
+                     MTXMODE_APPLY);
     snprintf(key, sizeof(key), "%s.scale_xyz", piece);
-    Matrix_Scale(GdfTuneAt(key, 0, 1.0f), GdfTuneAt(key, 1, 1.0f), GdfTuneAt(key, 2, 1.0f), MTXMODE_APPLY);
+    Matrix_Scale(GdfTuneAt(key, 0, BossGanon_Player_PieceDefault(piece, "scale_xyz", 0)),
+                 GdfTuneAt(key, 1, BossGanon_Player_PieceDefault(piece, "scale_xyz", 1)),
+                 GdfTuneAt(key, 2, BossGanon_Player_PieceDefault(piece, "scale_xyz", 2)), MTXMODE_APPLY);
 }
 
 // The same for a piece built point by point in the world (the cape's mount, z_en_ganon_mant.c): each point turned and
@@ -4956,9 +4977,9 @@ s32 BossGanon_Player_PieceAdjustPoints(const char* piece, Vec3f* points, s32 cou
         return false;
     }
     snprintf(key, sizeof(key), "%s.offset", piece);
-    off.x = GdfTuneAt(key, 0, 0.0f);
-    off.y = GdfTuneAt(key, 1, 0.0f);
-    off.z = GdfTuneAt(key, 2, 0.0f);
+    off.x = GdfTuneAt(key, 0, BossGanon_Player_PieceDefault(piece, "offset", 0));
+    off.y = GdfTuneAt(key, 1, BossGanon_Player_PieceDefault(piece, "offset", 1));
+    off.z = GdfTuneAt(key, 2, BossGanon_Player_PieceDefault(piece, "offset", 2));
     Matrix_Push();
     Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
     BossGanon_Player_PieceAdjust(piece);
@@ -8898,7 +8919,7 @@ static void BossGanon_Player_ChainJingle(BossGanon* this, f32 speed) {
     static f32 sFreq = 1.0f;
     static f32 sVol = 0.3f;
     static s8 sReverb = 0;
-    f32 vol = GdfTune("chain.volume", 0.3f);
+    f32 vol = GdfTune("chain.volume", 0.4f);
 
     if (!BossGanon_Player_ChainShown() || (vol <= 0.0f) || this->playerHidden) {
         return;
