@@ -13,6 +13,7 @@
 #include "assets/objects/object_gndd/object_gndd.h"
 #include "assets/objects/object_gnd/object_gnd.h" // SoH: Phantom Ganon skin for "Play as Ganondorf"
 #include "assets/objects/object_ik/object_ik.h"
+#include "assets/objects/object_ma1/object_ma1.h" // SoH: Malon's Bowser locket, on his breastplate
 #include "soh/Enhancements/ExtraModes/GanondorfTuning.h"   // SoH: Iron Knuckle armour with the Goron Tunic
 #include "soh/Enhancements/ExtraModes/GanondorfSword.h"
 #include "soh/Enhancements/ExtraModes/GanondorfTrident.h"
@@ -4925,6 +4926,36 @@ s32 BossGanon_Player_GoronLook(void) {
 
 // SoH: "Play as Ganondorf", the front of his throat (just above his collarbones, a little out from his neck), for the
 // chain that fastens his cape round his neck (z_en_ganon_mant.c)
+// The cape's armour mount (z_en_ganon_mant.c): where a point out behind him, along the cape's top, meets the back of
+// his armour: the point brought in toward his torso's middle onto an ellipse round it (in his torso's space: x up, y
+// forward, z across; keys "plate.back_depth", "plate.back_width"), at the same height
+s32 BossGanon_Player_ArmorBackPoint(Vec3f* world, Vec3f* out) {
+    MtxF inv;
+    Vec3f local;
+    f32 depth = GdfTune("plate.back_depth", 1300.0f);
+    f32 width = GdfTune("plate.back_width", 2000.0f);
+    f32 ny;
+    f32 nz;
+    f32 l;
+
+    if ((sPlayerGanondorf == NULL) || !sGdfLimbWorldValid || sPlayerGanondorf->playerHidden ||
+        (SkinMatrix_Invert(&sGdfLimbWorld[1], &inv) != 0)) {
+        return false;
+    }
+    SkinMatrix_Vec3fMtxFMultXYZ(&inv, world, &local);
+    ny = local.y / depth;
+    nz = local.z / width;
+    l = sqrtf(SQ(ny) + SQ(nz));
+    if (l < 0.001f) {
+        return false;
+    }
+    local.y = ny / l * depth;
+    local.z = nz / l * width;
+    SkinMatrix_Vec3fMtxFMultXYZ(&sGdfLimbWorld[1], &local, out);
+    out->y = world->y; // (at the cape's own height)
+    return true;
+}
+
 s32 BossGanon_Player_GetNeckFront(Vec3f* out) {
     MtxF* m;
     Vec3f local;
@@ -5427,6 +5458,71 @@ static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// The knight's breastplate: on its emblem, where the cape's chain is clasped, the fanged face over the door to Ganon's
+// Tower (from his castle's main hall: its own model, its own stone look), facing out from his chest a little in front of
+// the chain's meeting point, so the chain runs in behind it. Or (key "emblem.style" 1) Malon's Bowser locket: her
+// brooch's own texture, half his face, mirrored into the whole of it as her model does. In his torso's space (x up, y
+// forward, z across). Keys "emblem.*": style, size (its width, torso units), offset (from the chain's point), on.
+#define GDF_TOWER_FACE_DL "__OTR__scenes/nonmq/ganontika_scene/ganontika_room_1DL_00B710"
+#define GDF_TOWER_FACE_WIDTH 265.0f // (its model's width; its middle at 0, 383, -313 in the hall, facing +z)
+
+static Vtx sGdfLocketVtx[4] = {
+    VTX(50, 0, -50, 0, 1024, 255, 255, 255, 255),
+    VTX(50, 0, 50, 1024, 1024, 255, 255, 255, 255),
+    VTX(-50, 0, 50, 1024, 0, 255, 255, 255, 255),
+    VTX(-50, 0, -50, 0, 0, 255, 255, 255, 255),
+};
+
+static void BossGanon_Player_DrawLocket(PlayState* play, MtxF* limbs) {
+    s32 face = (GdfTune("emblem.style", 0.0f) == 0.0f);
+    f32 width = GdfTune("emblem.size", face ? 1100.0f : 900.0f);
+
+    if ((GdfTune("emblem.on", 1.0f) == 0.0f) || !BossGanon_Player_KnightLook() || (GdfTune("clasp.on", 1.0f) == 0.0f)) {
+        return;
+    }
+    if (face && (ResourceMgr_LoadGfxByName(GDF_TOWER_FACE_DL) == NULL)) {
+        face = false;
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_Put(&limbs[1]);
+    Matrix_Translate(GdfTuneAt("clasp.neck_point", 0, 1850.0f) + GdfTuneAt("emblem.offset", 0, 0.0f),
+                     GdfTuneAt("clasp.neck_point", 1, 1600.0f) + GdfTuneAt("emblem.offset", 1, face ? 150.0f : 250.0f),
+                     GdfTuneAt("clasp.neck_point", 2, 0.0f) + GdfTuneAt("emblem.offset", 2, 0.0f), MTXMODE_APPLY);
+    if (face) {
+        // (its model's across, up and forward to his torso's across, up and forward)
+        MtxF turn = { 0 };
+        f32 sc = width / GDF_TOWER_FACE_WIDTH;
+
+        turn.xy = 1.0f;
+        turn.yz = 1.0f;
+        turn.zx = 1.0f;
+        turn.ww = 1.0f;
+        Matrix_Mult(&turn, MTXMODE_APPLY);
+        Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+        Matrix_Translate(0.0f, -383.0f, 313.0f, MTXMODE_APPLY);
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        Matrix_Pop();
+        gSPDisplayList(POLY_OPA_DISP++, GDF_TOWER_FACE_DL);
+    } else {
+        Matrix_Scale(width / 100.0f, width / 100.0f, width / 100.0f, MTXMODE_APPLY);
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        Matrix_Pop();
+        gDPPipeSync(POLY_OPA_DISP++);
+        gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH | G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR);
+        gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, gMalonChildBowserTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 16, 32, 0,
+                            G_TX_MIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_CLAMP, 4, 5, G_TX_NOLOD, G_TX_NOLOD);
+        gDPSetCombineLERP(POLY_OPA_DISP++, 0, 0, 0, TEXEL0, 0, 0, 0, TEXEL0, 0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
+        gDPSetRenderMode(POLY_OPA_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_TEX_EDGE2);
+        gSPVertex(POLY_OPA_DISP++, sGdfLocketVtx, 4, 0);
+        gSP2Triangles(POLY_OPA_DISP++, 0, 1, 2, 0, 0, 2, 3, 0);
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp) {
     static const char* sDLs[GDF_ARMOR_SLOTS] = {
         object_ik_DL_01C7B8, object_ik_DL_01CEE0, object_ik_DL_01CB58, object_ik_DL_01CCA0, object_ik_DL_01D638,
@@ -5533,6 +5629,7 @@ static void BossGanon_Player_DrawArmorOn(PlayState* play, MtxF* limbs, s32 fp) {
     if (!fp && BossGanon_Player_HelmetOn()) {
         BossGanon_Player_DrawHelmet(play, limbs);
     }
+    BossGanon_Player_DrawLocket(play, limbs);
 }
 
 static void BossGanon_Draw_Impl(Actor* thisx, PlayState* play) {

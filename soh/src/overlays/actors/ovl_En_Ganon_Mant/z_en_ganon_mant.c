@@ -1364,19 +1364,56 @@ static void EnGanonMant_DrawCollar(PlayState* play, EnGanonMant* this, Mtx* mtx,
     }
 }
 
-// SoH: "Play as Ganondorf", the flame and ice capes set into his knight's armour: a plate of the armour's own metal
-// (its luster, as the plates') along the cape's top edge, from one front corner round the back of his neck to the
-// other, covering the line where the collar rises and the cape falls, so the cape comes out of the armour instead of
-// meeting it. Its face out from the neck, its lip on top and underneath. Keys "plate.*" (up, down, out, in, on).
+// SoH: "Play as Ganondorf", the flame and ice capes set into his knight's armour: a mount of the armour's own metal
+// clipped to the back of it, filling the space between his back and the cape's top edge, from one front corner round
+// the back of his neck to the other. Per strand of the cape, its cross-section is a wedge: its top running level from
+// his back plate out to the cape's top (a little above it), its outer face down over the cape's top edge (in the
+// armour's trim colour, as its plates' edges are), and its underside slanting from under the cape's edge down and in
+// to his back, lower there, so it reads as a solid piece. Its two ends closed. Keys "plate.*": up, down (at the cape),
+// drop (at his back), out (past the cape), back_depth and back_width (his back's shape), on.
+#define GDF_PLATE_ROWS 4 // in top, out top, out bottom, in bottom
+
+static void EnGanonMant_PlateNormal(Vec3f* a, Vec3f* b, Vec3f* t, Vec3f* ref, Vtx* va, Vtx* vb) {
+    Vec3f e = { b->x - a->x, b->y - a->y, b->z - a->z };
+    Vec3f n = { t->y * e.z - t->z * e.y, t->z * e.x - t->x * e.z, t->x * e.y - t->y * e.x };
+    f32 l = sqrtf(SQ(n.x) + SQ(n.y) + SQ(n.z));
+
+    if (l < 0.001f) {
+        n = *ref;
+        l = sqrtf(SQ(n.x) + SQ(n.y) + SQ(n.z));
+        if (l < 0.001f) {
+            return;
+        }
+    }
+    if ((n.x * ref->x + n.y * ref->y + n.z * ref->z) < 0.0f) {
+        l = -l;
+    }
+    va->n.n[0] = vb->n.n[0] = (s8)(n.x / l * 120.0f);
+    va->n.n[1] = vb->n.n[1] = (s8)(n.y / l * 120.0f);
+    va->n.n[2] = vb->n.n[2] = (s8)(n.z / l * 120.0f);
+}
+
+static void EnGanonMant_PlateVtx(EnGanonMant* this, Vec3f* p, Vtx* vt) {
+    vt->n.ob[0] = CLAMP((p->x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+    vt->n.ob[1] = CLAMP((p->y - this->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+    vt->n.ob[2] = CLAMP((p->z - this->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+    vt->n.flag = 0;
+    vt->n.tc[0] = vt->n.tc[1] = 0;
+    vt->n.a = 255;
+}
+
 static void EnGanonMant_DrawPlate(PlayState* play, EnGanonMant* this, Mtx* mtx) {
-    f32 up = GdfTune("plate.up", 4.0f);
-    f32 down = GdfTune("plate.down", 5.0f);
-    f32 out = GdfTune("plate.out", 2.5f);
-    f32 in = GdfTune("plate.in", 1.0f);
-    Vtx* v = Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * 6 * GANON_MANT_NUM_STRANDS);
-    Gfx* dl = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 64);
-    Gfx* g = dl;
-    Vec3f mid = { 0.0f, 0.0f, 0.0f };
+    f32 up = GdfTune("plate.up", 3.0f);
+    f32 down = GdfTune("plate.down", 4.0f);
+    f32 drop = GdfTune("plate.drop", 14.0f);
+    f32 out = GdfTune("plate.out", 1.5f);
+    // (the three faces, each its own pair of rows for its own normal, and the two end caps)
+    Vtx* v = Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * (6 * GANON_MANT_NUM_STRANDS + 8));
+    Gfx* dl = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 80);
+    Gfx* dlTrim = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 32);
+    Gfx* g;
+    Vec3f prof[GANON_MANT_NUM_STRANDS][GDF_PLATE_ROWS];
+    static const u8 sFaceRows[3][2] = { { 0, 1 }, { 1, 2 }, { 2, 3 } }; // the top, the outer face, the underside
     s32 i;
     s32 f;
 
@@ -1384,52 +1421,79 @@ static void EnGanonMant_DrawPlate(PlayState* play, EnGanonMant* this, Mtx* mtx) 
         return;
     }
     for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
-        mid.x += this->strands[i].joints[0].x / GANON_MANT_NUM_STRANDS;
-        mid.z += this->strands[i].joints[0].z / GANON_MANT_NUM_STRANDS;
-    }
-    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
         Vec3f* root = &this->strands[i].joints[0];
-        f32 ox = root->x - mid.x;
-        f32 oz = root->z - mid.z;
-        f32 ol = sqrtf(SQ(ox) + SQ(oz));
-        // (its cross-section: in low, out low, out high, in high; each face its own pair of rows, for its own normal)
-        Vec3f prof[4];
-        static const u8 sFaceRows[3][2] = { { 0, 1 }, { 1, 2 }, { 2, 3 } }; // underneath, the face, the top lip
+        Vec3f back;
+        f32 ox;
+        f32 oz;
+        f32 ol;
 
+        if (!BossGanon_Player_ArmorBackPoint(root, &back)) {
+            return;
+        }
+        ox = root->x - back.x;
+        oz = root->z - back.z;
+        ol = sqrtf(SQ(ox) + SQ(oz));
         if (ol > 0.01f) {
             ox /= ol;
             oz /= ol;
         }
-        for (f = 0; f < 4; f++) {
-            f32 radial = ((f == 1) || (f == 2)) ? out : -in;
+        prof[i][0] = back;
+        prof[i][0].y += up;
+        prof[i][1].x = root->x + ox * out;
+        prof[i][1].y = root->y + up;
+        prof[i][1].z = root->z + oz * out;
+        prof[i][2] = prof[i][1];
+        prof[i][2].y = root->y - down;
+        prof[i][3] = back;
+        prof[i][3].y -= drop;
+    }
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        Vec3f* pa = &prof[MAX(i - 1, 0)][1];
+        Vec3f* pb = &prof[MIN(i + 1, GANON_MANT_NUM_STRANDS - 1)][1];
+        Vec3f t = { pb->x - pa->x, pb->y - pa->y, pb->z - pa->z };
+        Vec3f outward = { prof[i][1].x - prof[i][0].x, 0.0f, prof[i][1].z - prof[i][0].z };
+        Vec3f refs[3];
 
-            prof[f].x = root->x + ox * radial;
-            prof[f].y = root->y + ((f < 2) ? -down : up);
-            prof[f].z = root->z + oz * radial;
-        }
+        refs[0].x = 0.0f;
+        refs[0].y = 1.0f;
+        refs[0].z = 0.0f;
+        refs[1] = outward;
+        refs[2].x = outward.x * 0.3f;
+        refs[2].y = -1.0f;
+        refs[2].z = outward.z * 0.3f;
         for (f = 0; f < 3; f++) {
-            s8 nx = (f == 1) ? (s8)(ox * 120.0f) : 0;
-            s8 ny = (f == 0) ? -120 : ((f == 2) ? 120 : 0);
-            s8 nz = (f == 1) ? (s8)(oz * 120.0f) : 0;
-            s32 r;
+            Vtx* va = &v[(f * 2 + 0) * GANON_MANT_NUM_STRANDS + i];
+            Vtx* vb = &v[(f * 2 + 1) * GANON_MANT_NUM_STRANDS + i];
 
-            for (r = 0; r < 2; r++) {
-                Vec3f* p = &prof[sFaceRows[f][r]];
-                Vtx* vt = &v[(f * 2 + r) * GANON_MANT_NUM_STRANDS + i];
+            EnGanonMant_PlateVtx(this, &prof[i][sFaceRows[f][0]], va);
+            EnGanonMant_PlateVtx(this, &prof[i][sFaceRows[f][1]], vb);
+            EnGanonMant_PlateNormal(&prof[i][sFaceRows[f][0]], &prof[i][sFaceRows[f][1]], &t, &refs[f], va, vb);
+        }
+    }
+    // (the end caps: the whole cross-section at each front corner, facing along the plate)
+    for (f = 0; f < 2; f++) {
+        s32 end = (f == 0) ? 0 : (GANON_MANT_NUM_STRANDS - 1);
+        s32 next = (f == 0) ? 1 : (GANON_MANT_NUM_STRANDS - 2);
+        Vec3f n = { prof[end][1].x - prof[next][1].x, prof[end][1].y - prof[next][1].y,
+                    prof[end][1].z - prof[next][1].z };
+        f32 l = sqrtf(SQ(n.x) + SQ(n.y) + SQ(n.z));
+        s32 r;
 
-                vt->n.ob[0] = CLAMP((p->x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
-                vt->n.ob[1] = CLAMP((p->y - this->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
-                vt->n.ob[2] = CLAMP((p->z - this->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
-                vt->n.flag = 0;
-                vt->n.tc[0] = vt->n.tc[1] = 0;
-                vt->n.n[0] = nx;
-                vt->n.n[1] = ny;
-                vt->n.n[2] = nz;
-                vt->n.a = 255;
+        for (r = 0; r < GDF_PLATE_ROWS; r++) {
+            Vtx* vt = &v[6 * GANON_MANT_NUM_STRANDS + f * 4 + r];
+
+            EnGanonMant_PlateVtx(this, &prof[end][r], vt);
+            if (l > 0.001f) {
+                vt->n.n[0] = (s8)(n.x / l * 120.0f);
+                vt->n.n[1] = (s8)(n.y / l * 120.0f);
+                vt->n.n[2] = (s8)(n.z / l * 120.0f);
             }
         }
     }
-    for (f = 0; f < 3; f++) {
+
+    // In the metal: the top, the underside and the caps
+    g = dl;
+    for (f = 0; f < 3; f += 2) {
         gSPVertex(g++, &v[f * 2 * GANON_MANT_NUM_STRANDS], 2 * GANON_MANT_NUM_STRANDS, 0);
         for (i = 0; i < GANON_MANT_NUM_STRANDS - 1; i++) {
             s32 a = i;
@@ -1437,6 +1501,19 @@ static void EnGanonMant_DrawPlate(PlayState* play, EnGanonMant* this, Mtx* mtx) 
 
             gSP2Triangles(g++, a, a + 1, b + 1, 0, a, b + 1, b, 0);
         }
+    }
+    gSPVertex(g++, &v[6 * GANON_MANT_NUM_STRANDS], 8, 0);
+    gSP2Triangles(g++, 0, 1, 2, 0, 0, 2, 3, 0);
+    gSP2Triangles(g++, 4, 5, 6, 0, 4, 6, 7, 0);
+    gSPEndDisplayList(g++);
+    // In the trim: the outer face
+    g = dlTrim;
+    gSPVertex(g++, &v[2 * GANON_MANT_NUM_STRANDS], 2 * GANON_MANT_NUM_STRANDS, 0);
+    for (i = 0; i < GANON_MANT_NUM_STRANDS - 1; i++) {
+        s32 a = i;
+        s32 b = i + GANON_MANT_NUM_STRANDS;
+
+        gSP2Triangles(g++, a, a + 1, b + 1, 0, a, b + 1, b, 0);
     }
     gSPEndDisplayList(g++);
 
@@ -1448,6 +1525,11 @@ static void EnGanonMant_DrawPlate(PlayState* play, EnGanonMant* this, Mtx* mtx) 
     gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH);
     gSPMatrix(POLY_OPA_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, dl);
+    g = POLY_OPA_DISP;
+    BossGanon_Player_PlateMaterialExt(&g, true);
+    POLY_OPA_DISP = g;
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH);
+    gSPDisplayList(POLY_OPA_DISP++, dlTrim);
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
