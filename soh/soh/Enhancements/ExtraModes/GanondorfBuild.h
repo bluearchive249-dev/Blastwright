@@ -47,3 +47,21 @@ nlohmann::json GdfBuild_ExportHere();
 // only, for an area that's about to load
 void GdfBuild_ImportScene(s16 scene, const nlohmann::json& j, bool live);
 #endif
+
+#ifdef __cplusplus
+// ---- Custom areas (Map Editor): a ground made to size as the area's own collision, drawn from that collision ----
+struct GdfPocketGround {
+    f32 w = 2000.0f, l = 2000.0f; // its size (world units), centred on the area's middle
+    f32 wallH = 0.0f;              // walls round the edge (0: none, and falling off the edge voids out)
+    int floorTex = 0, wallTex = 0; // Terraform's textures
+    int sound = 2;                 // the game's footstep material (0 dirt, 1 sand, 2 stone, ... 13 carpet)
+};
+const char* GdfBuild_SoundName(int sound); // 0..13
+void GdfBuild_MakePocketGround(CollisionHeader* header, const GdfPocketGround& g); // replaces the area's collision
+void GdfBuild_SpawnPocketGround(PlayState* play);                                // the actor that draws it
+#endif
+
+#ifdef __cplusplus
+// Terraform's glowing ground ring (the brush's), for the Map Editor's trigger zones: call from an actor's draw
+void GdfBuild_DrawRing(PlayState* play, Vec3f center, f32 radius, s16 facing, bool pointer);
+#endif

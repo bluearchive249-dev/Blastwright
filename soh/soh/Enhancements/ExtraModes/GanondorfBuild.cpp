@@ -1144,7 +1144,7 @@ static RegisterShipInitFunc initFunc(RegisterGanondorfBuild, {});
 
 } // namespace
 
-void GdfMapEdit_AreaLoading(PlayState* play); // (GanondorfMapEditor.cpp)
+void GdfMapEdit_AreaLoading(PlayState* play, CollisionHeader* header); // (GanondorfMapEditor.cpp)
 
 // The area's collision is about to be set up: his pools into its water, his sculpting onto its ground
 extern "C" void GdfBuild_BeforeCollision(PlayState* play, CollisionHeader* header) {
@@ -1154,7 +1154,7 @@ extern "C" void GdfBuild_BeforeCollision(PlayState* play, CollisionHeader* heade
         return;
     }
     // The Map Editor's layout for this area, if it has a build, replaces what the save holds for it
-    GdfMapEdit_AreaLoading(play);
+    GdfMapEdit_AreaLoading(play, header);
     if (sPieces.count(play->sceneNum)) {
         RebuildWater(header, play->sceneNum);
     }
@@ -1804,4 +1804,223 @@ void GdfBuild_ImportScene(s16 scene, const nlohmann::json& j, bool live) {
         TrackCollision(play->colCtx.colHeader);
         ApplyGround(scene, false);
     }
+}
+
+// ---- Custom areas (Map Editor): a ground made to size as the area's own collision, drawn from that collision ----
+
+static const char* sSoundNames[14] = { "Dirt",       "Sand",       "Stone", "Flesh (Jabu-Jabu)", "Shallow water",
+                                       "Deep water", "Tall grass", "Goo",   "Grass",             "Bridge planks",
+                                       "Wood",       "Soft dirt",  "Ice",   "Carpet" };
+
+const char* GdfBuild_SoundName(int sound) {
+    return sSoundNames[CLAMP(sound, 0, 13)];
+}
+
+static std::vector<Vec3s> sPkVtx;
+static std::vector<CollisionPoly> sPkPolys;
+static SurfaceType sPkSurf[2];
+static std::vector<Vtx> sPkDraw; // three per triangle, laid out as the polys are
+static GdfPocketGround sPk;
+static s32 sPkActorId = -1;
+
+static void PkPoly(int a, int b, int c, u16 surface) {
+    const Vec3s& A = sPkVtx[a];
+    const Vec3s& B = sPkVtx[b];
+    const Vec3s& C = sPkVtx[c];
+    f32 abx = (f32)(B.x - A.x), aby = (f32)(B.y - A.y), abz = (f32)(B.z - A.z);
+    f32 acx = (f32)(C.x - A.x), acy = (f32)(C.y - A.y), acz = (f32)(C.z - A.z);
+    f32 nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+    f32 len = sqrtf(nx * nx + ny * ny + nz * nz);
+    if (len < 0.001f) {
+        return;
+    }
+    nx /= len, ny /= len, nz /= len;
+    CollisionPoly p = {};
+    p.type = surface;
+    p.flags_vIA = (u16)a;
+    p.flags_vIB = (u16)b;
+    p.vIC = (u16)c;
+    p.normal.x = (s16)(nx * 32767.0f);
+    p.normal.y = (s16)(ny * 32767.0f);
+    p.normal.z = (s16)(nz * 32767.0f);
+    p.dist = (s16)-(nx * A.x + ny * A.y + nz * A.z);
+    sPkPolys.push_back(p);
+}
+
+void GdfBuild_MakePocketGround(CollisionHeader* header, const GdfPocketGround& g) {
+    if (header == nullptr) {
+        return;
+    }
+    sPk = g;
+    sPk.w = CLAMP(g.w, 200.0f, 30000.0f);
+    sPk.l = CLAMP(g.l, 200.0f, 30000.0f);
+    sPk.wallH = CLAMP(g.wallH, 0.0f, 4000.0f);
+    sPkVtx.clear();
+    sPkPolys.clear();
+    // The floor: a grid (so sculpting has points to move), at most 48 cells a side
+    int nx = CLAMP((int)(sPk.w / 150.0f + 0.5f), 1, 48);
+    int nz = CLAMP((int)(sPk.l / 150.0f + 0.5f), 1, 48);
+    f32 x0 = -sPk.w * 0.5f, z0 = -sPk.l * 0.5f;
+    for (int j = 0; j <= nz; j++) {
+        for (int i = 0; i <= nx; i++) {
+            sPkVtx.push_back({ (s16)(x0 + sPk.w * (f32)i / (f32)nx), 0, (s16)(z0 + sPk.l * (f32)j / (f32)nz) });
+        }
+    }
+    auto at = [&](int i, int j) { return j * (nx + 1) + i; };
+    for (int j = 0; j < nz; j++) {
+        for (int i = 0; i < nx; i++) {
+            // (wound so the normal points up)
+            PkPoly(at(i, j), at(i, j + 1), at(i + 1, j + 1), 0);
+            PkPoly(at(i, j), at(i + 1, j + 1), at(i + 1, j), 0);
+        }
+    }
+    // Walls round the edge, facing in, in cell-wide panels
+    if (sPk.wallH > 0.0f) {
+        s16 top = (s16)sPk.wallH;
+        auto panel = [&](int a, int b) {
+            int base = (int)sPkVtx.size();
+            Vec3s A = sPkVtx[a], B = sPkVtx[b];
+            sPkVtx.push_back(A);
+            sPkVtx.push_back(B);
+            sPkVtx.push_back({ B.x, top, B.z });
+            sPkVtx.push_back({ A.x, top, A.z });
+            PkPoly(base, base + 1, base + 2, 1);
+            PkPoly(base, base + 2, base + 3, 1);
+        };
+        // (each run goes so that its inward side is the polygons' front)
+        for (int i = 0; i < nx; i++) {
+            panel(at(i, 0), at(i + 1, 0));   // south edge, facing +z
+            panel(at(i + 1, nz), at(i, nz)); // north edge, facing -z
+        }
+        for (int j = 0; j < nz; j++) {
+            panel(at(0, j + 1), at(0, j));   // west edge, facing +x
+            panel(at(nx, j), at(nx, j + 1)); // east edge, facing -x
+        }
+    }
+    // Floor: the chosen footstep sound; walls: plain. (Camera setting 0 of the area's own list.)
+    sPkSurf[0].data[0] = 0;
+    sPkSurf[0].data[1] = (u32)CLAMP(g.sound, 0, 13);
+    sPkSurf[1].data[0] = 0;
+    sPkSurf[1].data[1] = 2;
+    header->vtxList = sPkVtx.data();
+    header->numVertices = (u16)sPkVtx.size();
+    header->polyList = sPkPolys.data();
+    header->numPolygons = (u16)sPkPolys.size();
+    header->surfaceTypeList = sPkSurf;
+    f32 hw = sPk.w * 0.5f + 10.0f, hl = sPk.l * 0.5f + 10.0f;
+    header->minBounds = { (s16)-hw, -100, (s16)-hl };
+    header->maxBounds = { (s16)hw, (s16)(MAX(sPk.wallH, 100.0f) + 300.0f), (s16)hl };
+    sPkDraw.assign(sPkPolys.size() * 3, Vtx{});
+}
+
+// (outside the unnamed namespace, as Piece_Draw: the draw macros)
+static void PocketGround_Draw(Actor* thisx, PlayState* play) {
+    CollisionHeader* header = play->colCtx.colHeader;
+    if ((header == nullptr) || (header->polyList != sPkPolys.data()) || sPkPolys.empty()) {
+        return;
+    }
+    static TexInfo sInfo[TEX_COUNT];
+    static bool sLoaded[TEX_COUNT] = {};
+    int texOf[2] = { CLAMP(sPk.floorTex, 0, TEX_COUNT - 1), CLAMP(sPk.wallTex, 0, TEX_COUNT - 1) };
+    for (int k = 0; k < 2; k++) {
+        if (!sLoaded[texOf[k]]) {
+            sInfo[texOf[k]] = LoadTexInfo(sTexList[texOf[k]].path);
+            sLoaded[texOf[k]] = true;
+        }
+    }
+    // The vertices where the collision has them now (sculpting moves them)
+    const Vec3s* cv = header->vtxList;
+    for (size_t t = 0; t < sPkPolys.size(); t++) {
+        const CollisionPoly& p = sPkPolys[t];
+        const int idx[3] = { p.flags_vIA & 0x1FFF, p.flags_vIB & 0x1FFF, p.vIC };
+        const TexInfo& tex = sInfo[texOf[p.type ? 1 : 0]];
+        f32 su = (tex.ok ? tex.w : 32) * 32.0f / TEX_REPEAT, sv = (tex.ok ? tex.h : 32) * 32.0f / TEX_REPEAT;
+        bool floor = (p.type == 0);
+        for (int k = 0; k < 3; k++) {
+            Vtx& v = sPkDraw[t * 3 + k];
+            const Vec3s& s = cv[idx[k]];
+            v.n.ob[0] = s.x, v.n.ob[1] = s.y, v.n.ob[2] = s.z;
+            v.n.flag = 0;
+            f32 u = (f32)(floor ? s.x : ((ABS(p.normal.x) > ABS(p.normal.z)) ? s.z : s.x));
+            f32 w = (f32)(floor ? s.z : -s.y);
+            v.n.tc[0] = (s16)CLAMP(fmodf(u, TEX_REPEAT * 16.0f) * su, -32000.0f, 32000.0f);
+            v.n.tc[1] = (s16)CLAMP(fmodf(w, TEX_REPEAT * 16.0f) * sv, -32000.0f, 32000.0f);
+            v.n.n[0] = (s8)(p.normal.x / 258);
+            v.n.n[1] = (s8)(p.normal.y / 258);
+            v.n.n[2] = (s8)(p.normal.z / 258);
+            v.n.a = 255;
+        }
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    for (int pass = 0; pass < 2; pass++) {
+        bool textured = SetupTex(POLY_OPA_DISP, sTexList[texOf[pass]].path, sInfo[texOf[pass]]);
+        if (textured) {
+            gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, SHADE, 0, TEXEL0, 0, PRIMITIVE, 0, COMBINED, 0, PRIMITIVE, 0,
+                              0, 0, 0, COMBINED);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, 255);
+        } else {
+            gDPSetCombineLERP(POLY_OPA_DISP++, PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE, 0, 0, 0, COMBINED, 0, 0, 0,
+                              COMBINED);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 150, 142, 132, 255);
+        }
+        // Runs of up to 10 triangles of this pass's kind (floor first, then walls)
+        size_t t = 0;
+        while (t < sPkPolys.size()) {
+            if ((sPkPolys[t].type != 0) != (pass == 1)) {
+                t++;
+                continue;
+            }
+            size_t end = t;
+            while ((end < sPkPolys.size()) && (end - t < 10) && ((sPkPolys[end].type != 0) == (pass == 1))) {
+                end++;
+            }
+            int count = (int)(end - t);
+            gSPVertex(POLY_OPA_DISP++, (uintptr_t)&sPkDraw[t * 3], count * 3, 0);
+            for (int k = 0; k < count; k++) {
+                gSP1Triangle(POLY_OPA_DISP++, k * 3, k * 3 + 1, k * 3 + 2, 0);
+            }
+            t = end;
+        }
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+static void PocketGround_Nothing(Actor* thisx, PlayState* play) {
+}
+
+void GdfBuild_SpawnPocketGround(PlayState* play) {
+    if (play == nullptr) {
+        return;
+    }
+    if (sPkActorId < 0) {
+        ActorDBInit init;
+        init.name = "Gdf_PocketGround";
+        init.desc = "Custom area ground (Map Editor)";
+        init.category = ACTORCAT_BG;
+        init.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
+        init.objectId = OBJECT_GAMEPLAY_KEEP;
+        init.instanceSize = sizeof(Actor);
+        init.init = PocketGround_Nothing;
+        init.destroy = PocketGround_Nothing;
+        init.update = PocketGround_Nothing;
+        init.draw = PocketGround_Draw;
+        sPkActorId = ActorDB::Instance->AddEntry(init).entry.id;
+    }
+    for (Actor* a = play->actorCtx.actorLists[ACTORCAT_BG].head; a != nullptr; a = a->next) {
+        if (a->id == sPkActorId) {
+            return;
+        }
+    }
+    Actor* a = Actor_Spawn(&play->actorCtx, play, (s16)sPkActorId, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0);
+    if (a != nullptr) {
+        a->room = -1;
+    }
+}
+
+void GdfBuild_DrawRing(PlayState* play, Vec3f center, f32 radius, s16 facing, bool pointer) {
+    DrawGroundRing(play, center, radius, facing, pointer);
 }
