@@ -8003,9 +8003,12 @@ static void BossGanon_Player_ApplyWalk(BossGanon* this) {
 
     // Wider stride when running
     for (b = 1; b <= GDF_LIMB_COUNT_PLAYER; b++) {
-        walk[b].x = BossGanon_Player_ScaleAngle(joints[b].x, walk[b].x, stride);
-        walk[b].y = BossGanon_Player_ScaleAngle(joints[b].y, walk[b].y, stride);
-        walk[b].z = BossGanon_Player_ScaleAngle(joints[b].z, walk[b].z, stride);
+        // (his feet as on the run, not the sprint's wider stride: its extra turn rolled his foot onto its outer edge)
+        f32 st = ((b == 1 + 21) || (b == 1 + 24)) ? MIN(stride, GDF_WALK_MAX_STRIDE) : stride;
+
+        walk[b].x = BossGanon_Player_ScaleAngle(joints[b].x, walk[b].x, st);
+        walk[b].y = BossGanon_Player_ScaleAngle(joints[b].y, walk[b].y, st);
+        walk[b].z = BossGanon_Player_ScaleAngle(joints[b].z, walk[b].z, st);
     }
 
     // Straighten his pelvis: pelvis = root^T * turn * root * pelvis
