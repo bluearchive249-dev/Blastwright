@@ -1603,6 +1603,95 @@ static void EnGanonMant_ClaspPoint(f32 t, Vec3f* a, Vec3f* b, Vec3f* neck, f32 s
     }
 }
 
+// The chain's physics: its two ends (the cape's corners, moving with the cape) and its clasp (the middle, on the
+// emblem) are fixed; the links between swing, lag behind as he moves and settle again, each pulled gently back toward
+// its place in the chain's shape so it never sags through the pauldrons, and kept their own length apart. Keys
+// "clasp.physics" (0 off), "clasp.stiffness" (the pull back to its shape), "clasp.damping", "clasp.gravity".
+static Vec3f sChainPos[64];
+static Vec3f sChainPrev[64];
+static s32 sChainCount = 0;
+static u32 sChainFrame = 0xFFFFFFFF;
+
+static void EnGanonMant_ChainPhysics(PlayState* play, Vec3f* pts, s32 links) {
+    f32 stiff = GdfTune("clasp.stiffness", 0.12f);
+    f32 damp = GdfTune("clasp.damping", 0.85f);
+    f32 grav = GdfTune("clasp.gravity", 0.5f);
+    s32 k;
+    s32 it;
+
+    if (GdfTune("clasp.physics", 1.0f) == 0.0f) {
+        sChainCount = 0;
+        return;
+    }
+    // (a new chain, or one far from where it should be (a teleport, a cut): put it where it should be)
+    if (sChainCount != links + 1) {
+        sChainCount = 0;
+    }
+    for (k = 0; (sChainCount != 0) && (k <= links); k++) {
+        if (Math_Vec3f_DistXYZ(&sChainPos[k], &pts[k]) > 60.0f) {
+            sChainCount = 0;
+        }
+    }
+    if (sChainCount == 0) {
+        for (k = 0; k <= links; k++) {
+            sChainPos[k] = sChainPrev[k] = pts[k];
+        }
+        sChainCount = links + 1;
+        sChainFrame = play->gameplayFrames;
+        return;
+    }
+    if (sChainFrame != play->gameplayFrames) {
+        sChainFrame = play->gameplayFrames;
+        for (k = 0; k <= links; k++) {
+            Vec3f v;
+
+            if ((k == 0) || (k == links) || (k == links / 2)) {
+                sChainPrev[k] = sChainPos[k];
+                sChainPos[k] = pts[k];
+                continue;
+            }
+            v.x = (sChainPos[k].x - sChainPrev[k].x) * damp;
+            v.y = (sChainPos[k].y - sChainPrev[k].y) * damp;
+            v.z = (sChainPos[k].z - sChainPrev[k].z) * damp;
+            sChainPrev[k] = sChainPos[k];
+            sChainPos[k].x += v.x + (pts[k].x - sChainPos[k].x) * stiff;
+            sChainPos[k].y += v.y - grav + (pts[k].y - sChainPos[k].y) * stiff;
+            sChainPos[k].z += v.z + (pts[k].z - sChainPos[k].z) * stiff;
+        }
+        // (each link kept its own length from the next, the fixed points left where they are)
+        for (it = 0; it < 3; it++) {
+            for (k = 0; k < links; k++) {
+                Vec3f* p = &sChainPos[k];
+                Vec3f* q = &sChainPos[k + 1];
+                s32 fixP = (k == 0) || (k == links / 2);
+                s32 fixQ = (k + 1 == links) || (k + 1 == links / 2);
+                f32 rest = Math_Vec3f_DistXYZ(&pts[k], &pts[k + 1]);
+                Vec3f d = { q->x - p->x, q->y - p->y, q->z - p->z };
+                f32 len = sqrtf(SQ(d.x) + SQ(d.y) + SQ(d.z));
+                f32 corr;
+                f32 wp;
+                f32 wq;
+
+                if ((len < 0.001f) || (fixP && fixQ)) {
+                    continue;
+                }
+                corr = (len - rest) / len;
+                wp = fixP ? 0.0f : (fixQ ? 1.0f : 0.5f);
+                wq = fixQ ? 0.0f : (fixP ? 1.0f : 0.5f);
+                p->x += d.x * corr * wp;
+                p->y += d.y * corr * wp;
+                p->z += d.z * corr * wp;
+                q->x -= d.x * corr * wq;
+                q->y -= d.y * corr * wq;
+                q->z -= d.z * corr * wq;
+            }
+        }
+    }
+    for (k = 0; k <= links; k++) {
+        pts[k] = sChainPos[k];
+    }
+}
+
 static void EnGanonMant_DrawChain(PlayState* play, Vec3f* a, Vec3f* b, Vec3f* neck, f32 sag, s32 ice) {
     s32 links = MAX((s32)GdfTune("clasp.chain_links", 22.0f), 2);
     Vec3f pts[64];
@@ -1632,11 +1721,12 @@ static void EnGanonMant_DrawChain(PlayState* play, Vec3f* a, Vec3f* b, Vec3f* ne
 
     // (the chain's points first, so the whole chain can be turned, stretched and shifted: "clasp.rot",
     // "clasp.scale_xyz", "clasp.offset", along his torso)
-    links = MIN(links, 63);
+    links = MIN(links, 62) & ~1; // (even: its middle point is the clasp)
     for (k = 0; k <= links; k++) {
         EnGanonMant_ClaspPoint((f32)k / links, a, b, neck, sag, &pts[k]);
     }
     BossGanon_Player_PieceAdjustPoints("clasp", pts, links + 1);
+    EnGanonMant_ChainPhysics(play, pts, links);
     p0 = pts[0];
     for (k = 0; k < links; k++) {
         Vec3f p1;
