@@ -17884,15 +17884,20 @@ static void BossGanon_Player_UpdateBodyguards(BossGanon* this, PlayState* play) 
 // under it and pulls himself through. Weighted by how close he is to the doorway's plane.
 #define GDF_DOOR_DUCK_LEAN 0x2400 // about 50 degrees
 
+static f32 sGdfDoorDuck = 0.0f; // the lean as shown, easing toward where he is in the doorway
+
 static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play) {
     Actor* actor;
     f32 w = 0.0f;
 
-    if (!PlayAsGanondorf_ShouldKickDoors() || this->playerHidden || !this->playerGrounded ||
-        (this->actionFunc == BossGanon_Player_Brood) || (this->actionFunc == BossGanon_Player_LedgeClimb)) {
+    if (!PlayAsGanondorf_ShouldKickDoors() || this->playerHidden || (this->actionFunc == BossGanon_Player_Brood) ||
+        (this->actionFunc == BossGanon_Player_LedgeClimb)) {
+        sGdfDoorDuck = 0.0f;
         return;
     }
-    for (actor = play->actorCtx.actorLists[ACTORCAT_DOOR].head; actor != NULL; actor = actor->next) {
+    // (a frame off the ground in the doorway, as through the frame's sill, eases him out of it instead of snapping)
+    for (actor = this->playerGrounded ? play->actorCtx.actorLists[ACTORCAT_DOOR].head : NULL; actor != NULL;
+         actor = actor->next) {
         f32 dx;
         f32 dz;
         f32 across;
@@ -17922,9 +17927,14 @@ static void BossGanon_Player_ApplyDoorDuck(BossGanon* this, PlayState* play) {
             w *= CLAMP((frame - 36.0f) / 10.0f, 0.0f, 1.0f);
         }
     }
-    if (w <= 0.0f) {
+    // Eased, so it doesn't jump from frame to frame as his steps through the doorway carry him unevenly (and the
+    // checks above flicker): it follows where he is, a third of the way each frame, and no faster than 0.15
+    sGdfDoorDuck += CLAMP((w - sGdfDoorDuck) * 0.35f, -0.15f, 0.15f);
+    if (sGdfDoorDuck < 0.002f) {
+        sGdfDoorDuck = 0.0f;
         return;
     }
+    w = sGdfDoorDuck;
     w = w * w * (3.0f - 2.0f * w);
     BossGanon_Player_BlendArm(this, GDF_RIGHT_ARM_LIMB, sGdfClimbPoses[2], w);
     BossGanon_Player_TwistLean(this, 0.0f, GDF_DOOR_DUCK_LEAN * w);
