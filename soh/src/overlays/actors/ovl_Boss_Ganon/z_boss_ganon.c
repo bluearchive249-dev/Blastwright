@@ -17718,7 +17718,7 @@ static const Vec3s sGdfClipLedge[29][13] = {
 // How far up and forward his hips have come (0 to 1), each frame of it
 static const f32 sGdfClipLedgeUp[29] = { 0.000f, 0.093f, 0.184f, 0.281f, 0.380f, 0.464f, 0.547f, 0.631f, 0.703f, 0.757f, 0.799f, 0.836f, 0.869f, 0.898f, 0.925f, 0.950f, 0.973f, 0.995f, 1.000f, 1.000f, 1.000f, 1.000f, 1.000f, 1.000f, 1.000f, 1.000f, 1.000f, 1.000f, 1.000f };
 static const f32 sGdfClipLedgeFwd[29] = { 0.000f, 0.066f, 0.133f, 0.178f, 0.210f, 0.226f, 0.235f, 0.248f, 0.256f, 0.263f, 0.270f, 0.278f, 0.289f, 0.306f, 0.333f, 0.368f, 0.412f, 0.462f, 0.521f, 0.588f, 0.653f, 0.716f, 0.777f, 0.832f, 0.882f, 0.927f, 0.961f, 0.985f, 1.000f };
-static u8 sGdfLedgeLow = false;
+static u8 sGdfLedgeLow = false; // (now: the full climbing clip, on high ledges)
 
 static f32 BossGanon_Player_LedgeCurve(const f32* curve, s32 count, f32 t) {
     f32 f = CLAMP(t, 0.0f, 1.0f) * (count - 1);
@@ -17746,8 +17746,10 @@ void BossGanon_Player_SetupLedgeClimb(BossGanon* this, PlayState* play) {
     this->playerSprintWeight = 0.0f;
     this->playerStandLegsWeight = 0.0f;
 
-    sGdfLedgeLow = (player->skelAnime.animation == &gPlayerAnim_link_normal_100step_up) ||
-                   (player->skelAnime.animation == &gPlayerAnim_link_normal_150step_up);
+    // (swapped round: the full climbing clip for the high ledges Link hauls himself up, the fists-up step for the low
+    // ones he steps onto)
+    sGdfLedgeLow = !((player->skelAnime.animation == &gPlayerAnim_link_normal_100step_up) ||
+                     (player->skelAnime.animation == &gPlayerAnim_link_normal_150step_up));
     sGdfLedgeStart = this->actor.world.pos;
     sGdfLedgeTop = player->actor.world.pos;
     sGdfLedgeTop.y += this->playerGroundOffset;
