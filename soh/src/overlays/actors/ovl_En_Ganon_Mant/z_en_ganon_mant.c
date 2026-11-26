@@ -630,6 +630,9 @@ void EnGanonMant_UpdateVertices(EnGanonMant* this) {
 // sounds now and then. Only the player's own cape (the flame or ice look).
 static void EnGanonMant_ElementFx(EnGanonMant* this, PlayState* play) {
     static u32 sSound = 0;
+    // (its sounds loop until they're stopped: each one is stopped again after a short burst, "fx.sound_frames")
+    static u16 sLoopSfx = 0;
+    static s16 sLoopTimer = 0;
     Player* player = GET_PLAYER(play);
     s32 ice = BossGanon_Player_ZoraLook();
     s32 fire = BossGanon_Player_GoronLook();
@@ -638,6 +641,9 @@ static void EnGanonMant_ElementFx(EnGanonMant* this, PlayState* play) {
     s32 hot = (play->roomCtx.curRoom.behaviorType2 == ROOM_BEHAVIOR_TYPE2_3);
     s32 k;
 
+    if ((this->actor.params == PLAYER_GANONDORF_CAPE_PARAMS) && (sLoopTimer > 0) && (--sLoopTimer == 0)) {
+        Audio_StopSfxByPosAndId(&player->actor.projectedPos, sLoopSfx);
+    }
     if ((this->actor.params != PLAYER_GANONDORF_CAPE_PARAMS) || !this->ownVertices || (!ice && !fire) ||
         (GdfTune("fx.on", 1.0f) == 0.0f) || (this->actor.draw == NULL)) {
         return;
@@ -786,13 +792,16 @@ static void EnGanonMant_ElementFx(EnGanonMant* this, PlayState* play) {
     }
 
     // Its sounds: the hiss of fire put out, the crackle of water freezing, ice melting (each every couple of seconds)
-    if ((sSound % 40) == 0) {
-        if (inWater && fire) {
-            Audio_PlayActorSound2(&player->actor, NA_SE_EN_EXTINCT);
-        } else if (inWater && ice) {
-            Audio_PlayActorSound2(&player->actor, NA_SE_EV_ICE_FREEZE);
-        } else if (ice && hot) {
-            Audio_PlayActorSound2(&player->actor, NA_SE_EV_ICE_MELT);
+    if (((sSound % 40) == 0) && (sLoopTimer == 0)) {
+        u16 sfx = (inWater && fire) ? NA_SE_EN_EXTINCT
+                  : (inWater && ice) ? NA_SE_EV_ICE_FREEZE
+                  : (ice && hot)     ? NA_SE_EV_ICE_MELT
+                                     : 0;
+
+        if (sfx != 0) {
+            Audio_PlayActorSound2(&player->actor, sfx);
+            sLoopSfx = sfx;
+            sLoopTimer = MAX((s16)GdfTune("fx.sound_frames", 20.0f), 1);
         }
     }
 }
