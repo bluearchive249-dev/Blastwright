@@ -5027,8 +5027,8 @@ s32 BossGanon_Player_GetNeckFront(Vec3f* out) {
     m = &sGdfLimbWorld[1];
     // (his torso's space: x up, y forward, z across; by default the Iron Knuckle breastplate's emblem, where the V of
     // the chain is clasped)
-    local.x = GdfTuneAt("clasp.neck_point", 0, 1850.0f);
-    local.y = GdfTuneAt("clasp.neck_point", 1, 1600.0f);
+    local.x = GdfTuneAt("clasp.neck_point", 0, 1700.0f);
+    local.y = GdfTuneAt("clasp.neck_point", 1, 1500.0f);
     local.z = GdfTuneAt("clasp.neck_point", 2, 0.0f);
     SkinMatrix_Vec3fMtxFMultXYZ(m, &local, out);
     return true;
@@ -5660,7 +5660,7 @@ static void BossGanon_Player_DrawFaceMetal(PlayState* play, Mtx* mtx) {
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     g = POLY_OPA_DISP;
-    BossGanon_Player_PlateMaterial(&g, GdfTune("emblem.trim", 0.0f) != 0.0f);
+    BossGanon_Player_PlateMaterial(&g, GdfTune("emblem.trim", 1.0f) != 0.0f);
     POLY_OPA_DISP = g;
     gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH);
     gSPMatrix(POLY_OPA_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
@@ -5688,7 +5688,7 @@ static Vtx sGdfLocketVtx[4] = {
 
 static void BossGanon_Player_DrawLocket(PlayState* play, MtxF* limbs) {
     s32 face = (GdfTune("emblem.style", 0.0f) == 0.0f);
-    f32 width = GdfTune("emblem.size", face ? 1100.0f : 900.0f);
+    f32 width = GdfTune("emblem.size", face ? 550.0f : 900.0f);
 
     if ((GdfTune("emblem.on", 1.0f) == 0.0f) || !BossGanon_Player_KnightLook() || (GdfTune("clasp.on", 1.0f) == 0.0f)) {
         return;
@@ -5699,8 +5699,8 @@ static void BossGanon_Player_DrawLocket(PlayState* play, MtxF* limbs) {
     OPEN_DISPS(play->state.gfxCtx);
     Matrix_Push();
     Matrix_Put(&limbs[1]);
-    Matrix_Translate(GdfTuneAt("clasp.neck_point", 0, 1850.0f) + GdfTuneAt("emblem.offset", 0, 0.0f),
-                     GdfTuneAt("clasp.neck_point", 1, 1600.0f) + GdfTuneAt("emblem.offset", 1, face ? 150.0f : 250.0f),
+    Matrix_Translate(GdfTuneAt("clasp.neck_point", 0, 1700.0f) + GdfTuneAt("emblem.offset", 0, 0.0f),
+                     GdfTuneAt("clasp.neck_point", 1, 1500.0f) + GdfTuneAt("emblem.offset", 1, face ? 1.0f : 250.0f),
                      GdfTuneAt("clasp.neck_point", 2, 0.0f) + GdfTuneAt("emblem.offset", 2, 0.0f), MTXMODE_APPLY);
     BossGanon_Player_PieceAdjust("emblem");
     if (face) {
