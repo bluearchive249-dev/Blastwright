@@ -10,6 +10,8 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
+s32 BossGanon_IsPlayerAttack(Actor* actor); // SoH: "Play as Ganondorf"
+
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR | ACTOR_FLAG_IGNORE_QUAKE | ACTOR_FLAG_CAN_ATTACH_TO_ARROW)
@@ -1151,6 +1153,20 @@ void func_80ADC10C(EnPoSisters* this, PlayState* play) {
                 sp24.z = this->actor.world.pos.z;
                 Item_DropCollectible(play, &sp24, ITEM00_ARROWS_SMALL);
             }
+        } else if ((this->unk_194 == 0) && BossGanon_IsPlayerAttack(this->collider.base.ac)) {
+            // SoH: "Play as Ganondorf": his hits all count as sword hits, which the real Meg only answers by charging
+            // while she circles with her copies, and shrugs off in her armoured charge (the arrows that hurt her then
+            // he hasn't): his hurt her whenever they land
+            if (Actor_ApplyDamage(&this->actor) != 0) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_PO_DAMAGE);
+            } else {
+                Enemy_StartFinishingBlow(play, &this->actor);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_PO_SISTER_DEAD);
+                GameInteractor_ExecuteOnEnemyDefeat(&this->actor);
+            }
+            this->collider.base.colType = COLTYPE_HIT3;
+            this->collider.base.acFlags &= ~AC_HARD;
+            func_80AD95D8(this);
         } else if (this->collider.base.colType == 9 ||
                    (this->actor.colChkInfo.damageEffect == 0 && this->actor.colChkInfo.damage == 0)) {
             if (this->unk_194 == 0) {
