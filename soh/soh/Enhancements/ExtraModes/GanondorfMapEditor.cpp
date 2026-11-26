@@ -1571,7 +1571,8 @@ void DrawMapTab(PlayState* play) {
             if (fabsf(w.ySurface - pp.y) > sMap.band) {
                 continue;
             }
-            dl->AddRectFilled(toScreen(w.xMin, w.zMin), toScreen(w.xMin + w.xLength, w.zMin + w.zLength),
+            dl->AddRectFilled(toScreen((f32)w.xMin, (f32)w.zMin),
+                              toScreen((f32)(w.xMin + w.xLength), (f32)(w.zMin + w.zLength)),
                               IM_COL32(40, 90, 200, 90));
         }
     }
@@ -2177,7 +2178,7 @@ void DrawFlags(PlayState* play) {
             ImGui::PushStyleColor(ImGuiCol_Button, v ? ImVec4(0.6f, 0.2f, 0.7f, 1.0f) : ImVec4(0.15f, 0.12f, 0.2f, 1.0f));
             char lbl[8];
             snprintf(lbl, sizeof(lbl), "%02X", i);
-            if (ImGui::Button(lbl, ImVec2(26, 0))) {
+            if (ImGui::Button(lbl, ImVec2(26.0f, 0.0f))) {
                 FlagSet(play, type, i, !v);
                 index = i;
             }
