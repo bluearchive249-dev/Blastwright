@@ -187,6 +187,16 @@ void SohMenu::AddMenuDevTools() {
         .HideInSearch(true)
         .Options(WindowButtonOptions().Tooltip("Enables the separate Collision Viewer Window."));
 
+    // Map Editor (Play as Ganondorf)
+    path.sidebarName = "Map Editor";
+    AddSidebarEntry("Dev Tools", path.sidebarName, 2);
+    AddWidget(path, "Popout Map Editor", WIDGET_WINDOW_BUTTON)
+        .CVar(CVAR_WINDOW("GdfMapEditor"))
+        .WindowName("Map Editor")
+        .HideInSearch(true)
+        .Options(WindowButtonOptions().Tooltip(
+            "Move, add and hide actors and build pieces in the area you're in, saved to a layout file per area."));
+
     // Actor Viewer
     path.sidebarName = "Actor Viewer";
     AddSidebarEntry("Dev Tools", path.sidebarName, 2);

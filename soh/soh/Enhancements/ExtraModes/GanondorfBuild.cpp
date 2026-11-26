@@ -1144,6 +1144,8 @@ static RegisterShipInitFunc initFunc(RegisterGanondorfBuild, {});
 
 } // namespace
 
+void GdfMapEdit_AreaLoading(PlayState* play); // (GanondorfMapEditor.cpp)
+
 // The area's collision is about to be set up: his pools into its water, his sculpting onto its ground
 extern "C" void GdfBuild_BeforeCollision(PlayState* play, CollisionHeader* header) {
     RestoreWater();
@@ -1151,6 +1153,8 @@ extern "C" void GdfBuild_BeforeCollision(PlayState* play, CollisionHeader* heade
     if ((play == nullptr) || (header == nullptr)) {
         return;
     }
+    // The Map Editor's layout for this area, if it has a build, replaces what the save holds for it
+    GdfMapEdit_AreaLoading(play);
     if (sPieces.count(play->sceneNum)) {
         RebuildWater(header, play->sceneNum);
     }
@@ -1580,4 +1584,224 @@ int GdfBuild_ClearHere() {
         Sfx(NA_SE_EV_WALL_BROKEN);
     }
     return n;
+}
+
+// ---- For the Map Editor: this area's pieces by number, and the area's build as JSON ----
+
+int GdfBuild_TexCount() {
+    return TEX_COUNT;
+}
+
+const char* GdfBuild_TexName(int tex) {
+    return sTexList[((tex >= 0) && (tex < TEX_COUNT)) ? tex : 0].name;
+}
+
+static GdfBuildPieceInfo ToInfo(const PieceData& p) {
+    GdfBuildPieceInfo i;
+    i.uid = p.uid;
+    i.type = p.type;
+    i.tex = p.tex;
+    i.pos = p.pos;
+    i.rotY = p.rotY;
+    i.w = p.w, i.h = p.h, i.l = p.l;
+    return i;
+}
+
+static void FromInfo(PieceData& p, const GdfBuildPieceInfo& i) {
+    p.type = (u8)CLAMP(i.type, 0, PIECE_COUNT - 1);
+    p.tex = (u8)CLAMP(i.tex, 0, TEX_COUNT - 1);
+    p.pos = i.pos;
+    p.rotY = i.rotY;
+    p.w = CLAMP(i.w, 5.0f, 4000.0f);
+    p.h = CLAMP(i.h, 2.0f, 4000.0f);
+    p.l = CLAMP(i.l, 5.0f, 4000.0f);
+}
+
+std::vector<GdfBuildPieceInfo> GdfBuild_ListHere() {
+    std::vector<GdfBuildPieceInfo> out;
+    if (gPlayState == nullptr) {
+        return out;
+    }
+    auto it = sPieces.find(gPlayState->sceneNum);
+    if (it != sPieces.end()) {
+        for (auto& p : it->second) {
+            out.push_back(ToInfo(p));
+        }
+    }
+    return out;
+}
+
+bool GdfBuild_SetPiece(const GdfBuildPieceInfo& info) {
+    PlayState* play = gPlayState;
+    if (play == nullptr) {
+        return false;
+    }
+    auto it = sPieces.find(play->sceneNum);
+    if (it == sPieces.end()) {
+        return false;
+    }
+    for (auto& p : it->second) {
+        if (p.uid == info.uid) {
+            FromInfo(p, info);
+            RemoveActor(play, p.uid);
+            SpawnPiece(play, p, false);
+            RebuildWater(play->colCtx.colHeader, play->sceneNum);
+            return true;
+        }
+    }
+    return false;
+}
+
+u32 GdfBuild_AddPiece(const GdfBuildPieceInfo& info) {
+    PlayState* play = gPlayState;
+    if (play == nullptr) {
+        return 0;
+    }
+    auto& list = sPieces[play->sceneNum];
+    if ((int)list.size() >= MAX_PIECES_PER_SCENE) {
+        return 0;
+    }
+    PieceData p;
+    p.uid = sNextUid++;
+    FromInfo(p, info);
+    list.push_back(p);
+    SpawnPiece(play, p, false);
+    RebuildWater(play->colCtx.colHeader, play->sceneNum);
+    return p.uid;
+}
+
+bool GdfBuild_RemovePiece(u32 uid) {
+    PlayState* play = gPlayState;
+    if (play == nullptr) {
+        return false;
+    }
+    auto it = sPieces.find(play->sceneNum);
+    if (it == sPieces.end()) {
+        return false;
+    }
+    auto& list = it->second;
+    auto p = std::find_if(list.begin(), list.end(), [&](const PieceData& d) { return d.uid == uid; });
+    if (p == list.end()) {
+        return false;
+    }
+    RemoveActor(play, uid);
+    list.erase(p);
+    RebuildWater(play->colCtx.colHeader, play->sceneNum);
+    return true;
+}
+
+nlohmann::json GdfBuild_ExportHere() {
+    nlohmann::json j = nlohmann::json::object();
+    nlohmann::json pieces = nlohmann::json::array();
+    nlohmann::json ground = nlohmann::json::array();
+    if (gPlayState != nullptr) {
+        s16 scene = gPlayState->sceneNum;
+        auto it = sPieces.find(scene);
+        if (it != sPieces.end()) {
+            for (auto& p : it->second) {
+                pieces.push_back({ { "type", sKinds[p.type].name },
+                                   { "texture", sTexList[(p.tex < TEX_COUNT) ? p.tex : 0].name },
+                                   { "pos", { lroundf(p.pos.x), lroundf(p.pos.y), lroundf(p.pos.z) } },
+                                   { "rot_y", lroundf(p.rotY * (360.0f / 65536.0f)) },
+                                   { "size", { lroundf(p.w), lroundf(p.h), lroundf(p.l) } } });
+            }
+        }
+        auto f = sFields.find(scene);
+        if (f != sFields.end()) {
+            for (auto& [key, node] : f->second) {
+                if (fabsf(node.dy) >= 0.25f) {
+                    ground.push_back({ key, roundf(node.dy * 4.0f) / 4.0f, lroundf(node.refY) });
+                }
+            }
+        }
+    }
+    j["pieces"] = pieces;
+    j["ground"] = ground;
+    return j;
+}
+
+static int IndexByName(const nlohmann::json& v, int count, const char* (*nameOf)(int)) {
+    if (v.is_number()) {
+        return CLAMP(v.get<int>(), 0, count - 1);
+    }
+    if (v.is_string()) {
+        std::string s = v.get<std::string>();
+        for (int i = 0; i < count; i++) {
+            if (s == nameOf(i)) {
+                return i;
+            }
+        }
+    }
+    return 0;
+}
+
+void GdfBuild_ImportScene(s16 scene, const nlohmann::json& j, bool live) {
+    PlayState* play = gPlayState;
+    live = live && (play != nullptr) && (play->sceneNum == scene);
+    if (!j.is_object()) {
+        return;
+    }
+    // Pieces
+    if (live) {
+        auto old = sPieces.find(scene);
+        if (old != sPieces.end()) {
+            for (auto& p : old->second) {
+                RemoveActor(play, p.uid);
+            }
+        }
+    }
+    std::vector<PieceData> list;
+    if (j.contains("pieces") && j["pieces"].is_array()) {
+        for (auto& e : j["pieces"]) {
+            if (!e.is_object() || ((int)list.size() >= MAX_PIECES_PER_SCENE)) {
+                continue;
+            }
+            GdfBuildPieceInfo i;
+            i.type = IndexByName(e.value("type", nlohmann::json(0)), PIECE_COUNT, GdfBuild_KindName);
+            i.tex = IndexByName(e.value("texture", nlohmann::json(0)), TEX_COUNT, GdfBuild_TexName);
+            auto pos = e.value("pos", nlohmann::json::array());
+            if (pos.is_array() && (pos.size() == 3)) {
+                i.pos = { pos[0].get<f32>(), pos[1].get<f32>(), pos[2].get<f32>() };
+            }
+            i.rotY = (s16)lroundf(e.value("rot_y", 0.0f) * (65536.0f / 360.0f));
+            auto size = e.value("size", nlohmann::json::array());
+            if (size.is_array() && (size.size() == 3)) {
+                i.w = size[0].get<f32>(), i.h = size[1].get<f32>(), i.l = size[2].get<f32>();
+            } else {
+                i.w = sKinds[i.type].w, i.h = sKinds[i.type].h, i.l = sKinds[i.type].l;
+            }
+            PieceData p;
+            p.uid = sNextUid++;
+            FromInfo(p, i);
+            list.push_back(p);
+        }
+    }
+    if (list.empty()) {
+        sPieces.erase(scene);
+    } else {
+        sPieces[scene] = list;
+    }
+    // Sculpted ground
+    Field field;
+    if (j.contains("ground") && j["ground"].is_array()) {
+        for (auto& g : j["ground"]) {
+            if (g.is_array() && (g.size() == 3)) {
+                Node n = { CLAMP(g[1].get<f32>(), -MAX_OFFSET, MAX_OFFSET), g[2].get<f32>() };
+                field[g[0].get<uint32_t>()] = n;
+            }
+        }
+    }
+    if (field.empty()) {
+        sFields.erase(scene);
+    } else {
+        sFields[scene] = field;
+    }
+    if (live) {
+        for (auto& p : list) {
+            SpawnPiece(play, p, false);
+        }
+        RebuildWater(play->colCtx.colHeader, scene);
+        TrackCollision(play->colCtx.colHeader);
+        ApplyGround(scene, false);
+    }
 }
