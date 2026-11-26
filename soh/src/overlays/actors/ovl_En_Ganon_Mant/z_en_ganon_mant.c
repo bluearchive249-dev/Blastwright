@@ -1582,6 +1582,7 @@ static void EnGanonMant_ClaspPoint(f32 t, Vec3f* a, Vec3f* b, Vec3f* neck, f32 s
 
 static void EnGanonMant_DrawChain(PlayState* play, Vec3f* a, Vec3f* b, Vec3f* neck, f32 sag, s32 ice) {
     s32 links = MAX((s32)GdfTune("clasp.chain_links", 22.0f), 2);
+    Vec3f pts[64];
     f32 width = GdfTune("clasp.chain_width", 2.0f);
     u32 frames = play->gameplayFrames;
     Vec3f p0;
@@ -1606,7 +1607,14 @@ static void EnGanonMant_DrawChain(PlayState* play, Vec3f* a, Vec3f* b, Vec3f* ne
                         (u8)GdfTuneAt("clasp.fire_color", 1, 150), (u8)GdfTuneAt("clasp.fire_color", 2, 50), 255);
     }
 
-    EnGanonMant_ClaspPoint(0.0f, a, b, neck, sag, &p0);
+    // (the chain's points first, so the whole chain can be turned, stretched and shifted: "clasp.rot",
+    // "clasp.scale_xyz", "clasp.offset", along his torso)
+    links = MIN(links, 63);
+    for (k = 0; k <= links; k++) {
+        EnGanonMant_ClaspPoint((f32)k / links, a, b, neck, sag, &pts[k]);
+    }
+    BossGanon_Player_PieceAdjustPoints("clasp", pts, links + 1);
+    p0 = pts[0];
     for (k = 0; k < links; k++) {
         Vec3f p1;
         Vec3f d;
@@ -1619,7 +1627,7 @@ static void EnGanonMant_DrawChain(PlayState* play, Vec3f* a, Vec3f* b, Vec3f* ne
         f32 L;
         MtxF mf;
 
-        EnGanonMant_ClaspPoint((f32)(k + 1) / links, a, b, neck, sag, &p1);
+        p1 = pts[k + 1];
         d.x = p1.x - p0.x;
         d.y = p1.y - p0.y;
         d.z = p1.z - p0.z;
