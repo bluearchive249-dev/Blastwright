@@ -5358,6 +5358,11 @@ static void BossGanon_Player_PlateMaterial(Gfx** gfx, s32 trim) {
     BossGanon_Player_ArmorPrimEnv(gfx, trim);
 }
 
+// (for the cape's plate, drawn with the cape: z_en_ganon_mant.c)
+void BossGanon_Player_PlateMaterialExt(Gfx** gfx, s32 trim) {
+    BossGanon_Player_PlateMaterial(gfx, trim);
+}
+
 static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
     f32 sc = (5132.0f / 4133.0f) * GdfTune("helmet.scale", 1.0f);
     Gfx* g;

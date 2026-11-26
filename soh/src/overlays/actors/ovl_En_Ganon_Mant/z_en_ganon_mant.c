@@ -17,6 +17,7 @@
 #include "textures/icon_item_static/icon_item_static.h" // SoH: the tunics' icons as his capes
 #include "textures/item_name_static/item_name_static.h"
 #include "assets/objects/object_fd/object_fd.h"             // SoH: ...and Volvagia's fiery mane
+#include "assets/objects/object_spot00_objects/object_spot00_objects.h" // SoH: ...and the castle drawbridge's chain
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -1363,6 +1364,225 @@ static void EnGanonMant_DrawCollar(PlayState* play, EnGanonMant* this, Mtx* mtx,
     }
 }
 
+// SoH: "Play as Ganondorf", the flame and ice capes set into his knight's armour: a plate of the armour's own metal
+// (its luster, as the plates') along the cape's top edge, from one front corner round the back of his neck to the
+// other, covering the line where the collar rises and the cape falls, so the cape comes out of the armour instead of
+// meeting it. Its face out from the neck, its lip on top and underneath. Keys "plate.*" (up, down, out, in, on).
+static void EnGanonMant_DrawPlate(PlayState* play, EnGanonMant* this, Mtx* mtx) {
+    f32 up = GdfTune("plate.up", 4.0f);
+    f32 down = GdfTune("plate.down", 5.0f);
+    f32 out = GdfTune("plate.out", 2.5f);
+    f32 in = GdfTune("plate.in", 1.0f);
+    Vtx* v = Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * 6 * GANON_MANT_NUM_STRANDS);
+    Gfx* dl = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 64);
+    Gfx* g = dl;
+    Vec3f mid = { 0.0f, 0.0f, 0.0f };
+    s32 i;
+    s32 f;
+
+    if ((GdfTune("plate.on", 1.0f) == 0.0f) || !BossGanon_Player_KnightLook()) {
+        return;
+    }
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        mid.x += this->strands[i].joints[0].x / GANON_MANT_NUM_STRANDS;
+        mid.z += this->strands[i].joints[0].z / GANON_MANT_NUM_STRANDS;
+    }
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        Vec3f* root = &this->strands[i].joints[0];
+        f32 ox = root->x - mid.x;
+        f32 oz = root->z - mid.z;
+        f32 ol = sqrtf(SQ(ox) + SQ(oz));
+        // (its cross-section: in low, out low, out high, in high; each face its own pair of rows, for its own normal)
+        Vec3f prof[4];
+        static const u8 sFaceRows[3][2] = { { 0, 1 }, { 1, 2 }, { 2, 3 } }; // underneath, the face, the top lip
+
+        if (ol > 0.01f) {
+            ox /= ol;
+            oz /= ol;
+        }
+        for (f = 0; f < 4; f++) {
+            f32 radial = ((f == 1) || (f == 2)) ? out : -in;
+
+            prof[f].x = root->x + ox * radial;
+            prof[f].y = root->y + ((f < 2) ? -down : up);
+            prof[f].z = root->z + oz * radial;
+        }
+        for (f = 0; f < 3; f++) {
+            s8 nx = (f == 1) ? (s8)(ox * 120.0f) : 0;
+            s8 ny = (f == 0) ? -120 : ((f == 2) ? 120 : 0);
+            s8 nz = (f == 1) ? (s8)(oz * 120.0f) : 0;
+            s32 r;
+
+            for (r = 0; r < 2; r++) {
+                Vec3f* p = &prof[sFaceRows[f][r]];
+                Vtx* vt = &v[(f * 2 + r) * GANON_MANT_NUM_STRANDS + i];
+
+                vt->n.ob[0] = CLAMP((p->x - this->anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+                vt->n.ob[1] = CLAMP((p->y - this->anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+                vt->n.ob[2] = CLAMP((p->z - this->anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+                vt->n.flag = 0;
+                vt->n.tc[0] = vt->n.tc[1] = 0;
+                vt->n.n[0] = nx;
+                vt->n.n[1] = ny;
+                vt->n.n[2] = nz;
+                vt->n.a = 255;
+            }
+        }
+    }
+    for (f = 0; f < 3; f++) {
+        gSPVertex(g++, &v[f * 2 * GANON_MANT_NUM_STRANDS], 2 * GANON_MANT_NUM_STRANDS, 0);
+        for (i = 0; i < GANON_MANT_NUM_STRANDS - 1; i++) {
+            s32 a = i;
+            s32 b = i + GANON_MANT_NUM_STRANDS;
+
+            gSP2Triangles(g++, a, a + 1, b + 1, 0, a, b + 1, b, 0);
+        }
+    }
+    gSPEndDisplayList(g++);
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    g = POLY_OPA_DISP;
+    BossGanon_Player_PlateMaterialExt(&g, false);
+    POLY_OPA_DISP = g;
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH);
+    gSPMatrix(POLY_OPA_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, dl);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// SoH: "Play as Ganondorf", the clasp as a chain: the castle drawbridge's chain links, made small, one after another
+// down the V (each lying flat on him, the next on its edge, as a chain's links hang), red hot and flickering on the
+// flame cape, frosted on the ice. Keys "clasp.chain_links", "clasp.chain_width", "clasp.style" (0: the plumes).
+static Vtx sChainLinkVtx[4] = {
+    VTX(-50, 0, 0, 0, 1024, 255, 255, 255, 255),
+    VTX(50, 0, 0, 512, 1024, 255, 255, 255, 255),
+    VTX(50, 100, 0, 512, 0, 255, 255, 255, 255),
+    VTX(-50, 100, 0, 0, 0, 255, 255, 255, 255),
+};
+static Gfx sChainLinkDL[] = {
+    gsSPVertex(sChainLinkVtx, 4, 0),
+    gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
+    gsSPEndDisplayList(),
+};
+
+static void EnGanonMant_ClaspPoint(f32 t, Vec3f* a, Vec3f* b, Vec3f* neck, f32 sag, Vec3f* p) {
+    if (GdfTune("clasp.shape", 1.0f) == 1.0f) {
+        // (the V: straight from each corner down to the point on the breastplate's emblem)
+        f32 h = (t < 0.5f) ? (t * 2.0f) : ((t - 0.5f) * 2.0f);
+        Vec3f* from = (t < 0.5f) ? a : neck;
+        Vec3f* to = (t < 0.5f) ? neck : b;
+
+        p->x = from->x + (to->x - from->x) * h;
+        p->y = from->y + (to->y - from->y) * h;
+        p->z = from->z + (to->z - from->z) * h;
+    } else {
+        f32 u = 1.0f - t;
+        Vec3f c = { 2.0f * neck->x - 0.5f * (a->x + b->x), 2.0f * neck->y - 0.5f * (a->y + b->y) - sag,
+                    2.0f * neck->z - 0.5f * (a->z + b->z) };
+
+        p->x = u * u * a->x + 2 * u * t * c.x + t * t * b->x;
+        p->y = u * u * a->y + 2 * u * t * c.y + t * t * b->y;
+        p->z = u * u * a->z + 2 * u * t * c.z + t * t * b->z;
+    }
+}
+
+static void EnGanonMant_DrawChain(PlayState* play, Vec3f* a, Vec3f* b, Vec3f* neck, f32 sag, s32 ice) {
+    s32 links = MAX((s32)GdfTune("clasp.chain_links", 22.0f), 2);
+    f32 width = GdfTune("clasp.chain_width", 2.0f);
+    u32 frames = play->gameplayFrames;
+    Vec3f p0;
+    s32 k;
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH | G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR);
+    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPLoadTextureBlock(POLY_OPA_DISP++, gHyruleFieldCastleDrawbridgeChainsTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 16, 32, 0,
+                        G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, 4, 5, G_TX_NOLOD, G_TX_NOLOD);
+    // (the iron's own light and shade, tinted, plus a glow: red hot, or frost)
+    gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, PRIMITIVE, ENVIRONMENT, 0, 0, 0, TEXEL0, COMBINED, 0, SHADE, 0, 0, 0,
+                      0, COMBINED);
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_TEX_EDGE2);
+    if (ice) {
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, (u8)GdfTuneAt("clasp.ice_color", 0, 200),
+                        (u8)GdfTuneAt("clasp.ice_color", 1, 235), (u8)GdfTuneAt("clasp.ice_color", 2, 255), 255);
+    } else {
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, (u8)GdfTuneAt("clasp.fire_color", 0, 255),
+                        (u8)GdfTuneAt("clasp.fire_color", 1, 150), (u8)GdfTuneAt("clasp.fire_color", 2, 50), 255);
+    }
+
+    EnGanonMant_ClaspPoint(0.0f, a, b, neck, sag, &p0);
+    for (k = 0; k < links; k++) {
+        Vec3f p1;
+        Vec3f d;
+        Vec3f side;
+        Vec3f out;
+        Vec3f* across;
+        Vec3f* face;
+        f32 len;
+        f32 sl;
+        f32 L;
+        MtxF mf;
+
+        EnGanonMant_ClaspPoint((f32)(k + 1) / links, a, b, neck, sag, &p1);
+        d.x = p1.x - p0.x;
+        d.y = p1.y - p0.y;
+        d.z = p1.z - p0.z;
+        len = sqrtf(SQ(d.x) + SQ(d.y) + SQ(d.z));
+        if (len < 0.01f) {
+            p0 = p1;
+            continue;
+        }
+        d.x /= len;
+        d.y /= len;
+        d.z /= len;
+        side.x = d.z;
+        side.y = 0.0f;
+        side.z = -d.x;
+        sl = sqrtf(SQ(side.x) + SQ(side.z));
+        if (sl < 0.01f) {
+            side.x = 1.0f;
+            side.z = 0.0f;
+            sl = 1.0f;
+        }
+        side.x /= sl;
+        side.z /= sl;
+        out.x = side.y * d.z - side.z * d.y;
+        out.y = side.z * d.x - side.x * d.z;
+        out.z = side.x * d.y - side.y * d.x;
+        // (flat on him, then on its edge, by turns)
+        across = (k & 1) ? &out : &side;
+        face = (k & 1) ? &side : &out;
+        // (each link a little longer than its step, so it reaches into the next)
+        L = len * 1.45f;
+
+        if (ice) {
+            gDPSetEnvColor(POLY_OPA_DISP++, 30, 60, 100, 255);
+        } else {
+            s32 glow = 70 + (s32)(40.0f * Math_SinS(frames * 4000 + k * 9000));
+
+            gDPSetEnvColor(POLY_OPA_DISP++, glow, glow / 4, 0, 255);
+        }
+        mf.xx = across->x * width / 100.0f; mf.yx = across->y * width / 100.0f; mf.zx = across->z * width / 100.0f;
+        mf.wx = 0.0f;
+        mf.xy = d.x * L / 100.0f;           mf.yy = d.y * L / 100.0f;           mf.zy = d.z * L / 100.0f;
+        mf.wy = 0.0f;
+        mf.xz = face->x;                    mf.yz = face->y;                    mf.zz = face->z;
+        mf.wz = 0.0f;
+        mf.xw = (p0.x + p1.x) * 0.5f - d.x * L * 0.5f;
+        mf.yw = (p0.y + p1.y) * 0.5f - d.y * L * 0.5f;
+        mf.zw = (p0.z + p1.z) * 0.5f - d.z * L * 0.5f;
+        mf.ww = 1.0f;
+        Matrix_Put(&mf);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, sChainLinkDL);
+        p0 = p1;
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 // SoH: "Play as Ganondorf", the cape fastened round his neck: from the cape's two top corners a chain of plumes (fire
 // or frost, like the cape's) runs forward over his shoulders and across the front of his throat, so the cape hangs
 // from it instead of in the air beside him. Each link a small plume laid along the chain, out of step with the next.
@@ -1381,6 +1601,12 @@ static void EnGanonMant_DrawClasp(PlayState* play, EnGanonMant* this, s32 ice) {
     }
     a = this->strands[0].joints[0];
     b = this->strands[GANON_MANT_NUM_STRANDS - 1].joints[0];
+
+    // (as a chain: the drawbridge's links)
+    if (GdfTune("clasp.style", 1.0f) != 0.0f) {
+        EnGanonMant_DrawChain(play, &a, &b, &neck, sag, ice);
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
@@ -1528,6 +1754,7 @@ void EnGanonMant_DrawCloak(PlayState* play, EnGanonMant* this) {
             EnGanonMant_DrawMane(play, this, ice);
             EnGanonMant_DrawCollar(play, this, mtx, ice); // (of ice, or of flame on the flame cape)
             EnGanonMant_DrawClasp(play, this, ice);
+            EnGanonMant_DrawPlate(play, this, mtx); // (set into his armour)
         }
     } else {
         gSPDisplayList(POLY_OPA_DISP++, gMantDL);
