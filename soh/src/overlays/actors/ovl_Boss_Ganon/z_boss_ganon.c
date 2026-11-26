@@ -7787,6 +7787,11 @@ static u32 sGdfGrabBusyFrame = 0;
 static u32 sGdfLastBFrame = 0xFFFF0000; // when Ganondorf last pressed B (the volley) // the last frame he held someone (Invasion mode's grab cooldown)
 static u8 sGdfGrabState = GDF_GRAB_NONE;
 static u8 sGdfGrabIsEnemy = false;
+// SoH: bosses too: who's held is a boss (lifted, slammed, and hit as it comes to)
+static u8 sGdfGrabIsBoss = false;
+static Actor* sGdfBossSlam = NULL;  // the boss he's just slammed
+static s16 sGdfBossSlamHit = 0;     // frames his blow still lands on it as it comes to
+static s16 sGdfBossSlamWindow = 0;  // frames it still counts as hit by whatever weapon it needs
 static f32 sGdfGrabNeck = 0.0f;
 static f32 sGdfGrabArmWeight = 0.0f;
 static Vec3f sGdfGrabVel;
@@ -17337,6 +17342,11 @@ s32 BossGanon_Player_AuraReaches(PlayState* play, Actor* boss, Vec3f* pos) {
     BossGanon* gdf = sPlayerGanondorf;
     Vec3f center;
 
+    // (a boss he's just grabbed and slammed: for a moment, as if hit by the weapon it needs)
+    if ((boss != NULL) && (boss == sGdfBossSlam) && (sGdfBossSlamWindow > 0)) {
+        return true;
+    }
+
     if ((gdf == NULL) || (gdf->actor.update == NULL) || (gdf->actionFunc != BossGanon_Player_DarkAura) ||
         (gdf->playerAuraScale < 0.1f) || (boss == NULL) || (pos == NULL)) {
         return false;
@@ -18606,7 +18616,7 @@ void BossGanon_Player_TridentThrow(BossGanon* this, PlayState* play) {
 
 // Still in the scene (actors can be killed or unloaded while he holds one)
 static s32 BossGanon_Player_GrabAlive(PlayState* play, Actor* target) {
-    static const u8 sCats[] = { ACTORCAT_NPC, ACTORCAT_ENEMY, ACTORCAT_CHEST };
+    static const u8 sCats[] = { ACTORCAT_NPC, ACTORCAT_ENEMY, ACTORCAT_CHEST, ACTORCAT_BOSS };
     s32 i;
     Actor* actor;
 
@@ -18624,7 +18634,7 @@ static s32 BossGanon_Player_GrabAlive(PlayState* play, Actor* target) {
 }
 
 static Actor* BossGanon_Player_FindGrabTarget(BossGanon* this, PlayState* play) {
-    static const u8 sCats[] = { ACTORCAT_NPC, ACTORCAT_ENEMY };
+    static const u8 sCats[] = { ACTORCAT_NPC, ACTORCAT_ENEMY, ACTORCAT_BOSS };
     Actor* best = NULL;
     f32 bestScore = 0.0f;
     s32 i;
@@ -18638,7 +18648,23 @@ static Actor* BossGanon_Player_FindGrabTarget(BossGanon* this, PlayState* play) 
             f32 score;
 
             if ((actor->update == NULL) || (actor->draw == NULL) || (actor->id == ACTOR_BOSS_GANON) ||
-                (actor->id == ACTOR_EN_GANON_MANT) || (actor->id == ACTOR_EN_HORSE)) {
+                (actor->id == ACTOR_EN_GANON_MANT) || (actor->id == ACTOR_EN_HORSE) ||
+                (actor->id == ACTOR_BOSS_GANON2)) {
+                continue;
+            }
+            // Bosses: whatever their size, he lifts them (a wider reach: they're big, many fly; "grab.boss_reach")
+            if (sCats[i] == ACTORCAT_BOSS) {
+                f32 reach = GdfTune("grab.boss_reach", 350.0f);
+                f32 dy = actor->world.pos.y - this->playerFloorY;
+
+                if ((dist > reach) || (ABS(yawDiff) > 0x3800) || (dy < -150.0f) || (dy > 350.0f)) {
+                    continue;
+                }
+                score = (f32)ABS(yawDiff) + (dist * 12.0f);
+                if ((best == NULL) || (score < bestScore)) {
+                    best = actor;
+                    bestScore = score;
+                }
                 continue;
             }
             // Another player's Link: only Ganondorf in Invasion mode (after the truce), and his game does the rest
@@ -18714,7 +18740,9 @@ static void BossGanon_Player_GrabRelease(PlayState* play) {
         actor->velocity.x = actor->velocity.y = actor->velocity.z = 0.0f;
         actor->speedXZ = 0.0f;
         actor->prevPos = actor->world.pos;
-        actor->home.pos = actor->world.pos;
+        if (!sGdfGrabIsBoss) {
+            actor->home.pos = actor->world.pos; // (a boss keeps its own home: its fight is built round it)
+        }
         actor->freezeTimer = 0;
         if (actor->category != sGdfGrabOrigCategory) {
             Actor_ChangeCategory(play, &play->actorCtx, actor, sGdfGrabOrigCategory);
@@ -18758,6 +18786,7 @@ s32 BossGanon_Player_TryGrab(BossGanon* this, PlayState* play) {
         return true;
     }
     sGdfGrabIsEnemy = target->category == ACTORCAT_ENEMY;
+    sGdfGrabIsBoss = target->category == ACTORCAT_BOSS;
     // Drawn after him for as long as he has them (the last category drawn), so they can be put in his fist as his
     // hand is drawn, this frame (see BossGanon_Player_GrabFollowHand): drawn before him, they trailed a frame behind
     sGdfGrabOrigCategory = target->category;
@@ -18856,7 +18885,14 @@ void BossGanon_Player_GrabThrow(BossGanon* this, PlayState* play) {
         sGdfGrabVel.z = Math_CosS(this->actor.shape.rot.y) * 9.0f;
         sGdfGrabVel.y = -6.0f;
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_SWING_HARD);
-        BossGanon_Player_GrabRagdoll(sGdfGrabActor);
+        if (sGdfGrabIsBoss) {
+            // (a boss: slammed straight down, hard, no ragdoll: its own body stays as it's built)
+            sGdfGrabVel.x *= 0.5f;
+            sGdfGrabVel.z *= 0.5f;
+            sGdfGrabVel.y = -14.0f;
+        } else {
+            BossGanon_Player_GrabRagdoll(sGdfGrabActor);
+        }
     }
     if (sGdfGrabTimer >= GDF_GRAB_THROW_FRAMES) {
         BossGanon_Player_GrabToIdle(this, play);
@@ -18891,6 +18927,28 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
     CollisionPoly* poly;
     Vec3f probe;
     f32 floorY;
+
+    // The slammed boss coming to: his blow on it, its size
+    if (sGdfBossSlamWindow > 0) {
+        sGdfBossSlamWindow--;
+    }
+    if ((sGdfBossSlamHit > 0) && (sGdfBossSlam != NULL)) {
+        sGdfBossSlamHit--;
+        if (BossGanon_Player_GrabAlive(play, sGdfBossSlam)) {
+            Vec3f pos = sGdfBossSlam->world.pos;
+            f32 tall = CLAMP(sGdfBossSlam->focus.pos.y - pos.y, 60.0f, 300.0f);
+
+            this->collider.dim.radius = (s16)GdfTune("grab.boss_hit_radius", 120.0f);
+            this->collider.dim.height = (s16)(tall + 80.0f);
+            this->collider.dim.yShift = 0;
+            this->collider.dim.pos.x = (s16)pos.x;
+            this->collider.dim.pos.y = (s16)(pos.y - 40.0f);
+            this->collider.dim.pos.z = (s16)pos.z;
+            BossGanon_Player_SetAT(this, play);
+        } else {
+            sGdfBossSlamHit = 0;
+        }
+    }
 
     if (sGdfGrabState == GDF_GRAB_NONE) {
         return;
@@ -18983,7 +19041,9 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
             actor->world.pos.y += sGdfGrabVel.y;
             actor->world.pos.z += sGdfGrabVel.z;
             sGdfGrabVel.y -= 2.5f;
-            Math_ApproachS(&actor->shape.rot.x, -0x4000, 2, 0x1800); // thrown over onto their back
+            if (!sGdfGrabIsBoss) {
+                Math_ApproachS(&actor->shape.rot.x, -0x4000, 2, 0x1800); // thrown over onto their back
+            }
             actor->shape.rot.z = 0;
             probe = actor->world.pos;
             probe.y += 60.0f;
@@ -18996,8 +19056,12 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
                 Vec3f zero = { 0.0f, 0.0f, 0.0f };
 
                 actor->world.pos.y = floorY;
-                actor->shape.rot.x = -0x4000;
-                Actor_RequestQuakeAndRumble(&this->actor, play, 4, 12);
+                actor->shape.rot.x = sGdfGrabIsBoss ? 0 : -0x4000;
+                Actor_RequestQuakeAndRumble(&this->actor, play, sGdfGrabIsBoss ? 6 : 4, sGdfGrabIsBoss ? 20 : 12);
+                if (sGdfGrabIsBoss) {
+                    Actor_SpawnFloorDustRing(play, actor, &actor->world.pos, 80.0f, 16, 10.0f, 800, 40, true);
+                    Audio_PlayActorSound2(actor, NA_SE_EV_STONE_BOUND);
+                }
                 Audio_PlayActorSound2(actor, NA_SE_IT_HAMMER_HIT);
                 Audio_PlayActorSound2(actor, NA_SE_PL_BODY_HIT);
                 Actor_SpawnFloorDustRing(play, actor, &actor->world.pos, 30.0f, 12, 6.0f, 500, 20, true);
@@ -19022,7 +19086,15 @@ static void BossGanon_Player_UpdateGrabbed(BossGanon* this, PlayState* play) {
                 Vec3f pos = actor->world.pos;
 
                 BossGanon_Player_GrabRelease(play);
-                if (sGdfGrabIsEnemy && (actor->colChkInfo.health > 0)) {
+                if (sGdfGrabIsBoss) {
+                    // A boss: as it comes to, his blow lands on it through its own damage (for a few frames, so it
+                    // meets it once it's taking hits again), and for a while it counts as hit by whatever weapon it
+                    // needs (the hookshot for Morpha's core, the mirror shield for Twinrova, ...: see
+                    // BossGanon_Player_AuraReaches)
+                    sGdfBossSlam = actor;
+                    sGdfBossSlamHit = 8;
+                    sGdfBossSlamWindow = (s16)GdfTune("grab.boss_window", 40.0f);
+                } else if (sGdfGrabIsEnemy && (actor->colChkInfo.health > 0)) {
                     // Monsters are hurt badly: most of their health goes in the slam, and the blow that lands as
                     // they come to finishes the weaker ones (people just pick themselves up and dust themselves off)
                     actor->colChkInfo.health = MAX(actor->colChkInfo.health - 6, 1);
