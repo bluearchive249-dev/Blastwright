@@ -8886,6 +8886,28 @@ static void BossGanon_Player_FeetAhead(BossGanon* this, f32 weight) {
     }
 }
 
+// The cape's chain (the flame and ice capes' drawbridge-chain clasp), heard faintly as he walks, runs and stops: the
+// chains coming off a locked door, quiet and a little higher or lower each time. Keys "chain.volume" (0 = silent),
+// "chain.run_speed" (from this fast every step jingles, not every other).
+static s32 BossGanon_Player_ChainShown(void) {
+    return BossGanon_Player_KnightLook() && (GdfTune("clasp.on", 1.0f) != 0.0f) &&
+           (GdfTune("clasp.style", 1.0f) != 0.0f);
+}
+
+static void BossGanon_Player_ChainJingle(BossGanon* this, f32 speed) {
+    static f32 sFreq = 1.0f;
+    static f32 sVol = 0.3f;
+    static s8 sReverb = 0;
+    f32 vol = GdfTune("chain.volume", 0.3f);
+
+    if (!BossGanon_Player_ChainShown() || (vol <= 0.0f) || this->playerHidden) {
+        return;
+    }
+    sFreq = 1.1f + Rand_CenteredFloat(0.2f) + CLAMP(speed / 40.0f, 0.0f, 0.15f);
+    sVol = CLAMP(vol * (0.7f + CLAMP(speed / 12.0f, 0.0f, 0.5f)), 0.0f, 1.0f);
+    Audio_PlaySfxGeneral(NA_SE_EV_CHAIN_KEY_UNLOCK, &this->actor.projectedPos, 4, &sFreq, &sVol, &sReverb);
+}
+
 static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     // Walking about on his own in a cutscene: his own speed, not Link's
@@ -8922,6 +8944,20 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
     moving = (speed > 0.5f) && (sGdfRoaming || inCs || (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND));
     sGdfWalkSpeed = speed;
 
+    // (coming to a stop: the chain settles with a last jingle)
+    {
+        static u8 sWasMoving = false;
+        static s16 sMovedFor = 0;
+
+        sMovedFor = moving ? MIN(sMovedFor + 1, 100) : sMovedFor;
+        if (!moving && sWasMoving && (sMovedFor > 10) && this->playerGrounded) {
+            BossGanon_Player_ChainJingle(this, 2.0f);
+        }
+        if (!moving) {
+            sMovedFor = 0;
+        }
+        sWasMoving = moving;
+    }
     Math_ApproachF(&this->playerWalkWeight, moving ? 1.0f : 0.0f, 1.0f, 0.15f);
     // Sprinting (holding A): a faster cycle, longer strides and a forward lean
     Math_ApproachF(&this->playerSprintWeight, (moving && PlayAsGanondorf_IsSprinting()) ? 1.0f : 0.0f, 1.0f, 0.1f);
@@ -8973,6 +9009,10 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
                     }
                     player->stateFlags2 |= PLAYER_STATE2_FOOTSTEP;
                     BossGanon_Player_FootDust(this, play, (i == 0) ? 1.0f : -1.0f, speed);
+                    // (the cape's chain jingling with his steps: every other step walking, each one running)
+                    if ((i == 0) || (speed > GdfTune("chain.run_speed", 6.0f))) {
+                        BossGanon_Player_ChainJingle(this, speed);
+                    }
                 }
             }
         }
