@@ -1560,7 +1560,28 @@ static Gfx sChainLinkDL[] = {
 };
 
 static void EnGanonMant_ClaspPoint(f32 t, Vec3f* a, Vec3f* b, Vec3f* neck, f32 sag, Vec3f* p) {
-    if (GdfTune("clasp.shape", 1.0f) == 1.0f) {
+    f32 shape = GdfTune("clasp.shape", 2.0f);
+
+    if (shape == 2.0f) {
+        // (the U: each half leaves its corner heading in toward his neck, clear of the pauldrons, at the corner's
+        // height, then curves down his chest into the V's point: "clasp.u_pull" how far in toward the middle it
+        // heads first (0-1), "clasp.u_forward" how far forward, toward the point, "clasp.u_drop" how far down)
+        f32 pull = GdfTune("clasp.u_pull", 0.65f);
+        f32 fwd = GdfTune("clasp.u_forward", 0.4f);
+        f32 drop = GdfTune("clasp.u_drop", 0.0f);
+        Vec3f mid = { (a->x + b->x) * 0.5f, (a->y + b->y) * 0.5f, (a->z + b->z) * 0.5f };
+        Vec3f* corner = (t < 0.5f) ? a : b;
+        f32 h = (t < 0.5f) ? (t * 2.0f) : ((1.0f - t) * 2.0f); // (0 at the corner, 1 at the point)
+        f32 u = 1.0f - h;
+        Vec3f c;
+
+        c.x = corner->x + (mid.x - corner->x) * pull + (neck->x - mid.x) * fwd;
+        c.y = corner->y - drop;
+        c.z = corner->z + (mid.z - corner->z) * pull + (neck->z - mid.z) * fwd;
+        p->x = u * u * corner->x + 2.0f * u * h * c.x + h * h * neck->x;
+        p->y = u * u * corner->y + 2.0f * u * h * c.y + h * h * neck->y;
+        p->z = u * u * corner->z + 2.0f * u * h * c.z + h * h * neck->z;
+    } else if (shape == 1.0f) {
         // (the V: straight from each corner down to the point on the breastplate's emblem)
         f32 h = (t < 0.5f) ? (t * 2.0f) : ((t - 0.5f) * 2.0f);
         Vec3f* from = (t < 0.5f) ? a : neck;
