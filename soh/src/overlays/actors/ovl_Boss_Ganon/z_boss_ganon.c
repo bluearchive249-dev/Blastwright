@@ -20161,7 +20161,7 @@ s32 BossGanon_Player_PauseIsGanondorf(void) {
 // as every armour piece; "pause_cape.on" 0 hides it.
 static void BossGanon_Player_DrawPauseCape(PlayState* play) {
     MtxF turn = { 0 };
-    f32 size = GdfTune("pause_cape.size", 150.0f);
+    f32 size = GdfTune("pause_cape.size", 130.0f);
     s32 kind = BossGanon_Player_ZoraLook() ? 2 : (BossGanon_Player_GoronLook() ? 1 : 0);
 
     if ((GdfTune("pause_cape.on", 1.0f) == 0.0f) || BossGanon_Player_IsPhantom()) {
