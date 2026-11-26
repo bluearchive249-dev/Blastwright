@@ -1219,13 +1219,15 @@ static s32 EnGanonMant_BuildRobeTex(void) {
 // SoH: "Play as Ganondorf", the ice cape's collar: a standing collar of ice where the cape begins, rising from its top
 // edge and bending up and out behind his neck, its top a jagged edge of icicles (the hem's own), with frost plumes
 // standing up along it. Three rows of the cape's twelve strands: its roots, then higher and further out.
+static f32 sCollarScale = 1.0f; // (the mantle item models' collar: smaller, at their size)
+
 static void EnGanonMant_DrawCollar(PlayState* play, EnGanonMant* this, Mtx* mtx, s32 ice) {
     Vtx* v = Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * 3 * GANON_MANT_NUM_STRANDS);
     Gfx* dl = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 32);
     Gfx* g = dl;
-    f32 height = GdfTune("collar.height", 14.0f);
-    f32 flare = GdfTune("collar.flare", 7.0f);
-    f32 lean = GdfTune("collar.lean_back", 3.0f);
+    f32 height = GdfTune("collar.height", 14.0f) * sCollarScale;
+    f32 flare = GdfTune("collar.flare", 7.0f) * sCollarScale;
+    f32 lean = GdfTune("collar.lean_back", 3.0f) * sCollarScale;
     Vec3f mid = { 0.0f, 0.0f, 0.0f };
     Vec3f back;
     Vec3f top[GANON_MANT_NUM_STRANDS];
@@ -1748,6 +1750,95 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
     for (strandIdx = 0; strandIdx < this->linkedCount; strandIdx++) {
         EnGanonMant_DrawCloak(play, this->linked[strandIdx]);
     }
+}
+
+// SoH: "Play as Ganondorf", single player: the Goron and Zora Tunics' item models (in shops, on pickup, held up when
+// he gets one) as the mantles they are for him: the flame or ice cape itself, still, hanging from its collar, drawn by
+// the same code as the one he wears (its fire or ice, Volvagia's plumes down it, the collar standing up round the
+// neck), only at the item's size and in its place. A curved collar at the top, the cloth widening as it falls, folds
+// down it and a wavy hem; the fire still burns and the plumes still pulse, the cloth itself doesn't move.
+void EnGanonMant_DrawItemMantle(PlayState* play, s32 ice) {
+    static EnGanonMant sItem; // (only its strands and anchor are used)
+    Vtx* src = ResourceMgr_LoadVtxByName(SEGMENTED_TO_VIRTUAL(gMant1Vtx));
+    f32 size = GdfTune("item.size", 1.0f);
+    Vtx* vtx;
+    Mtx* mtx;
+    MtxF base;
+    f32 unit;
+    s32 i;
+    s32 j;
+
+    if (src == NULL) {
+        return;
+    }
+    vtx = Graph_Alloc(play->state.gfxCtx, sizeof(Vtx) * GANON_MANT_NUM_STRANDS * GANON_MANT_NUM_JOINTS);
+    memcpy(vtx, src, sizeof(Vtx) * GANON_MANT_NUM_STRANDS * GANON_MANT_NUM_JOINTS);
+
+    Matrix_Push();
+    Matrix_Get(&base);
+    unit = sqrtf(SQ(base.xx) + SQ(base.yx) + SQ(base.zx)); // (one of the item's units in the world)
+
+    // Its shape in the item's own units (the tunic it stands in for is about 68 wide and 62 tall): the strands from
+    // one side round the back of the collar to the other, the joints down each
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        f32 th = (i * M_PI) / (GANON_MANT_NUM_STRANDS - 1);
+
+        for (j = 0; j < GANON_MANT_NUM_JOINTS; j++) {
+            f32 s = (f32)j / (GANON_MANT_NUM_JOINTS - 1);
+            f32 halfW = GdfTune("item.top_width", 13.0f) + GdfTune("item.flare", 18.0f) * s;
+            f32 depth = 7.0f + 7.0f * s;
+            Vec3f p;
+
+            p.x = -cosf(th) * halfW;
+            p.z = -sinf(th) * depth + GdfTune("item.folds", 3.0f) * s * sinf(i * 1.9f + j * 0.45f);
+            p.y = 28.0f - j * GdfTune("item.length", 5.4f) - 2.0f * s * s * sinf(i * 2.3f + 0.6f);
+            p.x *= size;
+            p.y *= size;
+            p.z *= size;
+            Matrix_MultVec3f(&p, &sItem.strands[i].joints[j]);
+        }
+        sItem.strands[i].root = sItem.strands[i].joints[0];
+    }
+    sItem.anchor = sItem.strands[GANON_MANT_NUM_STRANDS / 2].joints[0];
+
+    // The cloth's vertices, relative to the collar's middle at higher precision (as his own cape's are)
+    for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
+        Vec3f* left = sItem.strands[MAX(i - 1, 0)].joints;
+        Vec3f* right = sItem.strands[MIN(i + 1, GANON_MANT_NUM_STRANDS - 1)].joints;
+
+        for (j = 0; j < GANON_MANT_NUM_JOINTS; j++) {
+            Vec3f* p = &sItem.strands[i].joints[j];
+            Vec3f* up = &sItem.strands[i].joints[MAX(j - 1, 0)];
+            Vec3f* dn = &sItem.strands[i].joints[MIN(j + 1, GANON_MANT_NUM_JOINTS - 1)];
+            Vec3f a = { right[j].x - left[j].x, right[j].y - left[j].y, right[j].z - left[j].z };
+            Vec3f d = { dn->x - up->x, dn->y - up->y, dn->z - up->z };
+            Vec3f n = { a.y * d.z - a.z * d.y, a.z * d.x - a.x * d.z, a.x * d.y - a.y * d.x };
+            f32 nl = sqrtf(SQ(n.x) + SQ(n.y) + SQ(n.z));
+            Vtx* vt = &vtx[sVerticesMap[i + j * GANON_MANT_NUM_JOINTS]];
+
+            vt->n.ob[0] = CLAMP((p->x - sItem.anchor.x) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            vt->n.ob[1] = CLAMP((p->y - sItem.anchor.y) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            vt->n.ob[2] = CLAMP((p->z - sItem.anchor.z) * LINK_GANON_CAPE_VTX_SCALE, -32000, 32000);
+            if (nl > 0.001f) {
+                vt->n.n[0] = (s8)(n.x / nl * 120.0f);
+                vt->n.n[1] = (s8)(n.y / nl * 120.0f);
+                vt->n.n[2] = (s8)(n.z / nl * 120.0f);
+            }
+        }
+    }
+
+    Matrix_Translate(sItem.anchor.x, sItem.anchor.y, sItem.anchor.z, MTXMODE_NEW);
+    Matrix_Scale(1.0f / LINK_GANON_CAPE_VTX_SCALE, 1.0f / LINK_GANON_CAPE_VTX_SCALE, 1.0f / LINK_GANON_CAPE_VTX_SCALE,
+                 MTXMODE_APPLY);
+    mtx = MATRIX_NEWMTX(play->state.gfxCtx);
+
+    EnGanonMant_DrawFire(play, mtx, vtx, ice);
+    EnGanonMant_DrawMane(play, &sItem, ice);
+    sCollarScale = unit * size * GdfTune("item.collar", 0.6f);
+    EnGanonMant_DrawCollar(play, &sItem, mtx, ice);
+    sCollarScale = 1.0f;
+
+    Matrix_Pop();
 }
 
 // SoH: "Play as Ganondorf", the tunics' icons on the equipment screen as the capes they give him: his own red cloak

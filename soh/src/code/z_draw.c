@@ -890,39 +890,26 @@ void GetItem_DrawMagicSpell(PlayState* play, s16 drawId) {
 }
 
 s32 BossGanon_Player_IsSoloGanondorf(void);
+void EnGanonMant_DrawItemMantle(PlayState* play, s32 ice);
 
 void GetItem_DrawOpa1023(PlayState* play, s16 drawId) {
     s32 pad;
+
+    // SoH: "Play as Ganondorf", single player: the Goron and Zora Tunics' models as the flame and ice mantles they are
+    // for him, the capes themselves (z_en_ganon_mant.c)
+    if (BossGanon_Player_IsSoloGanondorf() && ((drawId == GID_TUNIC_GORON) || (drawId == GID_TUNIC_ZORA))) {
+        EnGanonMant_DrawItemMantle(play, drawId == GID_TUNIC_ZORA);
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
-    {
-        // SoH: "Play as Ganondorf", single player: the Goron and Zora Tunics' models in the colours of the mantles they
-        // are for him, flame (gold collar, fire orange to deep red) and ice (frost white collar, pale ice to deep blue)
-        s32 mantle = !BossGanon_Player_IsSoloGanondorf() ? 0
-                     : (drawId == GID_TUNIC_GORON)       ? 1
-                     : (drawId == GID_TUNIC_ZORA)        ? 2
-                                                         : 0;
-        static const u8 sCollar[3][6] = { { 0 }, { 255, 215, 90, 160, 70, 0 }, { 235, 250, 255, 90, 150, 210 } };
-        static const u8 sBody[3][6] = { { 0 }, { 255, 160, 30, 190, 25, 0 }, { 165, 225, 255, 15, 60, 160 } };
-
-        gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[1]);
-        if (mantle != 0) {
-            gDPPipeSync(POLY_OPA_DISP++);
-            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, sCollar[mantle][0], sCollar[mantle][1], sCollar[mantle][2], 255);
-            gDPSetEnvColor(POLY_OPA_DISP++, sCollar[mantle][3], sCollar[mantle][4], sCollar[mantle][5], 255);
-        }
-        gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[0]);
-        gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[2]);
-        if (mantle != 0) {
-            gDPPipeSync(POLY_OPA_DISP++);
-            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, sBody[mantle][0], sBody[mantle][1], sBody[mantle][2], 255);
-            gDPSetEnvColor(POLY_OPA_DISP++, sBody[mantle][3], sBody[mantle][4], sBody[mantle][5], 255);
-        }
-        gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[3]);
-    }
+    gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[1]);
+    gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[0]);
+    gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[2]);
+    gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[3]);
 
     CLOSE_DISPS(play->state.gfxCtx);
 }

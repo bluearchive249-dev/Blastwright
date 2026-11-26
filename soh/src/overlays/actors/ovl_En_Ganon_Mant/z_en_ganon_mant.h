@@ -96,5 +96,7 @@ void* GanondorfHood_Build(EnGanonMant* cape, PlayState* play);
 u8* EnGanonMant_GetRobeTex(void);
 
 void EnGanonMant_CapeIcons(s32 on); // SoH: "Play as Ganondorf", the tunics' icons as his capes
+// SoH: "Play as Ganondorf", the Goron (flame) and Zora (ice) Tunics' item models as his mantles
+void EnGanonMant_DrawItemMantle(PlayState* play, s32 ice);
 
 #endif
