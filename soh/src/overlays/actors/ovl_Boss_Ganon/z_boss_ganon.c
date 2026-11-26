@@ -20155,6 +20155,35 @@ s32 BossGanon_Player_PauseIsGanondorf(void) {
     return (sPlayerGanondorf != NULL) && (GdfInvasion_Role() == 0) && (GdfTune("equip.hide_rows", 1.0f) != 0.0f);
 }
 
+// The equipment screen: his cape hanging behind him, still (the cape he wears can't be drawn there): his red cloth, or
+// the flame or ice cape with the Goron or Zora Tunic, as the shop models are drawn. From his torso (x up, y forward,
+// z across), its collar at "pause_cape.offset", its size "pause_cape.size"; "pause_cape.rot", "pause_cape.scale_xyz"
+// as every armour piece; "pause_cape.on" 0 hides it.
+static void BossGanon_Player_DrawPauseCape(PlayState* play) {
+    MtxF turn = { 0 };
+    f32 size = GdfTune("pause_cape.size", 150.0f);
+    s32 kind = BossGanon_Player_ZoraLook() ? 2 : (BossGanon_Player_GoronLook() ? 1 : 0);
+
+    if ((GdfTune("pause_cape.on", 1.0f) == 0.0f) || BossGanon_Player_IsPhantom()) {
+        return;
+    }
+    Matrix_Push();
+    Matrix_Put(&sGdfPauseLimbs[1]); // (his torso, as the armour's pieces use)
+    Matrix_Translate(GdfTuneAt("pause_cape.offset", 0, 1900.0f), GdfTuneAt("pause_cape.offset", 1, -1400.0f),
+                     GdfTuneAt("pause_cape.offset", 2, 0.0f), MTXMODE_APPLY);
+    BossGanon_Player_PieceAdjust("pause_cape");
+    // (the cape's across, up and forward to his torso's across, up and forward; its collar's top at the point)
+    turn.xy = 1.0f;
+    turn.yz = 1.0f;
+    turn.zx = 1.0f;
+    turn.ww = 1.0f;
+    Matrix_Mult(&turn, MTXMODE_APPLY);
+    Matrix_Scale(size, size, size, MTXMODE_APPLY);
+    Matrix_Translate(0.0f, -28.0f, 0.0f, MTXMODE_APPLY);
+    EnGanonMant_DrawHangingCape(play, kind);
+    Matrix_Pop();
+}
+
 s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot) {
     static Vec3s sJoints[GDF_LIMB_COUNT_PLAYER + 1];
     static u32 sTick = 0;
@@ -20191,5 +20220,6 @@ s32 BossGanon_Player_DrawPause(PlayState* play, Vec3f* pos, Vec3s* rot) {
     if (BossGanon_Player_RobeHoodOn()) {
         BossGanon_Player_DrawPoeHood(play, sGdfPauseLimbs);
     }
+    BossGanon_Player_DrawPauseCape(play);
     return true;
 }

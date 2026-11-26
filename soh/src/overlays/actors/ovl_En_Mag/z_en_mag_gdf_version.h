@@ -3,7 +3,7 @@
 // SoH: "Play as Ganondorf" title, the release number under the mod's credit ("1.3 Release"), drawn from these
 // characters in the credit's style (heavy sans, white with a dark outline; IA8, 16 tall) and the word "Release".
 // The version: bumped with every release.
-#define GDF_MOD_VERSION "1.6"
+#define GDF_MOD_VERSION "1.7"
 
 #define GDF_VER_GLYPH_H 16
 static const char sGdfVerChars[] = "0123456789.";

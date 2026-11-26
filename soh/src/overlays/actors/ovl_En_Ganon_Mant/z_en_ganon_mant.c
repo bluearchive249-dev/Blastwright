@@ -2199,7 +2199,14 @@ void EnGanonMant_Draw(Actor* thisx, PlayState* play) {
 // neck), only at the item's size and in its place. A curved collar at the top, the cloth widening as it falls, folds
 // down it and a wavy hem; the fire still burns and the plumes still pulse, the cloth itself doesn't move.
 void EnGanonMant_DrawItemMantle(PlayState* play, s32 ice) {
+    EnGanonMant_DrawHangingCape(play, ice ? 2 : 1);
+}
+
+// The same still cape for anywhere it's needed (the item models; the equipment screen, behind him): kind 0 his own red
+// cloth, 1 the flame cape, 2 the ice cape. On the current matrix, in the item's units.
+void EnGanonMant_DrawHangingCape(PlayState* play, s32 kind) {
     static EnGanonMant sItem; // (only its strands and anchor are used)
+    s32 ice = (kind == 2);
     Vtx* src = ResourceMgr_LoadVtxByName(SEGMENTED_TO_VIRTUAL(gMant1Vtx));
     f32 size = GdfTune("item.size", 1.0f);
     Vtx* vtx;
@@ -2273,11 +2280,22 @@ void EnGanonMant_DrawItemMantle(PlayState* play, s32 ice) {
                  MTXMODE_APPLY);
     mtx = MATRIX_NEWMTX(play->state.gfxCtx);
 
-    EnGanonMant_DrawFire(play, mtx, vtx, ice);
-    EnGanonMant_DrawMane(play, &sItem, ice);
-    sCollarScale = unit * size * GdfTune("item.collar", 0.6f);
-    EnGanonMant_DrawCollar(play, &sItem, mtx, ice);
-    sCollarScale = 1.0f;
+    if (kind == 0) {
+        // (his own cloth: the cape's material and mesh, lit)
+        OPEN_DISPS(play->state.gfxCtx);
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, gMantMaterialDL);
+        gSPSegment(POLY_OPA_DISP++, 0x0C, vtx);
+        gSPDisplayList(POLY_OPA_DISP++, gMantDL);
+        CLOSE_DISPS(play->state.gfxCtx);
+    } else {
+        EnGanonMant_DrawFire(play, mtx, vtx, ice);
+        EnGanonMant_DrawMane(play, &sItem, ice);
+        sCollarScale = unit * size * GdfTune("item.collar", 0.6f);
+        EnGanonMant_DrawCollar(play, &sItem, mtx, ice);
+        sCollarScale = 1.0f;
+    }
 
     Matrix_Pop();
 }
