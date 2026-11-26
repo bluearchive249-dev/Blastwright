@@ -10103,7 +10103,9 @@ static const Vec3s sGdfJumpArmPoses[2][3] = {
 
 #define GDF_JUMP_LEFT_KNEE_FRAME 5   // walk frames with that knee highest
 #define GDF_JUMP_RIGHT_KNEE_FRAME 20
-#define GDF_BIG_LANDING_HEIGHT 100.0f
+// (any landing from this high: a soft one, a knee dip; a heavy one, on one knee, from "land.big_height")
+#define GDF_BIG_LANDING_HEIGHT GdfTune("land.soft_height", 60.0f)
+static u8 sGdfLandSoft = false;
 
 static s32 BossGanon_Player_IsJumping(PlayState* play) {
     Player* player = GET_PLAYER(play);
@@ -10222,7 +10224,13 @@ void BossGanon_Player_SetupLand(BossGanon* this, PlayState* play, f32 height) {
     this->playerWalkWeight = 0.0f;
 
     pos.y = this->playerFloorY;
-    Actor_RequestQuakeAndRumble(&this->actor, play, (height > 250.0f) ? 5 : 3, 12);
+    // A short drop: a soft landing, his knees giving a little and straightening again, no shake and no yell
+    sGdfLandSoft = (height < GdfTune("land.big_height", 260.0f));
+    if (sGdfLandSoft) {
+        Actor_SpawnFloorDustRing(play, &this->actor, &pos, 25.0f, 6, 3.0f, 200, 15, true);
+        return;
+    }
+    Actor_RequestQuakeAndRumble(&this->actor, play, (height > 400.0f) ? 5 : 3, 12);
     Actor_SpawnFloorDustRing(play, &this->actor, &pos, 40.0f, 10, 6.0f, 400, 25, true);
     BossGanon_Player_Say(&this->actor, NA_SE_EN_GANON_HIT_GND);
 }
@@ -10232,6 +10240,25 @@ void BossGanon_Player_Land(BossGanon* this, PlayState* play) {
     f32 last = ARRAY_COUNT(sGdfClipLand) - 1;
     f32 f = this->fwork[GDF_FWORK_1];
     f32 w = 1.0f - CLAMP((f - GDF_LAND_FADE_FROM) / (last - GDF_LAND_FADE_FROM), 0.0f, 1.0f);
+
+    if (sGdfLandSoft) {
+        // The soft landing: the start of the same landing (its knees bending), part way in and straight out again,
+        // over "land.soft_frames" frames, as deep as "land.soft_depth"
+        f32 end = MAX(GdfTune("land.soft_frames", 10.0f), 2.0f);
+        f32 t = CLAMP(f / end, 0.0f, 1.0f);
+        f32 dip = GdfTune("land.soft_depth", 0.45f) * sinf(M_PI * t);
+
+        SkelAnime_Update(&this->skelAnime);
+        BossGanon_Player_ApplyClip(this, sGdfClipLand, ARRAY_COUNT(sGdfClipLand), 6.0f * sinf(M_PI * t), false, dip,
+                                   1.0f);
+        BossGanon_Player_ApplyClipRoot(this, sGdfClipLandRoot, ARRAY_COUNT(sGdfClipLandRoot), 6.0f * sinf(M_PI * t),
+                                       dip);
+        this->fwork[GDF_FWORK_1] = f + 1.0f;
+        if (f >= end) {
+            BossGanon_Player_SetupFloat(this, play);
+        }
+        return;
+    }
 
     SkelAnime_Update(&this->skelAnime);
     BossGanon_Player_ApplyClip(this, sGdfClipLand, ARRAY_COUNT(sGdfClipLand), f, false, w, 1.0f);
