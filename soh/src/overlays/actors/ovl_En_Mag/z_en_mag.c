@@ -9,7 +9,69 @@
 #include <soh/GameVersions.h>
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/ExtraModes/GanondorfLogo.h"
+#include <string.h>
 #include "z_en_mag_gdf_credit.h"
+#include "z_en_mag_gdf_version.h"
+
+// SoH: "Play as Ganondorf" title: "<version> Release", built once from the version number (z_en_mag_gdf_version.h)
+#define GDF_VER_TEX_W 128
+static u8 sGdfVerTex[GDF_VER_TEX_W * GDF_VER_GLYPH_H];
+static u8 sGdfVerTexBuilt = false;
+
+static void EnMag_BuildVersionTex(void) {
+    const char* v = GDF_MOD_VERSION;
+    s32 x = 0;
+    s32 width;
+    s32 start;
+    s32 r;
+    s32 c;
+    u8 line[GDF_VER_TEX_W * GDF_VER_GLYPH_H];
+
+    if (sGdfVerTexBuilt) {
+        return;
+    }
+    sGdfVerTexBuilt = true;
+    memset(line, 0, sizeof(line));
+    for (; *v != '\0'; v++) {
+        const char* at = strchr(sGdfVerChars, *v);
+        s32 g;
+        s32 w;
+
+        if ((at == NULL) || (*v == '\0')) {
+            continue;
+        }
+        g = at - sGdfVerChars;
+        w = sGdfVerGlyphW[g];
+        if (x + w > GDF_VER_TEX_W) {
+            break;
+        }
+        for (r = 0; r < GDF_VER_GLYPH_H; r++) {
+            for (c = 0; c < w; c++) {
+                u8 px = sGdfVerGlyphs[sGdfVerGlyphOff[g] + r * w + c];
+                u8* dst = &line[r * GDF_VER_TEX_W + x + c];
+
+                // (outlines overlapping by a column: the stronger of the two)
+                if ((px & 0xF) > (*dst & 0xF) || ((px >> 4) > (*dst >> 4))) {
+                    *dst = MAX(px & 0xF0, *dst & 0xF0) | MAX(px & 0x0F, *dst & 0x0F);
+                }
+            }
+        }
+        x += w - 1;
+    }
+    x += 3;
+    for (r = 0; r < GDF_VER_GLYPH_H; r++) {
+        for (c = 0; (c < GDF_VER_RELEASE_W) && (x + c < GDF_VER_TEX_W); c++) {
+            line[r * GDF_VER_TEX_W + x + c] = sGdfVerReleaseWord[r * GDF_VER_RELEASE_W + c];
+        }
+    }
+    width = MIN(x + GDF_VER_RELEASE_W, GDF_VER_TEX_W);
+    // (centred in the texture)
+    start = (GDF_VER_TEX_W - width) / 2;
+    memset(sGdfVerTex, 0, sizeof(sGdfVerTex));
+    for (r = 0; r < GDF_VER_GLYPH_H; r++) {
+        memcpy(&sGdfVerTex[r * GDF_VER_TEX_W + start], &line[r * GDF_VER_TEX_W], width);
+    }
+}
 #include <string.h>
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -737,7 +799,7 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
 
         if (showCredit) {
             s32 creditLeft = copyrightLeft + COPYRIGHT_TEX_WIDTH + 40;
-            s32 preLeft = creditLeft + (GDF_CREDIT_WIDTH - GDF_PRERELEASE_WIDTH) / 2;
+            s32 preLeft = creditLeft + (GDF_CREDIT_WIDTH - GDF_VER_TEX_W) / 2;
 
             gDPLoadTextureBlock(gfx++, sGdfCreditTex, G_IM_FMT_IA, G_IM_SIZ_8b, GDF_CREDIT_WIDTH, GDF_CREDIT_HEIGHT, 0,
                                 G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
@@ -745,12 +807,14 @@ void EnMag_DrawInner(Actor* thisx, PlayState* play, Gfx** gfxP) {
             gSPTextureRectangle(gfx++, creditLeft << 2, 198 << 2, (creditLeft + GDF_CREDIT_WIDTH) << 2,
                                 (198 + GDF_CREDIT_HEIGHT) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
 
-            // "1.0 Release" centred under it
-            gDPLoadTextureBlock(gfx++, sGdfPreReleaseTex, G_IM_FMT_IA, G_IM_SIZ_8b, GDF_PRERELEASE_WIDTH,
-                                GDF_PRERELEASE_HEIGHT, 0, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP,
-                                G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-            gSPTextureRectangle(gfx++, preLeft << 2, 212 << 2, (preLeft + GDF_PRERELEASE_WIDTH) << 2,
-                                (212 + GDF_PRERELEASE_HEIGHT) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
+            // "<version> Release" centred under it
+            EnMag_BuildVersionTex();
+            gSPInvalidateTexCache(gfx++, sGdfVerTex);
+            gDPLoadTextureBlock(gfx++, sGdfVerTex, G_IM_FMT_IA, G_IM_SIZ_8b, GDF_VER_TEX_W, GDF_VER_GLYPH_H, 0,
+                                G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            gSPTextureRectangle(gfx++, preLeft << 2, 212 << 2, (preLeft + GDF_VER_TEX_W) << 2,
+                                (212 + GDF_VER_GLYPH_H) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
         }
     }
 
