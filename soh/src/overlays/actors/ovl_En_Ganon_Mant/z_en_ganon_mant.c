@@ -1447,6 +1447,8 @@ static void EnGanonMant_DrawPlate(PlayState* play, EnGanonMant* this, Mtx* mtx) 
         prof[i][3] = back;
         prof[i][3].y -= drop;
     }
+    // (its own turn, stretch and shift: "plate.rot", "plate.scale_xyz", "plate.offset", along his torso)
+    BossGanon_Player_PieceAdjustPoints("plate", &prof[0][0], GANON_MANT_NUM_STRANDS * GDF_PLATE_ROWS);
     for (i = 0; i < GANON_MANT_NUM_STRANDS; i++) {
         Vec3f* pa = &prof[MAX(i - 1, 0)][1];
         Vec3f* pb = &prof[MIN(i + 1, GANON_MANT_NUM_STRANDS - 1)][1];

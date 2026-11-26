@@ -258,6 +258,7 @@ s32 BossGanon_Player_RobeHoodOn(void);
 s32 BossGanon_Player_KnightLook(void);
 void BossGanon_Player_PlateMaterialExt(Gfx** gfx, s32 trim); // the knight armour's plate material
 s32 BossGanon_Player_ArmorBackPoint(Vec3f* world, Vec3f* out); // where the cape's mount meets his back armour
+s32 BossGanon_Player_PieceAdjustPoints(const char* piece, Vec3f* points, s32 count); // "<piece>.rot/.scale_xyz/.offset"
 s32 BossGanon_Player_HelmetOn(void);   // the knight's helmet: Phantom Ganon's head in the armour's metal
 s32 BossGanon_Player_GetNeckFront(Vec3f* out); // where the cape's clasp chain crosses his throat // either tunic's Iron Knuckle armour // the mage robe's hood (GanondorfHood.cpp)
 // The guards hunt him (he murdered someone in the market and hasn't left by the drawbridge)

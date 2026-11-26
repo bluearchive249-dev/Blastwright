@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 #include "z_boss_ganon.h"
+#include <stdio.h>
 #include "z_boss_ganon_crack.h"
 #include "overlays/ovl_Boss_Ganon/ovl_Boss_Ganon.h"
 #include "overlays/actors/ovl_En_Ganon_Mant/z_en_ganon_mant.h"
@@ -4926,6 +4927,66 @@ s32 BossGanon_Player_GoronLook(void) {
 
 // SoH: "Play as Ganondorf", the front of his throat (just above his collarbones, a little out from his neck), for the
 // chain that fastens his cape round his neck (z_en_ganon_mant.c)
+// Every piece added to his armour has its own fine adjustment, in the space it's drawn in (his torso's: x up, y
+// forward, z across; the helmet's, his head's: x forward, y down, z across): "<piece>.rot", a turn in degrees about
+// x, y and z, and "<piece>.scale_xyz", a stretch along each. On the current matrix (after the piece is moved to its
+// place, before its own size).
+static void BossGanon_Player_PieceAdjust(const char* piece) {
+    char key[48];
+
+    snprintf(key, sizeof(key), "%s.rot", piece);
+    Matrix_RotateZYX(DEGF_TO_BINANG(GdfTuneAt(key, 0, 0.0f)), DEGF_TO_BINANG(GdfTuneAt(key, 1, 0.0f)),
+                     DEGF_TO_BINANG(GdfTuneAt(key, 2, 0.0f)), MTXMODE_APPLY);
+    snprintf(key, sizeof(key), "%s.scale_xyz", piece);
+    Matrix_Scale(GdfTuneAt(key, 0, 1.0f), GdfTuneAt(key, 1, 1.0f), GdfTuneAt(key, 2, 1.0f), MTXMODE_APPLY);
+}
+
+// The same for a piece built point by point in the world (the cape's mount, z_en_ganon_mant.c): each point turned and
+// stretched about the piece's middle along his torso's axes, then moved by "<piece>.offset" (torso units)
+s32 BossGanon_Player_PieceAdjustPoints(const char* piece, Vec3f* points, s32 count) {
+    MtxF inv;
+    MtxF adj;
+    Vec3f mid = { 0.0f, 0.0f, 0.0f };
+    char key[48];
+    Vec3f off;
+    s32 i;
+
+    if ((sPlayerGanondorf == NULL) || !sGdfLimbWorldValid || (count <= 0) ||
+        (SkinMatrix_Invert(&sGdfLimbWorld[1], &inv) != 0)) {
+        return false;
+    }
+    snprintf(key, sizeof(key), "%s.offset", piece);
+    off.x = GdfTuneAt(key, 0, 0.0f);
+    off.y = GdfTuneAt(key, 1, 0.0f);
+    off.z = GdfTuneAt(key, 2, 0.0f);
+    Matrix_Push();
+    Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
+    BossGanon_Player_PieceAdjust(piece);
+    Matrix_Get(&adj);
+    Matrix_Pop();
+    for (i = 0; i < count; i++) {
+        Vec3f l;
+
+        SkinMatrix_Vec3fMtxFMultXYZ(&inv, &points[i], &l);
+        points[i] = l;
+        mid.x += l.x / count;
+        mid.y += l.y / count;
+        mid.z += l.z / count;
+    }
+    for (i = 0; i < count; i++) {
+        Vec3f d = { points[i].x - mid.x, points[i].y - mid.y, points[i].z - mid.z };
+        Vec3f r;
+        Vec3f l;
+
+        SkinMatrix_Vec3fMtxFMultXYZ(&adj, &d, &r);
+        l.x = mid.x + r.x + off.x;
+        l.y = mid.y + r.y + off.y;
+        l.z = mid.z + r.z + off.z;
+        SkinMatrix_Vec3fMtxFMultXYZ(&sGdfLimbWorld[1], &l, &points[i]);
+    }
+    return true;
+}
+
 // The cape's armour mount (z_en_ganon_mant.c): where a point out behind him, along the cape's top, meets the back of
 // his armour: the point brought in toward his torso's middle onto an ellipse round it (in his torso's space: x up, y
 // forward, z across; keys "plate.back_depth", "plate.back_width"), at the same height
@@ -5422,6 +5483,7 @@ static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
     Matrix_Translate(GdfTuneAt("helmet.offset", 0, 0.0f), GdfTuneAt("helmet.offset", 1, 0.0f),
                      GdfTuneAt("helmet.offset", 2, 0.0f), MTXMODE_APPLY);
     Matrix_RotateZ(DEG_TO_RAD(GdfTune("helmet.tilt", 0.0f)), MTXMODE_APPLY);
+    BossGanon_Player_PieceAdjust("helmet");
     Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     Matrix_Pop();
@@ -5489,6 +5551,7 @@ static void BossGanon_Player_DrawLocket(PlayState* play, MtxF* limbs) {
     Matrix_Translate(GdfTuneAt("clasp.neck_point", 0, 1850.0f) + GdfTuneAt("emblem.offset", 0, 0.0f),
                      GdfTuneAt("clasp.neck_point", 1, 1600.0f) + GdfTuneAt("emblem.offset", 1, face ? 150.0f : 250.0f),
                      GdfTuneAt("clasp.neck_point", 2, 0.0f) + GdfTuneAt("emblem.offset", 2, 0.0f), MTXMODE_APPLY);
+    BossGanon_Player_PieceAdjust("emblem");
     if (face) {
         // (its model's across, up and forward to his torso's across, up and forward)
         MtxF turn = { 0 };
