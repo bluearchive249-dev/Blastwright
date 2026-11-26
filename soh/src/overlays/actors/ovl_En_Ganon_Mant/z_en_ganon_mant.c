@@ -1563,11 +1563,13 @@ static void EnGanonMant_ClaspPoint(f32 t, Vec3f* a, Vec3f* b, Vec3f* neck, f32 s
     f32 shape = GdfTune("clasp.shape", 2.0f);
 
     if (shape == 2.0f) {
-        // (the U: each half leaves its corner heading in toward his neck, clear of the pauldrons, at the corner's
-        // height, then curves down his chest into the V's point: "clasp.u_pull" how far in toward the middle it
-        // heads first (0-1), "clasp.u_forward" how far forward, toward the point, "clasp.u_drop" how far down)
-        f32 pull = GdfTune("clasp.u_pull", 0.65f);
-        f32 fwd = GdfTune("clasp.u_forward", 0.4f);
+        // (the U: each half leaves its corner heading down, its sides bowing outward a little, then curves in along
+        // the bottom into the V's point: "clasp.u_down" how far down it goes before it turns in (0-1, of the way down
+        // to the point), "clasp.u_pull" how far in (+) or out (-) its sides lean, "clasp.u_forward" how far forward,
+        // toward the point, and "clasp.u_drop" how much lower still)
+        f32 down = GdfTune("clasp.u_down", 0.55f);
+        f32 pull = GdfTune("clasp.u_pull", -0.1f);
+        f32 fwd = GdfTune("clasp.u_forward", 0.5f);
         f32 drop = GdfTune("clasp.u_drop", 0.0f);
         Vec3f mid = { (a->x + b->x) * 0.5f, (a->y + b->y) * 0.5f, (a->z + b->z) * 0.5f };
         Vec3f* corner = (t < 0.5f) ? a : b;
@@ -1576,7 +1578,7 @@ static void EnGanonMant_ClaspPoint(f32 t, Vec3f* a, Vec3f* b, Vec3f* neck, f32 s
         Vec3f c;
 
         c.x = corner->x + (mid.x - corner->x) * pull + (neck->x - mid.x) * fwd;
-        c.y = corner->y - drop;
+        c.y = corner->y + (neck->y - corner->y) * down - drop;
         c.z = corner->z + (mid.z - corner->z) * pull + (neck->z - mid.z) * fwd;
         p->x = u * u * corner->x + 2.0f * u * h * c.x + h * h * neck->x;
         p->y = u * u * corner->y + 2.0f * u * h * c.y + h * h * neck->y;
