@@ -375,7 +375,7 @@ BaseEdit& EditFor(Actor* a) {
     BaseEdit* b = FindEdit(a->room, index);
     if (b == nullptr) {
         BaseEdit n;
-        n.room = a->room;
+        n.room = (s16)a->room;
         n.index = index;
         n.id = a->id;
         sLayout.edits.push_back(n);
@@ -434,11 +434,7 @@ Actor* SpawnAdded(PlayState* play, const AddedActor& d) {
     Actor* a = Actor_Spawn(&play->actorCtx, play, d.id, d.pos.x, d.pos.y, d.pos.z, d.rot.x, d.rot.y, d.rot.z,
                            d.params);
     if (a != nullptr) {
-        if (d.room >= 0) {
-            a->room = d.room;
-        } else {
-            a->room = -1;
-        }
+        a->room = (s8)((d.room >= 0) ? d.room : -1);
         sAddedLive[d.uid] = a;
     }
     return a;
@@ -694,8 +690,8 @@ void DrawSelected(PlayState* play) {
         }
         bool whole = (added->room < 0);
         if (ImGui::Checkbox("Whole area (stays in every room)", &whole)) {
-            added->room = whole ? -1 : play->roomCtx.curRoom.num;
-            a->room = added->room;
+            added->room = (s16)(whole ? -1 : play->roomCtx.curRoom.num);
+            a->room = (s8)added->room;
             Changed();
         }
     }
@@ -838,7 +834,7 @@ void DrawAddTab(PlayState* play) {
         d.uid = sNextUid++;
         d.id = sAddId;
         d.params = (s16)sAddParams;
-        d.room = sAddWholeArea ? -1 : (s16)play->roomCtx.curRoom.num;
+        d.room = (s16)(sAddWholeArea ? -1 : play->roomCtx.curRoom.num);
         d.pos = InFront(play, 120.0f);
         d.rot = { 0, (s16)(GET_PLAYER(play)->actor.shape.rot.y + 0x8000), 0 };
         sLayout.added.push_back(d);
