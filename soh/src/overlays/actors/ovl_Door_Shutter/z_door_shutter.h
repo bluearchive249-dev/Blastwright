@@ -58,4 +58,9 @@ typedef struct DoorShutter {
     /* 0x0174 */ DoorShutterActionFunc actionFunc;
 } DoorShutter; // size = 0x0178
 
+// SoH: "Play as Ganondorf": a door barred until its room is cleared, and his kick raising those bars without clearing
+// the room (a cleared room lets no enemy appear in it again, the Forest Temple's green Poe among them)
+s32 DoorShutter_GdfIsBarredTillClear(DoorShutter* this);
+void DoorShutter_GdfKickBarsOpen(DoorShutter* this);
+
 #endif

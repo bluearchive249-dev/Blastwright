@@ -382,6 +382,15 @@ void DoorShutter_WaitClear(DoorShutter* this, PlayState* play) {
     }
 }
 
+// SoH: "Play as Ganondorf": see z_door_shutter.h
+s32 DoorShutter_GdfIsBarredTillClear(DoorShutter* this) {
+    return this->actionFunc == DoorShutter_WaitClear;
+}
+
+void DoorShutter_GdfKickBarsOpen(DoorShutter* this) {
+    DoorShutter_SetupAction(this, DoorShutter_Unbar);
+}
+
 void DoorShutter_Unopenable(DoorShutter* this, PlayState* play) {
 }
 

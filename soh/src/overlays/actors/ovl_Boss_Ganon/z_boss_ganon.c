@@ -11269,9 +11269,12 @@ static s32 BossGanon_Player_IsShut(PlayState* play, Actor* a) {
         if (d->unlockTimer != 0) {
             return true; // small key or boss key
         }
+        if (DoorShutter_GdfIsBarredTillClear(d)) {
+            return true; // barred until the room is cleared
+        }
         switch (d->doorType) {
             case SHUTTER_FRONT_CLEAR:
-                return !Flags_GetClear(play, a->room) && !Flags_GetTempClear(play, a->room);
+                return false;
             case SHUTTER_FRONT_SWITCH:
             case SHUTTER_FRONT_SWITCH_BACK_CLEAR:
                 return !Flags_GetSwitch(play, flag);
@@ -11393,9 +11396,10 @@ static void BossGanon_Player_BreakDoor(BossGanon* this, PlayState* play, Actor* 
             Flags_SetSwitch(play, flag);
             GdfInvasion_KeepKickedSwitch(flag);
             Audio_PlayActorSound2(a, NA_SE_EV_CHAIN_KEY_UNLOCK);
-        } else if (d->doorType == SHUTTER_FRONT_CLEAR) {
-            Flags_SetTempClear(play, a->room); // the bars give way (until he leaves the room)
-            GdfInvasion_KeepKickedClear(a->room);
+        } else if (DoorShutter_GdfIsBarredTillClear(d)) {
+            // The bars give way, and only they: the room isn't counted as cleared (a cleared room lets no enemy appear
+            // in it again, and some rooms need one to: the Forest Temple's green Poe rises from her block puzzle)
+            DoorShutter_GdfKickBarsOpen(d);
         } else {
             Flags_SetSwitch(play, flag);
             GdfInvasion_KeepKickedSwitch(flag);
@@ -16198,6 +16202,13 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     if ((sGdfTridentState != GDF_TRIDENT_IN_HAND) && (this->actionFunc != BossGanon_Player_TridentSpin) &&
         (this->actionFunc != BossGanon_Player_TridentThrow)) {
         sGdfTridentState = GDF_TRIDENT_IN_HAND;
+    }
+
+    // Saves from before the fix to his kick at barred doors: the Forest Temple's block puzzle room (room 16) marked
+    // cleared before its green Poe (Amy, switch flag 0x1F) was beaten, so she could never rise; lift that
+    if ((play->sceneNum == SCENE_FOREST_TEMPLE) && !ResourceMgr_IsSceneMasterQuest(SCENE_FOREST_TEMPLE) &&
+        !Flags_GetSwitch(play, 0x1F) && Flags_GetClear(play, 16)) {
+        Flags_UnsetClear(play, 16);
     }
 
     // He kicks doors open
