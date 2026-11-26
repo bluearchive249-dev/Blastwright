@@ -8584,6 +8584,18 @@ static void BossGanon_Player_UpdateWalk(BossGanon* this, PlayState* play) {
             speed = MAX(speed, moved);
         }
     }
+    // Going through a door: Link's door animation carries him in uneven steps (some frames none), which switched his
+    // walk on and off and changed its pace every frame, fighting his stance until the door was done. Evened out there.
+    {
+        static f32 sDoorSpeed = 0.0f;
+
+        if (inCs && (player->doorActor != NULL)) {
+            sDoorSpeed += (speed - sDoorSpeed) * 0.2f;
+            speed = sDoorSpeed;
+        } else {
+            sDoorSpeed = speed;
+        }
+    }
     moving = (speed > 0.5f) && (sGdfRoaming || inCs || (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND));
     sGdfWalkSpeed = speed;
 
