@@ -5528,6 +5528,157 @@ static void BossGanon_Player_DrawHelmet(PlayState* play, MtxF* limbs) {
 #define GDF_TOWER_FACE_DL "__OTR__scenes/nonmq/ganontika_scene/ganontika_room_1DL_00B710"
 #define GDF_TOWER_FACE_WIDTH 265.0f // (its model's width; its middle at 0, 383, -313 in the hall, facing +z)
 
+// The tower face in the armour's own metal: its model rebuilt once into a copy with the light falling on it (its own
+// vertices carry colours, not the directions they face, so each triangle gets its own), drawn first in the plate's
+// shiny material, then its own texture laid over that as shade only, darkening the metal where its carved lines are,
+// so its detail stays. Key "emblem.lines": how dark its lines (0-255); "emblem.trim": 1 for the trim's colour.
+#define GDF_FACE_MAX_TRIS 200
+static Vtx sGdfFaceVtx[GDF_FACE_MAX_TRIS * 3];
+static Gfx sGdfFaceMetalDL[GDF_FACE_MAX_TRIS * 2 + 2];
+static Gfx sGdfFaceLinesDL[GDF_FACE_MAX_TRIS * 2 + 600];
+static u8 sGdfFaceBuilt = 0; // (1 built, 2 couldn't be)
+
+static s32 BossGanon_Player_BuildFace(void) {
+    Gfx* src = ResourceMgr_LoadGfxByName(GDF_TOWER_FACE_DL);
+    Vtx buf[64];
+    Gfx* metal = sGdfFaceMetalDL;
+    Gfx* lines = sGdfFaceLinesDL;
+    s32 nv = 0;
+    s32 i = 0;
+
+    if (sGdfFaceBuilt != 0) {
+        return sGdfFaceBuilt == 1;
+    }
+    sGdfFaceBuilt = 2;
+    if (src == NULL) {
+        return false;
+    }
+    memset(buf, 0, sizeof(buf));
+    while (i < 4096) {
+        u8 op = src[i].words.w0 >> 24;
+        s32 size = ((op == G_DL_OTR_HASH) || (op == G_MARKER) || (op == G_MTX_OTR) || (op == G_BRANCH_Z_OTR) ||
+                    (op == G_MOVEMEM_OTR) || (op == G_SETTIMG_OTR_HASH) || (op == G_VTX_OTR_HASH) ||
+                    (op == G_SETTIMG_OTR_FILEPATH) || (op == G_VTX_OTR_FILEPATH) || (op == G_DL_OTR_FILEPATH))
+                       ? 2
+                       : 1;
+        s32 k;
+
+        if (op == 0xDF) {
+            break;
+        }
+        if (op == G_VTX_OTR_HASH) {
+            uintptr_t off = src[i].words.w1;
+            u64 hash = ((u64)src[i + 1].words.w0 << 32) | (u32)src[i + 1].words.w1;
+            s32 n = (src[i].words.w0 >> 12) & 0xFF;
+            s32 v0 = ((src[i].words.w0 >> 1) & 0x7F) - n;
+            Vtx* from = (off > 0xFFFFF) ? (Vtx*)off : ResourceMgr_LoadVtxByCRC(hash);
+
+            if (from == NULL) {
+                return false;
+            }
+            if (off <= 0xFFFFF) {
+                from = (Vtx*)((u8*)from + off);
+            }
+            for (k = 0; (k < n) && (v0 + k < 64); k++) {
+                if (v0 + k >= 0) {
+                    buf[v0 + k] = from[k];
+                }
+            }
+        } else if ((op == G_TRI1) || (op == G_TRI2)) {
+            s32 t;
+
+            for (t = 0; t < ((op == G_TRI2) ? 2 : 1); t++) {
+                u32 w = (t == 0) ? src[i].words.w0 : src[i].words.w1;
+                s32 idx[3] = { ((w >> 16) & 0xFF) / 2, ((w >> 8) & 0xFF) / 2, (w & 0xFF) / 2 };
+                Vtx* out = &sGdfFaceVtx[nv];
+                f32 ax;
+                f32 ay;
+                f32 az;
+                f32 bx;
+                f32 by;
+                f32 bz;
+                f32 nx;
+                f32 ny;
+                f32 nz;
+                f32 l;
+
+                if (nv + 3 > ARRAY_COUNT(sGdfFaceVtx)) {
+                    break;
+                }
+                for (k = 0; k < 3; k++) {
+                    out[k] = buf[idx[k] & 63];
+                }
+                ax = out[1].v.ob[0] - out[0].v.ob[0];
+                ay = out[1].v.ob[1] - out[0].v.ob[1];
+                az = out[1].v.ob[2] - out[0].v.ob[2];
+                bx = out[2].v.ob[0] - out[0].v.ob[0];
+                by = out[2].v.ob[1] - out[0].v.ob[1];
+                bz = out[2].v.ob[2] - out[0].v.ob[2];
+                nx = ay * bz - az * by;
+                ny = az * bx - ax * bz;
+                nz = ax * by - ay * bx;
+                l = sqrtf(SQ(nx) + SQ(ny) + SQ(nz));
+                for (k = 0; k < 3; k++) {
+                    if (l > 0.001f) {
+                        out[k].n.n[0] = (s8)(nx / l * 120.0f);
+                        out[k].n.n[1] = (s8)(ny / l * 120.0f);
+                        out[k].n.n[2] = (s8)(nz / l * 120.0f);
+                    }
+                    out[k].n.a = 255;
+                }
+                gSPVertex(metal++, out, 3, 0);
+                gSP1Triangle(metal++, 0, 1, 2, 0);
+                gSPVertex(lines++, out, 3, 0);
+                gSP1Triangle(lines++, 0, 1, 2, 0);
+                nv += 3;
+            }
+        } else if ((op == G_SETCOMBINE) || (op == G_SETPRIMCOLOR) || (op == G_SETENVCOLOR) || (op == G_RDPSETOTHERMODE) ||
+                   (op == G_SETOTHERMODE_L) || (op == G_GEOMETRYMODE) || (op == G_CULLDL) || (op == G_DL) ||
+                   (op == G_DL_OTR_HASH) || (op == G_DL_OTR_FILEPATH) || (op == G_ENDDL)) {
+            // (its own colours, modes and calls: left out, ours instead)
+        } else if (lines + size < &sGdfFaceLinesDL[ARRAY_COUNT(sGdfFaceLinesDL) - 2]) {
+            // (its textures: kept, for the lines pass)
+            for (k = 0; k < size; k++) {
+                *lines++ = src[i + k];
+            }
+        }
+        i += size;
+    }
+    gSPEndDisplayList(metal++);
+    gSPEndDisplayList(lines++);
+    sGdfFaceBuilt = (nv > 0) ? 1 : 2;
+    return sGdfFaceBuilt == 1;
+}
+
+#define GDF_RM_LINES(clk)                                                                                  \
+    (AA_EN | Z_CMP | IM_RD | CVG_DST_WRAP | CLR_ON_CVG | FORCE_BL | ZMODE_DEC | \
+     GBL_c##clk(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA))
+
+static void BossGanon_Player_DrawFaceMetal(PlayState* play, Mtx* mtx) {
+    Gfx* g;
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    g = POLY_OPA_DISP;
+    BossGanon_Player_PlateMaterial(&g, GdfTune("emblem.trim", 0.0f) != 0.0f);
+    POLY_OPA_DISP = g;
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH);
+    gSPMatrix(POLY_OPA_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, sGdfFaceMetalDL);
+
+    // (its lines: black, as dark as its texture is, over the metal)
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gSPMatrix(POLY_XLU_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gDPPipeSync(POLY_XLU_DISP++);
+    gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH | G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_FOG);
+    gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPSetCombineLERP(POLY_XLU_DISP++, 0, 0, 0, 0, 1, TEXEL0, PRIMITIVE, 0, 0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 0, 0, 0, (u8)GdfTune("emblem.lines", 170.0f));
+    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_PASS, GDF_RM_LINES(2));
+    gSPDisplayList(POLY_XLU_DISP++, sGdfFaceLinesDL);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static Vtx sGdfLocketVtx[4] = {
     VTX(50, 0, -50, 0, 1024, 255, 255, 255, 255),
     VTX(50, 0, 50, 1024, 1024, 255, 255, 255, 255),
@@ -5564,10 +5715,17 @@ static void BossGanon_Player_DrawLocket(PlayState* play, MtxF* limbs) {
         Matrix_Mult(&turn, MTXMODE_APPLY);
         Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
         Matrix_Translate(0.0f, -383.0f, 313.0f, MTXMODE_APPLY);
-        Gfx_SetupDL_25Opa(play->state.gfxCtx);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        Matrix_Pop();
-        gSPDisplayList(POLY_OPA_DISP++, GDF_TOWER_FACE_DL);
+        if ((GdfTune("emblem.metal", 1.0f) != 0.0f) && BossGanon_Player_BuildFace()) {
+            Mtx* mtx = MATRIX_NEWMTX(play->state.gfxCtx);
+
+            Matrix_Pop();
+            BossGanon_Player_DrawFaceMetal(play, mtx);
+        } else {
+            Gfx_SetupDL_25Opa(play->state.gfxCtx);
+            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            Matrix_Pop();
+            gSPDisplayList(POLY_OPA_DISP++, GDF_TOWER_FACE_DL);
+        }
     } else {
         Matrix_Scale(width / 100.0f, width / 100.0f, width / 100.0f, MTXMODE_APPLY);
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
