@@ -5571,7 +5571,7 @@ static s32 BossGanon_Player_BuildFace(void) {
             u64 hash = ((u64)src[i + 1].words.w0 << 32) | (u32)src[i + 1].words.w1;
             s32 n = (src[i].words.w0 >> 12) & 0xFF;
             s32 v0 = ((src[i].words.w0 >> 1) & 0x7F) - n;
-            Vtx* from = (off > 0xFFFFF) ? (Vtx*)off : ResourceMgr_LoadVtxByCRC(hash);
+            Vtx* from = (off > 0xFFFFF) ? (Vtx*)off : (Vtx*)ResourceGetDataByCrc(hash);
 
             if (from == NULL) {
                 return false;
