@@ -60,7 +60,7 @@ typedef struct DoorShutter {
 
 // SoH: "Play as Ganondorf": a door barred until its room is cleared, and his kick raising those bars without clearing
 // the room (a cleared room lets no enemy appear in it again, the Forest Temple's green Poe among them)
-s32 DoorShutter_GdfIsBarredTillClear(DoorShutter* this);
-void DoorShutter_GdfKickBarsOpen(DoorShutter* this);
+s32 DoorShutter_GdfIsBarredTillClear(DoorShutter* door);
+void DoorShutter_GdfKickBarsOpen(DoorShutter* door);
 
 #endif
