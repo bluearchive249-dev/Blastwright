@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 """gdf_pocket.o2r: the blank area the Map Editor's custom areas are made in (the unused SCENE_SASATEST slot).
 
-It holds almost nothing: one room with no mesh, a small floor, one start point, one light setting. The game makes the
+It holds almost nothing: one room with no mesh, a small floor, one start point, four light settings. The game makes the
 rest when the area loads, from the custom area's layout file (GanondorfMapEditor.cpp: its ground, walls, footstep
 sound, light, fog and music). No game data goes in.
 
@@ -52,7 +52,8 @@ def build():
     files[room_path] = G.room_file([(dl.path, '')], objects=(), actors=(), echo=0, behavior=(0, 0), skymod=(1, 1))
     spawns = [G.actor_entry(0, (0, 0, 0), (0, 0, 0), 0x0FFF)]
     # One light setting (the game changes its colours and fog from the layout as the area loads)
-    lighting = [(80, 80, 80, 73, 73, 73, -1, -1, -16, -73, -73, -73, 60, 60, 80, 40, 40, 50, 2020, 12800)]
+    # (four alike: the game reads entries 0-3 by the time of day, and the Map Editor writes all four; POCKET_LIGHTS)
+    lighting = [(80, 80, 80, 73, 73, 73, -1, -1, -16, -73, -73, -73, 60, 60, 80, 40, 40, 50, 2020, 12800)] * 4
     files[BASE + f'{SCENE}_scene'] = G.scene_file([room_path], col_path, spawns, [(0, 0)], exits=(),
                                                    lighting=lighting, sound=(0, 19, 0x7F), special=(0, 3),
                                                    sky=(0, 0, 0, 1), camera=(0, 0))

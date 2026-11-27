@@ -888,12 +888,17 @@ void TriggersFrame(PlayState* play) {
 
 // ---- A custom area's light, fog and music ----
 
+// The blank area has POCKET_LIGHTS light settings (gdf_pocket.o2r). The game doesn't set its count of them for areas
+// loaded from files, so the count left from the area before is set right here (it was written past the list's end)
+#define POCKET_LIGHTS 4
+
 void ApplyAreaLook(PlayState* play) {
-    if (!InPocket(play) || (play->envCtx.lightSettingsList == nullptr) || (play->envCtx.numLightSettings == 0)) {
+    if (!InPocket(play) || (play->envCtx.lightSettingsList == nullptr)) {
         return;
     }
+    play->envCtx.numLightSettings = POCKET_LIGHTS;
     const AreaSpec& A = sLayout.area;
-    for (int k = 0; k < play->envCtx.numLightSettings; k++) {
+    for (int k = 0; k < POCKET_LIGHTS; k++) {
         EnvLightSettings* l = &play->envCtx.lightSettingsList[k];
         for (int i = 0; i < 3; i++) {
             l->ambientColor[i] = A.amb[i];
@@ -2372,6 +2377,11 @@ void AreaStart() {
     sMusicDelay = -1;
     if (InPocket(play)) {
         ApplyAreaLook(play);
+        // (should the area come up without a start point for him, he's given one rather than the game falling over)
+        static ActorEntry sFallbackStart = { ACTOR_PLAYER, { 0, 0, 0 }, { 0, 0, 0 }, 0x0FFF };
+        if (play->linkActorEntry == nullptr) {
+            play->linkActorEntry = &sFallbackStart;
+        }
         // Walked in (not put back after a fall or a reload): he arrives at the area's start point
         if ((gSaveContext.respawnFlag == 0) && (play->linkActorEntry != nullptr)) {
             const AreaSpec& A = sLayout.area;
