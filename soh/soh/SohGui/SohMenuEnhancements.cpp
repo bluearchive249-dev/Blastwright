@@ -2136,8 +2136,25 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "The roles swapped in Ganondorf's cutscenes: adult Link plays the villain's part, in his own voice. So "
-            "far: the drawbridge escape, where Link rides out on Epona and his Light Arrow drops Ganondorf to his "
-            "knees."));
+            "far: the opening nightmare (Link on Epona draws his bow on you), Zelda's courtyard window (Link kneels "
+            "to the king and glares up at her), the laughing giant (Link triumphant), and the drawbridge escape, "
+            "where Link rides out on Epona and his Light Arrow drops Ganondorf to his knees."));
+    AddWidget(path, "Play the Opening Nightmare", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;
+            info.options->disabled = (gPlayState == NULL);
+        })
+        .Options(ButtonOptions().Tooltip("Go straight to the opening nightmare (the storm at the castle gate) to "
+                                         "try \"Link as the Villain\" out. Your save's story flags are left alone.")
+                     .Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo& info) {
+            if (gPlayState != NULL) {
+                gPlayState->nextEntranceIndex = ENTR_HYRULE_FIELD_PAST_BRIDGE_SPAWN;
+                gSaveContext.nextCutsceneIndex = 0xFFF0;
+                gPlayState->transitionTrigger = TRANS_TRIGGER_START;
+                gPlayState->transitionType = TRANS_TYPE_FADE_BLACK_FAST;
+            }
+        });
     AddWidget(path, "Play the Drawbridge Scene", WIDGET_BUTTON)
         .PreFunc([](WidgetInfo& info) {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;

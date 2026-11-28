@@ -27,9 +27,47 @@
 // unchanged.
 s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId);
 
+// Link plays the villain in Ganondorf's cutscenes (Play as Ganondorf + the option)
+s32 GdfVillain_On(PlayState* play) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) &&
+           CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.VillainLink"), 1);
+}
+
+// The rider's cutscenes: the drawbridge escape (layer 5) and the opening nightmare (layer 4)
 s32 GdfVillain_Active(PlayState* play) {
-    return PlayAsGanondorf_ShouldHideLink(play, GET_PLAYER(play)) && CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.VillainLink"), 1) &&
-           (play->sceneNum == SCENE_HYRULE_FIELD) && (gSaveContext.sceneLayer == 5);
+    if (!GdfVillain_On(play) || (play->sceneNum != SCENE_HYRULE_FIELD)) {
+        return false;
+    }
+    if (gSaveContext.sceneLayer == 4) {
+        return true; // (the nightmare: none of the player's own on screen)
+    }
+    return PlayAsGanondorf_ShouldHideLink(play, GET_PLAYER(play)) && (gSaveContext.sceneLayer == 5);
+}
+
+// Cutscenes where every line spoken is the villain's (so Link's grunts can take their place): the drawbridge escape,
+// and the Temple of Time when the Master Sword is first pulled (the giant who thanks him for the way to the Sacred
+// Realm, En_Viewer type 7)
+s32 GdfVillain_SpeaksAlone(PlayState* play) {
+    Actor* a;
+
+    if (GdfVillain_Active(play)) {
+        return true;
+    }
+    if (!GdfVillain_On(play) || (play->sceneNum != SCENE_TEMPLE_OF_TIME) || (play->csCtx.state == CS_STATE_IDLE)) {
+        return false;
+    }
+    for (a = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head; a != NULL; a = a->next) {
+        if ((a->id == ACTOR_EN_VIEWER) && ((a->params >> 8) == ENVIEWER_TYPE_7_GANONDORF)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Ganondorf on foot in a cutscene (the courtyard's kneeling, the laughing giant, and the rest): Link in his place
+static s32 GdfVillain_Standing(PlayState* play, u8 type) {
+    return GdfVillain_On(play) && ((type == ENVIEWER_TYPE_5_GANONDORF) || (type == ENVIEWER_TYPE_7_GANONDORF) ||
+                                   (type == ENVIEWER_TYPE_8_GANONDORF) || (type == ENVIEWER_TYPE_9_GANONDORF));
 }
 void BossGanon_Player_CsStagger(s16 frames);
 
@@ -50,6 +88,11 @@ static s16 sVlArrowT = -1;
 static s16 sVlArrowHitT = 1;    // the frame the Light Arrow reaches him (its distance over the arrow's speed)
 static s16 sVlHorseYaw = 0;     // Epona's facing (from her draw)
 static s16 sVlAimYaw = 0;       // his upper body turned toward Ganondorf, from Epona's facing
+static SkelAnime sVsSkel;       // Link on foot, in Ganondorf's place
+static Vec3s sVsJoints[PLAYER_LIMB_BUF_COUNT];
+static Vec3s sVsMorph[PLAYER_LIMB_BUF_COUNT];
+static u8 sVsReady = false;
+static u8 sVsState = 0;
 #define GDF_VL_SEAT 7.0f        // his hips this far above the saddle (as the game seats Link: saddle - 27 + his hips)
 #define GDF_VL_ARROW_SPEED 150.0f // (an arrow's, see EnArrow_Shoot)
 
@@ -141,7 +184,10 @@ void EnViewer_Init(Actor* thisx, PlayState* play) {
         (Object_GetIndex(&play->objectCtx, OBJECT_HORSE) < 0)) {
         Object_Spawn(&play->objectCtx, OBJECT_HORSE); // (Epona)
     }
-    if (GdfVillain_Active(play) && (type == ENVIEWER_TYPE_3_GANONDORF)) {
+    if (GdfVillain_Standing(play, type)) {
+        sVsReady = false; // (Link stands in instead: no cape)
+        sVsState = 0;
+    } else if (GdfVillain_Active(play) && (type == ENVIEWER_TYPE_3_GANONDORF)) {
         sVlReady = false; // (Link rides instead: no cape)
         sVlBow = 0;
         sVlArrowT = -1;
@@ -323,7 +369,7 @@ static void EnViewer_UpdateVillainLink(EnViewer* this, PlayState* play) {
             }
             break;
     }
-    if (csFrames == 1508) {
+    if ((csFrames == 1508) && (gSaveContext.sceneLayer == 5)) {
         EnViewer_VillainVoice(this, NA_SE_VO_LI_SWORD_L); // (where Ganondorf laughed: a battle cry)
     }
     // His upper body turns to aim at Ganondorf while the bow is up (the bow points where his chest faces)
@@ -331,7 +377,8 @@ static void EnViewer_UpdateVillainLink(EnViewer* this, PlayState* play) {
         s16 target = 0;
 
         if ((sVlBow != 0) && sVlRiderValid) {
-            Vec3f to = player->actor.world.pos;
+            // (the drawbridge: at Ganondorf; the nightmare: at whoever watches it, the camera)
+            Vec3f to = (gSaveContext.sceneLayer == 4) ? play->view.eye : player->actor.world.pos;
 
             target = Math_Vec3f_Yaw(&sVlRider, &to) - sVlHorseYaw;
             target = CLAMP(target, -0x5000, 0x5000); // (as far round as he can twist in the saddle)
@@ -339,7 +386,7 @@ static void EnViewer_UpdateVillainLink(EnViewer* this, PlayState* play) {
         Math_SmoothStepToS(&sVlAimYaw, target, 3, 0x800, 0x40);
     }
     // The shot (where Ganondorf's magic flew): the game's own Light Arrow, loosed from his bow at Ganondorf's chest
-    if ((csFrames == 1545) && (sVlArrowT < 0)) {
+    if ((csFrames == 1545) && (sVlArrowT < 0) && (gSaveContext.sceneLayer == 5)) {
         Vec3f to = player->actor.world.pos;
         f32 dx, dy, dz, dxz;
         Actor* arrow;
@@ -396,6 +443,82 @@ static void EnViewer_UpdateVillainLink(EnViewer* this, PlayState* play) {
     }
 }
 
+// Link on foot where Ganondorf was: the cutscene's moments for him, as Link's
+static void EnViewer_VillainStandAnim(PlayState* play, LinkAnimationHeader* anim, f32 speed, s32 loop) {
+    if (sVsSkel.animation != anim) {
+        LinkAnimation_Change(play, &sVsSkel, anim, speed, 0.0f, Animation_GetLastFrame(anim),
+                             loop ? ANIMMODE_LOOP : ANIMMODE_ONCE, -8.0f);
+    }
+}
+
+static s32 EnViewer_VillainStandDone(void) {
+    return sVsSkel.curFrame >= sVsSkel.endFrame - 1.0f;
+}
+
+static void EnViewer_UpdateVillainStanding(EnViewer* this, PlayState* play, u8 type) {
+    s16 action = ((play->csCtx.state != CS_STATE_IDLE) && (play->csCtx.npcActions[1] != NULL))
+                     ? play->csCtx.npcActions[1]->action
+                     : 0;
+
+    if (!sVsReady) {
+        s32 age = gSaveContext.linkAge;
+
+        gSaveContext.linkAge = LINK_AGE_ADULT;
+        SkelAnime_InitLink(play, &sVsSkel, gPlayerSkelHeaders[LINK_AGE_ADULT],
+                           (LinkAnimationHeader*)gPlayerAnim_link_normal_wait, 9, sVsJoints, sVsMorph,
+                           PLAYER_LIMB_MAX);
+        gSaveContext.linkAge = age;
+        sVsReady = true;
+        sVsState = 0;
+    }
+    if (type == ENVIEWER_TYPE_8_GANONDORF) {
+        // Zelda's window: he walks in, kneels before the king, and lifts his face to glare up at her
+        switch (sVsState) {
+            case 0:
+                EnViewer_VillainStandAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_normal_wait, 1.0f, true);
+                if (action == 9) {
+                    sVsState = 1;
+                }
+                break;
+            case 1:
+                EnViewer_VillainStandAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_normal_walk, 1.0f, true);
+                if (action == 10) {
+                    sVsState = 2;
+                }
+                break;
+            case 2:
+                EnViewer_VillainStandAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_magic_tame, 1.0f, false);
+                if (action == 4) {
+                    sVsState = 3;
+                }
+                break;
+            case 3:
+                EnViewer_VillainStandAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_demo_kaoage, 1.0f, false);
+                if (EnViewer_VillainStandDone()) {
+                    sVsState = 4;
+                }
+                break;
+            default:
+                EnViewer_VillainStandAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_demo_kaoage_wait, 1.0f, true);
+                break;
+        }
+    } else if (type == ENVIEWER_TYPE_7_GANONDORF) {
+        // The giant who laughed: Link triumphant, his battle cry for the laugh
+        if ((sVsState == 0) && (action == 7)) {
+            sVsState = 1;
+            Audio_PlaySfxGeneral(NA_SE_VO_LI_SWORD_L, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                 &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+        EnViewer_VillainStandAnim(play,
+                                  (LinkAnimationHeader*)((sVsState == 0) ? gPlayerAnim_link_normal_wait
+                                                                         : gPlayerAnim_link_demo_get_itemA),
+                                  1.0f, sVsState == 0);
+    } else {
+        EnViewer_VillainStandAnim(play, (LinkAnimationHeader*)gPlayerAnim_link_normal_wait, 1.0f, true);
+    }
+    LinkAnimation_Update(play, &sVsSkel);
+}
+
 void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
     u8 type = this->actor.params >> 8;
     u16 csFrames;
@@ -408,6 +531,9 @@ void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
 
     if (villain && (type == ENVIEWER_TYPE_3_GANONDORF)) {
         EnViewer_UpdateVillainLink(this, play);
+    }
+    if (GdfVillain_Standing(play, type)) {
+        EnViewer_UpdateVillainStanding(this, play, type);
     }
 
     if (type == ENVIEWER_TYPE_2_ZELDA) {
@@ -650,8 +776,10 @@ void EnViewer_UpdateImpl(EnViewer* this, PlayState* play) {
             case 0:
                 if (play->csCtx.state != CS_STATE_IDLE && play->csCtx.npcActions[1] != NULL &&
                     play->csCtx.npcActions[1]->action == 7) {
-                    Audio_PlaySfxGeneral(NA_SE_EN_GANON_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                         &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                    if (!GdfVillain_Standing(play, type)) {
+                        Audio_PlaySfxGeneral(NA_SE_EN_GANON_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                             &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                    }
                     Animation_MorphToPlayOnce(&this->skin.skelAnime, &gYoungGanondorfLaughStartAnim, -5.0f);
                     this->state++;
                 }
@@ -742,6 +870,7 @@ void EnViewer_GanondorfPostLimbDrawUpdateCapeVec(PlayState* play, s32 limbIndex,
 }
 
 static void EnViewer_DrawVillainLink(EnViewer* this, PlayState* play);
+static void EnViewer_DrawVillainStanding(EnViewer* this, PlayState* play);
 
 void EnViewer_DrawGanondorf(EnViewer* this, PlayState* play) {
     s16 frames = 0;
@@ -749,6 +878,10 @@ void EnViewer_DrawGanondorf(EnViewer* this, PlayState* play) {
 
     if (GdfVillain_Active(play) && ((this->actor.params >> 8) == ENVIEWER_TYPE_3_GANONDORF)) {
         EnViewer_DrawVillainLink(this, play);
+        return;
+    }
+    if (GdfVillain_Standing(play, (u8)(this->actor.params >> 8))) {
+        EnViewer_DrawVillainStanding(this, play);
         return;
     }
 
@@ -891,6 +1024,40 @@ static void EnViewer_DrawVillainLink(EnViewer* this, PlayState* play) {
                     EnViewer_VillainOverrideLimbDraw, EnViewer_VillainPostLimbDraw, &this->actor);
     gSaveContext.linkAge = age;
 
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Link on foot: hands open, his sword and shield on his back
+static s32 EnViewer_VillainStandOverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
+                                                 void* thisx) {
+    if (limbIndex == PLAYER_LIMB_L_HAND) {
+        *dList = gLinkAdultLeftHandNearDL;
+    } else if (limbIndex == PLAYER_LIMB_R_HAND) {
+        *dList = gLinkAdultRightHandClosedNearDL;
+    } else if (limbIndex == PLAYER_LIMB_SHEATH) {
+        *dList = gLinkAdultHylianShieldSwordAndSheathNearDL;
+    }
+    return false;
+}
+
+static void EnViewer_DrawVillainStanding(EnViewer* this, PlayState* play) {
+    s32 age = gSaveContext.linkAge;
+    // (Link's size against Ganondorf's: the cutscene's 0.1 is his normal size, so the laughing giant stays a giant)
+    f32 scale = 0.01f * (this->actor.scale.x / 0.1f);
+
+    if (!sVsReady || (play->csCtx.state == CS_STATE_IDLE)) {
+        return;
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, MTXMODE_NEW);
+    Matrix_RotateY(BINANG_TO_RAD(this->actor.shape.rot.y), MTXMODE_APPLY);
+    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+    gSPSegment(POLY_OPA_DISP++, 0x0C, gCullBackDList);
+    gSPSegment(POLY_XLU_DISP++, 0x0C, gCullBackDList);
+    gSaveContext.linkAge = LINK_AGE_ADULT; // (his textures and parts, whatever age the player is)
+    Player_DrawImpl(play, sVsSkel.skeleton, sVsJoints, sVsSkel.dListCount, 0, PLAYER_TUNIC_KOKIRI, 0, 0,
+                    EnViewer_VillainStandOverrideLimbDraw, NULL, &this->actor);
+    gSaveContext.linkAge = age;
     CLOSE_DISPS(play->state.gfxCtx);
 }
 

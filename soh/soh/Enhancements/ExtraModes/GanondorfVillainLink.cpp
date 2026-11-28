@@ -13,7 +13,7 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 extern PlayState* gPlayState;
-s32 GdfVillain_Active(PlayState* play);
+s32 GdfVillain_SpeaksAlone(PlayState* play);
 }
 
 static const struct {
@@ -30,10 +30,10 @@ static s32 sVillainLine = 0;
 static void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     PlayState* play = gPlayState;
 
-    if ((play == NULL) || !GdfVillain_Active(play) || (play->csCtx.state == CS_STATE_IDLE)) {
+    if ((play == NULL) || !GdfVillain_SpeaksAlone(play) || (play->csCtx.state == CS_STATE_IDLE)) {
         return;
     }
-    // Every line in this cutscene is the rider's (Ganondorf's, now Link's)
+    // Every line in this cutscene is the villain's (Ganondorf's, now Link's)
     s32 i = sVillainLine++ % ARRAY_COUNT(sVillainLines);
     CustomMessage msg = CustomMessage(GdfFitBoxes(sVillainLines[i].text), TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM);
     msg.AutoFormat();
