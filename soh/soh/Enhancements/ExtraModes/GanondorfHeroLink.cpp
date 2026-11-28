@@ -29,6 +29,8 @@ extern "C" {
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 extern PlayState* gPlayState;
 void Player_DrawGameplay(PlayState* play, Player* this_, s32 lod, Gfx* cullDList, OverrideLimbDrawOpa overrideLimbDraw);
+Actor* BossGanon_HeroIncomingBall(PlayState* play, Actor* hero, f32 range, s32* big);
+void BossGanon_HeroReturnBall(PlayState* play, Actor* ball);
 }
 
 namespace {
@@ -55,6 +57,13 @@ struct HeroState {
     Actor* arrows[HERO_ARROWS] = {};
     s32 arrowNext = 0;
     Actor* din = nullptr;
+    // Tennis
+    Actor* swingBall = nullptr; // the light ball he's swinging at
+    bool swingGood = false;     // and whether he hits it
+    bool spinForBall = false;   // charging a spin attack for Ganondorf's Big Magic
+    bool spinGood = false;
+    s16 spinReflectT = 0;       // frames his released spin sends Big Magic back
+    f32 bigDist = 9999.0f;      // the nearest Big Magic coming at him
 };
 HeroState sH;
 
@@ -331,7 +340,10 @@ void SwordArts(PlayState* play, Player* hero, Input* input, bool ready) {
         sH.spin++;
         input->cur.stick_x = input->cur.stick_y = 0;
         PadUtils_UpdateRelXY(input);
-        if (sH.spin < hold) {
+        // (charged for the Big Magic: let go as it comes in)
+        bool keep = sH.spinForBall ? ((sH.bigDist > GdfTune("hero.spin_release_range", 170.0f)) && (sH.spin < 80))
+                                   : (sH.spin < hold);
+        if (keep) {
             input->cur.button = BTN_B | BTN_Z;
             input->press.button = 0;
             input->rel.button = 0;
@@ -342,6 +354,12 @@ void SwordArts(PlayState* play, Player* hero, Input* input, bool ready) {
             input->rel.button = BTN_B; // let go: the spin
             input->prev.button = BTN_Z;
             sH.spin = 0;
+            if (sH.spinForBall) {
+                sH.spinForBall = false;
+                sH.spinReflectT = 14;
+                sH.spinGood = Rand_ZeroOne() < GdfTune("hero.tennis_skill", 0.8f);
+                Audio_PlayActorSound2(&hero->actor, NA_SE_VO_LI_SWORD_L);
+            }
         }
         return;
     }
@@ -366,6 +384,73 @@ void SwordArts(PlayState* play, Player* hero, Input* input, bool ready) {
         SetStick(play, input, hero->actor.yawTowardsPlayer, 127.0f);
         Audio_PlayActorSound2(&hero->actor, NA_SE_VO_LI_SWORD_L);
     }
+}
+
+// Ganondorf's magic: his light balls sent back with a slash (and back again, if Ganondorf strikes them with B as they
+// reach him), his Big Magic with a spin attack. True when it took his controller this frame.
+bool Tennis(PlayState* play, Player* hero, Input* input, u8 attacking) {
+    s32 big = false;
+    Actor* ball;
+    f32 d;
+
+    if (!Tune("hero.tennis", 1.0f, 0, 1)) {
+        return false;
+    }
+    // His released spin: every Big Magic close enough goes back
+    if (sH.spinReflectT > 0) {
+        sH.spinReflectT--;
+        for (s32 i = 0; (i < 5) && sH.spinGood; i++) {
+            s32 isBig = false;
+            Actor* b = BossGanon_HeroIncomingBall(play, &hero->actor, GdfTune("hero.spin_reflect_range", 230.0f), &isBig);
+
+            if ((b == nullptr) || !isBig) {
+                break;
+            }
+            BossGanon_HeroReturnBall(play, b);
+        }
+    }
+    ball = (sH.act == HA_NONE) ? BossGanon_HeroIncomingBall(play, &hero->actor, 900.0f, &big) : nullptr;
+    d = (ball != nullptr) ? Math_Vec3f_DistXYZ(&hero->actor.world.pos, &ball->world.pos) : 9999.0f;
+    sH.bigDist = ((ball != nullptr) && big) ? d : 9999.0f;
+    if ((ball == nullptr) || !attacking || (hero->knockbackType != 0) || (sH.fallenT > 0)) {
+        return false;
+    }
+    if (big) {
+        // A spin attack, charged as it comes
+        if ((sH.spin == 0) && (d < GdfTune("hero.spin_charge_range", 520.0f)) &&
+            (hero->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && (hero->meleeWeaponState == 0)) {
+            sH.spin = 1;
+            sH.spinForBall = true;
+            input->cur.button = BTN_B | BTN_Z;
+            input->press.button = BTN_B;
+            input->prev.button = BTN_Z;
+            return true;
+        }
+        return false;
+    }
+    // A light ball: a slash to meet it, and back it goes
+    f32 speed = MAX(ball->speedXZ, 10.0f);
+
+    if ((sH.swingBall != ball) && (d < MAX(GdfTune("hero.swing_range", 170.0f), speed * 7.0f))) {
+        sH.swingBall = ball;
+        sH.swingGood = Rand_ZeroOne() < GdfTune("hero.tennis_skill", 0.8f);
+        sH.spin = 0;
+        hero->actor.shape.rot.y = hero->actor.world.rot.y = hero->yaw =
+            Math_Vec3f_Yaw(&hero->actor.world.pos, &ball->world.pos);
+        input->cur.button = BTN_B;
+        input->press.button = BTN_B;
+        input->prev.button = 0;
+        input->cur.stick_x = input->cur.stick_y = 0;
+        PadUtils_UpdateRelXY(input);
+        return true;
+    }
+    if ((sH.swingBall == ball) && sH.swingGood && (d < MAX(110.0f, speed * 2.5f))) {
+        BossGanon_HeroReturnBall(play, ball);
+        sH.swingBall = nullptr; // (ready for it when it comes back)
+        return false;
+    }
+    // (swinging at it: no bow or bombs until it's dealt with)
+    return sH.swingBall == ball;
 }
 
 void ResetState() {
@@ -448,6 +533,9 @@ extern "C" void GdfHero_Brain(Player* hero, PlayState* play, Input* input, u8 at
         sH.jumpCd--;
     }
     if (sH.fallenT > 0) {
+        return;
+    }
+    if (Tennis(play, hero, input, attacking)) {
         return;
     }
     if (sH.act != HA_NONE) {

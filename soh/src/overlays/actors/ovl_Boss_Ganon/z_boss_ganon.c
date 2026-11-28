@@ -24,6 +24,7 @@
 #include "soh/Enhancements/ExtraModes/GanondorfKills.h"
 #include "soh/Enhancements/ExtraModes/GanondorfIntro.h"
 #include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
+#include "soh/Enhancements/ExtraModes/GanondorfHeroLink.h"
 #include "soh/Enhancements/ExtraModes/GanondorfDance.h"
 #include "soh/Enhancements/ExtraModes/GanondorfRagdoll.h"
 #include "textures/icon_item_field_static/icon_item_field_static.h" // SoH: the map on the intro's war table
@@ -16913,6 +16914,30 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
 
 // Ganondorf's light ball, thrown by the player. Flies straight and bursts on enemies, walls and floors.
 
+// The Hero at the tower top (GanondorfHeroLink.cpp), still standing; NULL when he isn't here
+static Actor* BossGanon_Player_FindHero(PlayState* play) {
+    static const s32 cats[] = { ACTORCAT_BOSS, ACTORCAT_ENEMY };
+    s32 i;
+    Actor* actor;
+
+    for (i = 0; i < ARRAY_COUNT(cats); i++) {
+        for (actor = play->actorCtx.actorLists[cats[i]].head; actor != NULL; actor = actor->next) {
+            if ((actor->update != NULL) && GdfHero_Is(actor) && (actor->colChkInfo.health > 0)) {
+                return actor;
+            }
+        }
+    }
+    return NULL;
+}
+
+// A ball the Hero sent back hits Ganondorf (the player) like an enemy's attack
+static void BossGanon_PlayerBall_SetHeroAT(BossGanon* this, PlayState* play) {
+    this->collider.base.atFlags = AT_ON | AT_TYPE_ENEMY;
+    this->collider.info.toucher.damage = (u8)CLAMP((s32)GdfTune("hero.tennis_damage", 16.0f), 0, 255);
+    Collider_UpdateCylinder(&this->actor, &this->collider);
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+}
+
 // Points the ball at a spot (NULL: the nearest Link) at its speed
 static void BossGanon_PlayerBall_Aim(BossGanon* this, PlayState* play, Vec3f* at) {
     Vec3f target;
@@ -16935,6 +16960,9 @@ static void BossGanon_PlayerBall_Aim(BossGanon* this, PlayState* play, Vec3f* at
                 bestDist = d;
                 best = actor;
             }
+        }
+        if (best == NULL) {
+            best = BossGanon_Player_FindHero(play); // (the Hero at the tower top)
         }
         if (best == NULL) {
             return;
@@ -17020,6 +17048,82 @@ void BossGanon_Player_BallVolleyed(Vec3f* ballPos) {
     ball->actor.speedXZ = MIN(ball->actor.speedXZ * 1.1f, 40.0f);
     ball->timers[2] = 90;
     SoundSource_PlaySfxAtFixedWorldPos(gPlayState, &ball->actor.world.pos, 30, NA_SE_IT_SWORD_REFLECT_MG);
+}
+
+// ---- The Hero at the tower top plays tennis: his sword sends the light balls back, his spin attack the Big Magic ----
+
+// The nearest of Ganondorf's balls flying at him within range (NULL: none); *big: one of the Big Magic
+Actor* BossGanon_HeroIncomingBall(PlayState* play, Actor* hero, f32 range, s32* big) {
+    Actor* best = NULL;
+    f32 bestDist = range;
+    Actor* actor;
+    s32 i;
+
+    for (i = 0; i < ACTORCAT_MAX; i++) {
+        for (actor = play->actorCtx.actorLists[i].head; actor != NULL; actor = actor->next) {
+            BossGanon* ball = (BossGanon*)actor;
+            s32 isBig;
+            f32 d;
+
+            if ((actor->id != ACTOR_BOSS_GANON) || (actor->update == NULL)) {
+                continue;
+            }
+            if (actor->params == GDF_PARAMS_PLAYER_LIGHT_BALL) {
+                if ((ball->unk_1A8 != 0) || (ball->unk_1A6 != 0)) {
+                    continue; // bursting, on its way back to Ganondorf, or circling him (the fireball ring)
+                }
+                if (ABS((s16)(actor->world.rot.y - Math_Vec3f_Yaw(&actor->world.pos, &hero->world.pos))) > 0x2800) {
+                    continue; // not coming his way
+                }
+                isBig = false;
+            } else if ((actor->params >= GDF_PARAMS_PLAYER_BIG_MAGIC) &&
+                       (actor->params < GDF_PARAMS_PLAYER_BIG_MAGIC + GDF_PLAYER_BIG_MAGIC_COUNT)) {
+                if ((ball->unk_1C2 != 11) || (ball->unk_1A4 != 0)) {
+                    continue; // fading, or already sent back
+                }
+                isBig = true;
+            } else {
+                continue;
+            }
+            d = Math_Vec3f_DistXYZ(&hero->world.pos, &actor->world.pos);
+            if (d < bestDist) {
+                bestDist = d;
+                best = actor;
+                *big = isBig;
+            }
+        }
+    }
+    return best;
+}
+
+// He hits it back: a light ball flies at Ganondorf (who can send it back again with B as it reaches him), the Big
+// Magic turns and hunts Ganondorf
+void BossGanon_HeroReturnBall(PlayState* play, Actor* ballActor) {
+    BossGanon* ball = (BossGanon*)ballActor;
+
+    if ((ballActor == NULL) || (ballActor->update == NULL)) {
+        return;
+    }
+    if (ballActor->params == GDF_PARAMS_PLAYER_LIGHT_BALL) {
+        ball->unk_1A6 = 1;
+        ball->unk_1A4++;
+        ball->actor.speedXZ = MIN(ball->actor.speedXZ * 1.1f, 40.0f);
+        ball->timers[2] = 90;
+        if (sPlayerGanondorf != NULL) {
+            Vec3f him = sPlayerGanondorf->actor.world.pos;
+
+            him.y += 70.0f;
+            BossGanon_PlayerBall_Aim(ball, play, &him);
+        }
+    } else {
+        ball->unk_1A4 = 1;
+        ball->timers[0] = 0;
+        ball->timers[2] = 75;
+        ball->csCamMaxStepScale = 4096.0f; // (turns on him at once)
+        ball->actor.shape.rot.y += 0x8000;
+        ball->actor.shape.rot.x = (s16)-ball->actor.shape.rot.x;
+    }
+    SoundSource_PlaySfxAtFixedWorldPos(play, &ballActor->world.pos, 30, NA_SE_IT_SWORD_REFLECT_MG);
 }
 
 // A Link missed it (his game has hurt him): it bursts
@@ -17115,20 +17219,30 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
 
         him.y += 70.0f;
         dist = Math_Vec3f_DistXYZ(&this->actor.world.pos, &him);
+        u8 hero = (BossGanon_Player_FindHero(play) != NULL);
+
         if ((dist < 110.0f) && ((u32)(play->gameplayFrames - sGdfLastBFrame) < 8)) {
             BossGanon_PlayerBall_Aim(this, play, NULL);
             this->unk_1A6 = 0;
             this->unk_1A4++;
             this->actor.speedXZ = MIN(this->actor.speedXZ * 1.1f, 40.0f);
             this->timers[2] = 90;
+            this->collider.base.atFlags = AT_ON | AT_TYPE_PLAYER; // (his again)
+            this->collider.info.toucher.damage = 4;
             Audio_PlayActorSound2(&sPlayerGanondorf->actor, NA_SE_IT_SWORD_REFLECT_MG);
         } else if (dist < 50.0f) {
             GdfInvasion_BallHitGanondorf();
+            if (hero) {
+                BossGanon_PlayerBall_SetHeroAT(this, play); // (the Hero's return: it strikes him)
+            }
             burst = true;
             hitSomething = true;
         } else {
             BossGanon_PlayerBall_Aim(this, play, &him);
             this->timers[2] = MAX(this->timers[2], 30);
+            if (hero) {
+                BossGanon_PlayerBall_SetHeroAT(this, play);
+            }
         }
     }
 
@@ -17244,9 +17358,15 @@ static void BossGanon_PlayerBigMagic_Update_Impl(Actor* thisx, PlayState* play) 
         case 11:
             // Spread out for a moment, then home in
             if (this->timers[0] < 8) {
-                target = BossGanon_Player_FindTarget(play, &this->actor.world.pos, this->actor.shape.rot.y, 600.0f,
-                                                     0x6000, false);
-                targetPos = (target != NULL) ? target->focus.pos : this->unk_1F0;
+                if ((this->unk_1A4 != 0) && (sPlayerGanondorf != NULL) && (sPlayerGanondorf->actor.update != NULL)) {
+                    // Sent back by the Hero's spin attack: it hunts Ganondorf now
+                    targetPos = sPlayerGanondorf->actor.world.pos;
+                    targetPos.y += 70.0f;
+                } else {
+                    target = BossGanon_Player_FindTarget(play, &this->actor.world.pos, this->actor.shape.rot.y,
+                                                         600.0f, 0x6000, false);
+                    targetPos = (target != NULL) ? target->focus.pos : this->unk_1F0;
+                }
 
                 yawTarget = Math_Vec3f_Yaw(&this->actor.world.pos, &targetPos);
                 dist = sqrtf(SQ(targetPos.x - this->actor.world.pos.x) + SQ(targetPos.z - this->actor.world.pos.z));
@@ -17274,7 +17394,12 @@ static void BossGanon_PlayerBigMagic_Update_Impl(Actor* thisx, PlayState* play) 
                 numEffects = 10;
             }
 
-            if ((numEffects != 40) && !BossGanon_PlayerBall_NearLink(this, play)) {
+            if (this->unk_1A4 != 0) {
+                // (sent back: it hits only Ganondorf)
+                if (numEffects != 40) {
+                    BossGanon_PlayerBall_SetHeroAT(this, play);
+                }
+            } else if ((numEffects != 40) && !BossGanon_PlayerBall_NearLink(this, play)) {
                 // Still hits what it touches on the frame it bursts against a wall (eye switches). (In Invasion mode,
                 // near a Link his own game decides: only a spin attack stops it)
                 Collider_UpdateCylinder(&this->actor, &this->collider);
