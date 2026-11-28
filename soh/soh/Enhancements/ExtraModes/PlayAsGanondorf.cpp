@@ -40,6 +40,7 @@ extern "C" {
 #include "overlays/actors/ovl_Boss_Ganon/z_boss_ganon.h"
 #include "overlays/actors/ovl_Boss_Ganon2/z_boss_ganon2.h"
 extern PlayState* gPlayState;
+s32 GdfHero_GanondorfStunned(void);
 }
 
 #include "PlayAsGanondorf.h"
@@ -169,6 +170,12 @@ extern "C" s32 PlayAsGanondorf_UseOrganOcarina(void) {
 
 extern "C" s32 PlayAsGanondorf_IsLevitating(void) {
     return sLevitating;
+}
+
+// Struck out of the air (the Hero's fight at the tower top): he drops, no floating down
+extern "C" void PlayAsGanondorf_KnockOutOfAir(void) {
+    sLevitating = false;
+    sSoftLanding = false;
 }
 
 extern "C" s32 PlayAsGanondorf_IsDorfOut(PlayState* play) {
@@ -341,7 +348,7 @@ static void UpdateLevitation(PlayState* play, Player* player, BossGanon* dorf) {
     }
 
     if (!sLevitating) {
-        if (up && !notAllowed && BossGanon_Player_CanAct(&dorf->actor)) {
+        if (up && !notAllowed && BossGanon_Player_CanAct(&dorf->actor) && !GdfHero_GanondorfStunned()) {
             sLevitating = true;
             sSoftLanding = false;
             sLevitateY = player->actor.world.pos.y;

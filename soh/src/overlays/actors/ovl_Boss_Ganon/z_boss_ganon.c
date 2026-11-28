@@ -7784,8 +7784,7 @@ static ColliderCylinderInit sPlayerPoundCylinderInit = {
 #define GDF_GRAB_FLYING 2
 #define GDF_GRAB_DOWN 3
 static Actor* sGdfGrabActor = NULL;
-static u32 sGdfGrabBusyFrame = 0;
-static u32 sGdfLastBFrame = 0xFFFF0000; // when Ganondorf last pressed B (the volley) // the last frame he held someone (Invasion mode's grab cooldown)
+static u32 sGdfGrabBusyFrame = 0; // the last frame he held someone (Invasion mode's grab cooldown)
 static u8 sGdfGrabState = GDF_GRAB_NONE;
 static u8 sGdfGrabIsEnemy = false;
 // SoH: bosses too: who's held is a boss (lifted, slammed, and hit as it comes to)
@@ -16537,9 +16536,6 @@ static void BossGanon_Player_Update_Impl(Actor* thisx, PlayState* play) {
     if (sGdfGrabState != GDF_GRAB_NONE) {
         sGdfGrabBusyFrame = play->gameplayFrames;
     }
-    if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
-        sGdfLastBFrame = play->gameplayFrames; // (the volley)
-    }
     // Invasion mode: pacified
     if (GdfInvasion_IsPacified()) {
         if (this->actionFunc != BossGanon_Player_Pacified) {
@@ -16930,14 +16926,6 @@ static Actor* BossGanon_Player_FindHero(PlayState* play) {
     return NULL;
 }
 
-// A ball the Hero sent back hits Ganondorf (the player) like an enemy's attack
-static void BossGanon_PlayerBall_SetHeroAT(BossGanon* this, PlayState* play) {
-    this->collider.base.atFlags = AT_ON | AT_TYPE_ENEMY;
-    this->collider.info.toucher.damage = (u8)CLAMP((s32)GdfTune("hero.tennis_damage", 16.0f), 0, 255);
-    Collider_UpdateCylinder(&this->actor, &this->collider);
-    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
-}
-
 // Points the ball at a spot (NULL: the nearest Link) at its speed
 static void BossGanon_PlayerBall_Aim(BossGanon* this, PlayState* play, Vec3f* at) {
     Vec3f target;
@@ -17096,7 +17084,7 @@ Actor* BossGanon_HeroIncomingBall(PlayState* play, Actor* hero, f32 range, s32* 
     return best;
 }
 
-// He hits it back: a light ball flies at Ganondorf (who can send it back again with B as it reaches him), the Big
+// He hits it back: a light ball flies at Ganondorf (whose cape, up as it reaches him, swats it back again), the Big
 // Magic turns and hunts Ganondorf
 void BossGanon_HeroReturnBall(PlayState* play, Actor* ballActor) {
     BossGanon* ball = (BossGanon*)ballActor;
@@ -17211,8 +17199,9 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
         burst = true;
     }
 
-    // Invasion mode, the volley: sent back by a Link, the ball flies at Ganondorf; B just as it reaches him sends it
-    // back at a Link (a little faster each time), missing gets him hit
+    // The volley (Invasion mode's Links, and the Hero at the tower top): sent back, the ball flies at Ganondorf; his
+    // cape up (R) as it reaches him swats it back (a little faster each time), as it does the tower Ganondorf's own
+    // balls. Missing gets him hit
     if ((this->unk_1A6 != 0) && (sPlayerGanondorf != NULL) && (sPlayerGanondorf->actor.update != NULL)) {
         Vec3f him = sPlayerGanondorf->actor.world.pos;
         f32 dist;
@@ -17221,7 +17210,7 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
         dist = Math_Vec3f_DistXYZ(&this->actor.world.pos, &him);
         u8 hero = (BossGanon_Player_FindHero(play) != NULL);
 
-        if ((dist < 110.0f) && ((u32)(play->gameplayFrames - sGdfLastBFrame) < 8)) {
+        if ((dist < 110.0f) && BossGanon_Player_IsCapeUp(&sPlayerGanondorf->actor)) {
             BossGanon_PlayerBall_Aim(this, play, NULL);
             this->unk_1A6 = 0;
             this->unk_1A4++;
@@ -17233,16 +17222,13 @@ static void BossGanon_PlayerLightBall_Update_Impl(Actor* thisx, PlayState* play)
         } else if (dist < 50.0f) {
             GdfInvasion_BallHitGanondorf();
             if (hero) {
-                BossGanon_PlayerBall_SetHeroAT(this, play); // (the Hero's return: it strikes him)
+                GdfHero_StunGanondorf(play); // (the Hero won the rally: down Ganondorf goes, open to his sword)
             }
             burst = true;
             hitSomething = true;
         } else {
             BossGanon_PlayerBall_Aim(this, play, &him);
             this->timers[2] = MAX(this->timers[2], 30);
-            if (hero) {
-                BossGanon_PlayerBall_SetHeroAT(this, play);
-            }
         }
     }
 
@@ -17395,9 +17381,13 @@ static void BossGanon_PlayerBigMagic_Update_Impl(Actor* thisx, PlayState* play) 
             }
 
             if (this->unk_1A4 != 0) {
-                // (sent back: it hits only Ganondorf)
-                if (numEffects != 40) {
-                    BossGanon_PlayerBall_SetHeroAT(this, play);
+                // (sent back: it reaches only Ganondorf, and strikes him down)
+                if ((numEffects != 40) && (sPlayerGanondorf != NULL) &&
+                    (Math_Vec3f_DistXYZ(&this->actor.world.pos, &sPlayerGanondorf->actor.world.pos) < 110.0f)) {
+                    GdfHero_StunGanondorf(play);
+                    numEffects = 40;
+                    this->unk_1C2 = 1;
+                    this->actor.speedXZ = 0.0f;
                 }
             } else if ((numEffects != 40) && !BossGanon_PlayerBall_NearLink(this, play)) {
                 // Still hits what it touches on the frame it bursts against a wall (eye switches). (In Invasion mode,

@@ -24,6 +24,11 @@ u16 GdfHero_Music(void);
 // leaves the player's magic meter alone)
 s32 GdfHero_OwnsMagic(Actor* magicParent);
 u8 GdfHero_DinDamage(void);
+// The classic rules, roles swapped: levitating, Ganondorf (the player) can't be touched; a ball the Hero wins the
+// rally with, or his Light Arrow, knocks him out of the air, stunned and open to the Master Sword for a while
+s32 GdfHero_ShieldsGanondorf(PlayState* play);
+s32 GdfHero_GanondorfStunned(void);
+void GdfHero_StunGanondorf(PlayState* play);
 
 #ifdef __cplusplus
 }

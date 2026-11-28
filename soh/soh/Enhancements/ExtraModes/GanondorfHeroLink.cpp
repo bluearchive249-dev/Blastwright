@@ -30,6 +30,9 @@ extern "C" {
 extern PlayState* gPlayState;
 void Player_DrawGameplay(PlayState* play, Player* this_, s32 lod, Gfx* cullDList, OverrideLimbDrawOpa overrideLimbDraw);
 Actor* BossGanon_HeroIncomingBall(PlayState* play, Actor* hero, f32 range, s32* big);
+void BossGanon_Player_CsStagger(s16 frames);
+s32 PlayAsGanondorf_IsLevitating(void);
+void PlayAsGanondorf_KnockOutOfAir(void);
 void BossGanon_HeroReturnBall(PlayState* play, Actor* ball);
 }
 
@@ -64,6 +67,11 @@ struct HeroState {
     bool spinGood = false;
     s16 spinReflectT = 0;       // frames his released spin sends Big Magic back
     f32 bigDist = 9999.0f;      // the nearest Big Magic coming at him
+    // The classic rules
+    s16 stunT = 0;      // frames Ganondorf lies stunned, open to the sword
+    u32 seenFrame = 0;  // the last frame he fought (he's here)
+    bool engaged = false;
+    s16 strafe = 0;     // his drift along the edge
 };
 HeroState sH;
 
@@ -77,6 +85,16 @@ bool HeroOn() {
 
 s32 Tune(const char* key, f32 def, s32 lo, s32 hi) {
     return CLAMP((s32)GdfTune(key, def), lo, hi);
+}
+
+bool Classic() {
+    return Tune("hero.classic", 1.0f, 0, 1) != 0;
+}
+
+// Ganondorf aloft and not stunned: the Hero keeps to the edge, and nothing of his touches him but the rally and the
+// Light Arrow
+bool GanondorfAloft() {
+    return Classic() && PlayAsGanondorf_IsLevitating() && (sH.stunT == 0);
 }
 
 bool ActorStillThere(PlayState* play, Actor* a, s32 cat) {
@@ -198,7 +216,9 @@ void RunAct(PlayState* play, Player* hero, Input* input) {
         case HA_BOW:
             if (t == 0) {
                 static const s16 kinds[] = { ARROW_FIRE, ARROW_ICE, ARROW_LIGHT };
-                sH.arrow = kinds[(s32)Rand_ZeroFloat(2.99f)];
+                // (at Ganondorf in the air only the Light Arrow will do)
+                sH.arrow = (Classic() && PlayAsGanondorf_IsLevitating()) ? ARROW_LIGHT
+                                                                        : kinds[(s32)Rand_ZeroFloat(2.99f)];
                 hero->itemAction = hero->heldItemAction = PLAYER_IA_BOW_LIGHT;
                 Player_SetModelGroup(hero, PLAYER_MODELGROUP_BOW_SLINGSHOT);
                 Anim(play, hero, gPlayerAnim_link_bow_bow_ready, false);
@@ -386,7 +406,7 @@ void SwordArts(PlayState* play, Player* hero, Input* input, bool ready) {
     }
 }
 
-// Ganondorf's magic: his light balls sent back with a slash (and back again, if Ganondorf strikes them with B as they
+// Ganondorf's magic: his light balls sent back with a slash (and back again, if Ganondorf's cape is up, R, as they
 // reach him), his Big Magic with a spin attack. True when it took his controller this frame.
 bool Tennis(PlayState* play, Player* hero, Input* input, u8 attacking) {
     s32 big = false;
@@ -453,6 +473,56 @@ bool Tennis(PlayState* play, Player* hero, Input* input, u8 attacking) {
     return sH.swingBall == ball;
 }
 
+// Ganondorf aloft: away from the middle, out along the edge of the floor, where his bow and his sword's returns do the
+// work. (He comes in for the kill when Ganondorf is struck down, and duels him whenever he stands on the floor.)
+void KeepToEdge(PlayState* play, Player* hero, Input* input) {
+    f32 d = hero->actor.xzDistToPlayer;
+    f32 keep = GdfTune("hero.keep_away", 380.0f);
+    s16 away = (s16)(hero->actor.yawTowardsPlayer + 0x8000);
+
+    input->cur.button &= (u16) ~(BTN_A | BTN_B);
+    input->press.button &= (u16) ~(BTN_A | BTN_B);
+    if (sH.spin > 0) {
+        return;
+    }
+    if (d < keep) {
+        SetStick(play, input, away, 127.0f); // back out
+    } else {
+        // Drifting round the edge, facing him
+        if (--sH.strafe <= -90) {
+            sH.strafe = 90;
+        }
+        if (d > keep + 160.0f) {
+            input->cur.stick_x = input->cur.stick_y = 0;
+            PadUtils_UpdateRelXY(input);
+        } else {
+            SetStick(play, input, (s16)(hero->actor.yawTowardsPlayer + ((sH.strafe > 0) ? 0x4000 : -0x4000)), 45.0f);
+        }
+        input->cur.button |= BTN_Z;
+    }
+}
+
+// His Light Arrows reaching Ganondorf aloft (whom nothing touches then): struck down
+void LightArrowsReach(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Vec3f chest = player->actor.world.pos;
+
+    chest.y += 60.0f;
+    for (Actor*& a : sH.arrows) {
+        if ((a == nullptr) || !ActorStillThere(play, a, ACTORCAT_ITEMACTION)) {
+            a = nullptr;
+            continue;
+        }
+        if ((a->params == ARROW_LIGHT) && (Math_Vec3f_DistXYZ(&a->world.pos, &chest) < 70.0f) && Classic()) {
+            EffectSsHitMark_SpawnFixedScale(play, 3, &chest);
+            Audio_PlayActorSound2(&player->actor, NA_SE_IT_EXPLOSION_LIGHT);
+            GdfHero_StunGanondorf(play);
+            Actor_Kill(a);
+            a = nullptr;
+        }
+    }
+}
+
 void ResetState() {
     sH = HeroState();
 }
@@ -516,6 +586,12 @@ extern "C" u16 GdfHero_Music(void) {
 }
 
 extern "C" void GdfHero_Brain(Player* hero, PlayState* play, Input* input, u8 attacking) {
+    sH.seenFrame = play->gameplayFrames;
+    sH.engaged = attacking && (sH.fallenT == 0);
+    if (sH.stunT > 0) {
+        sH.stunT--;
+    }
+    LightArrowsReach(play);
     if (sH.nayru > 0) {
         sH.nayru--;
         if ((sH.nayru % 5) == 0) {
@@ -570,20 +646,24 @@ extern "C" void GdfHero_Brain(Player* hero, PlayState* play, Input* input, u8 at
             RunAct(play, hero, input);
             return;
         }
-        if ((d < 150.0f) && (sH.dinCd == 0) && Tune("hero.din", 1.0f, 0, 1) &&
+        if ((d < 150.0f) && (sH.dinCd == 0) && Tune("hero.din", 1.0f, 0, 1) && !GanondorfAloft() &&
             (Rand_ZeroOne() < GdfTune("hero.din_chance", 0.03f))) {
             StartAct(play, hero, HA_DIN);
             RunAct(play, hero, input);
             return;
         }
         if ((d > GdfTune("hero.ranged_from", 300.0f)) && (sH.cooldown == 0)) {
-            bool bomb = (d < 650.0f) && Tune("hero.bombs", 1.0f, 0, 1) && (Rand_ZeroOne() < 0.4f);
+            bool bomb = (d < 650.0f) && Tune("hero.bombs", 1.0f, 0, 1) && !GanondorfAloft() && (Rand_ZeroOne() < 0.4f);
             if (bomb || Tune("hero.bow", 1.0f, 0, 1)) {
                 StartAct(play, hero, bomb ? HA_BOMB : HA_BOW);
                 RunAct(play, hero, input);
                 return;
             }
         }
+    }
+    if (GanondorfAloft()) {
+        KeepToEdge(play, hero, input);
+        return;
     }
     SwordArts(play, hero, input, ready);
 }
@@ -705,4 +785,29 @@ extern "C" s32 GdfHero_OwnsMagic(Actor* magicParent) {
 
 extern "C" u8 GdfHero_DinDamage(void) {
     return (u8)Tune("hero.din_damage", 16.0f, 0, 255);
+}
+
+extern "C" s32 GdfHero_GanondorfStunned(void) {
+    PlayState* play = gPlayState;
+
+    return (play != nullptr) && ((u32)(play->gameplayFrames - sH.seenFrame) < 3) && (sH.stunT > 0);
+}
+
+extern "C" s32 GdfHero_ShieldsGanondorf(PlayState* play) {
+    return (play != nullptr) && ((u32)(play->gameplayFrames - sH.seenFrame) < 3) && sH.engaged && GanondorfAloft();
+}
+
+extern "C" void GdfHero_StunGanondorf(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Vec3f chest = player->actor.world.pos;
+
+    if (!Classic() || (sH.stunT > 0)) {
+        return;
+    }
+    sH.stunT = (s16)Tune("hero.stun_frames", 170.0f, 20, 2000);
+    chest.y += 60.0f;
+    EffectSsHitMark_SpawnFixedScale(play, 3, &chest);
+    Audio_PlayActorSound2(&player->actor, NA_SE_EN_GANON_DAMAGE2);
+    PlayAsGanondorf_KnockOutOfAir();
+    BossGanon_Player_CsStagger(sH.stunT); // (down on his knees once he lands)
 }
