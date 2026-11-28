@@ -45,6 +45,7 @@ s32 GdfHero_GanondorfStunned(void);
 
 #include "PlayAsGanondorf.h"
 #include "GanondorfInvasion.h"
+#include "GanondorfTuning.h"
 
 #define CVAR_PLAY_AS_GDF(var) CVAR_ENHANCEMENT("PlayAsGanondorf." var)
 #define CVAR_PLAY_AS_GDF_ENABLED CVAR_PLAY_AS_GDF("Enabled")
@@ -920,10 +921,55 @@ extern "C" u16 PlayAsGanondorf_GetNaviSfx(u16 sfxId) {
 #define GDF_CS_CAM_FAR 260.0f  // this far: of something else
 extern "C" s32 BossGanon_Player_SwdKickView(PlayState* play, Vec3f* eye, Vec3f* at);
 
+// Link as the villain in Ganondorf's cutscenes (z_en_viewer.c): where he's shown this frame, at what size (1: as tall
+// as Link, the laughing giant more), and whether on Epona
+static Vec3f sVillainPos;
+static f32 sVillainScale = 1.0f;
+static bool sVillainRider = false;
+static u32 sVillainFrame = 0;
+
+extern "C" void GdfVillain_NoteShown(Vec3f* pos, f32 scale, s32 rider) {
+    if (gPlayState == NULL) {
+        return;
+    }
+    sVillainPos = *pos;
+    sVillainScale = scale;
+    sVillainRider = rider != 0;
+    sVillainFrame = gPlayState->gameplayFrames;
+}
+
+// The cutscene's shots are framed for Ganondorf, a head and more taller than Link: a shot of Link in his place comes
+// down by the difference, so all of him is in it. (A shot of something else is left as it is, one in between moves
+// part way.)
+static bool LowerForVillain(PlayState* play, Vec3f* eye, Vec3f* at) {
+    if ((play == NULL) || (play->csCtx.state == CS_STATE_IDLE) || ((u32)(play->gameplayFrames - sVillainFrame) > 2)) {
+        return false;
+    }
+    f32 k = sVillainScale;
+    Vec3f chest = sVillainPos;
+    chest.y += (sVillainRider ? 100.0f : 50.0f) * k;
+    f32 d = Math_Vec3f_DistXYZ(at, &chest);
+    f32 w = 1.0f - CLAMP((d - 150.0f * k) / (250.0f * k), 0.0f, 1.0f);
+
+    w = w * w * (3.0f - 2.0f * w);
+    f32 drop = GdfTune(sVillainRider ? "villain.rider_camera_drop" : "villain.camera_drop", 30.0f) * k * w;
+    if (drop <= 0.0f) {
+        return false;
+    }
+    at->y -= drop;
+    eye->y -= drop;
+    return true;
+}
+
 extern "C" s32 PlayAsGanondorf_AdjustCutsceneView(Camera* camera, Vec3f* eye, Vec3f* at) {
     PlayState* play = camera->play;
     Player* player = (play != NULL) ? GET_PLAYER(play) : NULL;
     f32 lift = CVarGetFloat(CVAR_PLAY_AS_GDF("CutsceneCameraLift"), 1.0f);
+
+    // Link as the villain: framed for Ganondorf's height, brought down to his
+    if (IsEnabled() && LowerForVillain(play, eye, at)) {
+        return true;
+    }
 
     // The Master Sword kicked into the wall: a shot of it flying there (z_boss_ganon.c)
     if ((play != NULL) && IsEnabled() && (camera->thisIdx == play->activeCamera) &&

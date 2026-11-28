@@ -70,6 +70,7 @@ static s32 GdfVillain_Standing(PlayState* play, u8 type) {
                                    (type == ENVIEWER_TYPE_8_GANONDORF) || (type == ENVIEWER_TYPE_9_GANONDORF));
 }
 void BossGanon_Player_CsStagger(s16 frames);
+void GdfVillain_NoteShown(Vec3f* pos, f32 scale, s32 rider);
 
 static SkelAnime sVlSkel;       // the riding Link
 static Vec3s sVlJoints[PLAYER_LIMB_BUF_COUNT];
@@ -877,10 +878,12 @@ void EnViewer_DrawGanondorf(EnViewer* this, PlayState* play) {
     s16 type;
 
     if (GdfVillain_Active(play) && ((this->actor.params >> 8) == ENVIEWER_TYPE_3_GANONDORF)) {
+        GdfVillain_NoteShown(&this->actor.world.pos, 1.0f, true); // (for the cutscene camera: framed for him)
         EnViewer_DrawVillainLink(this, play);
         return;
     }
     if (GdfVillain_Standing(play, (u8)(this->actor.params >> 8))) {
+        GdfVillain_NoteShown(&this->actor.world.pos, this->actor.scale.x / 0.1f, false);
         EnViewer_DrawVillainStanding(this, play);
         return;
     }
