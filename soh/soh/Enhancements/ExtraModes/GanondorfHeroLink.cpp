@@ -527,6 +527,8 @@ void ResetState() {
     sH = HeroState();
 }
 
+s16 sPendingScene = -1; // the Hero is due here
+
 void OnSpawnEntry(bool* should, va_list args) {
     ActorContext* actorCtx = va_arg(args, ActorContext*);
     ActorEntry* entry = va_arg(args, ActorEntry*);
@@ -540,14 +542,31 @@ void OnSpawnEntry(bool* should, va_list args) {
     // The tower Ganondorf's place: the Hero, waiting before the organ (its room, carpet and statues stay)
     *should = false;
     Flags_SetSwitch(play, 0x14);
-    Actor_Spawn(actorCtx, play, ACTOR_EN_GANON_ORGAN, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0);
-    *out = Actor_Spawn(actorCtx, play, ACTOR_EN_TORCH2, 0.0f, 0.0f, GdfTune("hero.start_z", -150.0f), 0, 0, 0,
-                       GDF_HERO_PARAMS);
+    *out = Actor_Spawn(actorCtx, play, ACTOR_EN_GANON_ORGAN, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0);
+    // He comes a moment later, once the room is loaded: Dark Link's actor needs an object this room doesn't load, and
+    // while a room is loading the game spawns nothing without its object
+    sPendingScene = play->sceneNum;
+}
+
+void SpawnPendingHero() {
+    PlayState* play = gPlayState;
+
+    if ((play == nullptr) || (sPendingScene < 0)) {
+        return;
+    }
+    if (play->sceneNum != sPendingScene) {
+        sPendingScene = -1; // (gone before he came)
+        return;
+    }
+    sPendingScene = -1;
+    Actor_Spawn(&play->actorCtx, play, ACTOR_EN_TORCH2, 0.0f, 0.0f, GdfTune("hero.start_z", -150.0f), 0, 0, 0,
+                GDF_HERO_PARAMS);
 }
 
 void RegisterHeroLink() {
     REGISTER_VB_SHOULD(VB_SPAWN_ACTOR_ENTRY, { OnSpawnEntry(should, args); });
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) { ResetState(); });
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayerUpdate>([]() { SpawnPendingHero(); });
 }
 
 RegisterShipInitFunc initFunc(RegisterHeroLink, {});
