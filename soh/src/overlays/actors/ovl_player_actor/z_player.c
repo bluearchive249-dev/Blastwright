@@ -1753,7 +1753,8 @@ void Player_RequestRumble(Player* this, s32 sourceStrength, s32 duration, s32 de
 }
 
 void Player_PlayVoiceSfx(Player* this, u16 sfxId) {
-    if (this->actor.category == ACTORCAT_PLAYER) {
+    // (the Hero at the tower top: Link's own voice, not Dark Link's lowered one)
+    if ((this->actor.category == ACTORCAT_PLAYER) || GdfHero_Is(&this->actor)) {
         Player_PlaySfx(this, sfxId + this->ageProperties->unk_92);
     } else {
         func_800F4190(&this->actor.projectedPos, sfxId);

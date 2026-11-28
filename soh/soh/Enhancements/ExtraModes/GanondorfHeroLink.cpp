@@ -72,6 +72,7 @@ struct HeroState {
     u32 seenFrame = 0;  // the last frame he fought (he's here)
     bool engaged = false;
     s16 strafe = 0;     // his drift along the edge
+    s16 closeT = 0;     // frames Ganondorf has been right on him
 };
 HeroState sH;
 
@@ -94,7 +95,16 @@ bool Classic() {
 // Ganondorf aloft and not stunned: the Hero keeps to the edge, and nothing of his touches him but the rally and the
 // Light Arrow
 bool GanondorfAloft() {
-    return Classic() && PlayAsGanondorf_IsLevitating() && (sH.stunT == 0);
+    PlayState* play = gPlayState;
+    bool aloft = PlayAsGanondorf_IsLevitating();
+
+    if (!aloft && (play != nullptr)) {
+        // (also floating down, or anywhere well off the floor)
+        Player* player = GET_PLAYER(play);
+        aloft = !(player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
+                (player->actor.world.pos.y - player->actor.floorHeight > GdfTune("hero.aloft_height", 45.0f));
+    }
+    return Classic() && aloft && (sH.stunT == 0);
 }
 
 bool ActorStillThere(PlayState* play, Actor* a, s32 cat) {
@@ -294,7 +304,7 @@ void RunAct(PlayState* play, Player* hero, Input* input) {
             } else if (t == 54) {
                 Anim(play, hero, gPlayerAnim_link_magic_honoo3, false);
             } else if (t >= 72) {
-                sH.dinCd = (s16)Tune("hero.din_wait", 360.0f, 30, 5000);
+                sH.dinCd = (s16)Tune("hero.din_wait", 900.0f, 30, 5000);
                 EndAct(play, hero);
             }
             break;
@@ -590,6 +600,14 @@ extern "C" void GdfHero_Init(Player* hero, PlayState* play) {
     hero->meleeWeaponQuads[0].info.toucher.damage = hero->meleeWeaponQuads[1].info.toucher.damage =
         (u8)Tune("hero.sword_damage", 8.0f, 0, 255);
     hero->actor.shape.rot.y = hero->actor.world.rot.y = 0;
+    hero->actor.naviEnemyId = 0xFF; // (not Dark Link's)
+}
+
+// Struck (and not killed): he's back to the fight once he's back on his feet. (Dark Link sinks into the floor and
+// comes up elsewhere: not the Hero)
+extern "C" s32 GdfHero_Recovered(Player* hero) {
+    return !(hero->stateFlags1 & PLAYER_STATE1_DAMAGED) && (hero->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
+           (hero->knockbackType == 0);
 }
 
 extern "C" s32 GdfHero_Engages(Player* hero, PlayState* play) {
@@ -606,6 +624,7 @@ extern "C" u16 GdfHero_Music(void) {
 
 extern "C" void GdfHero_Brain(Player* hero, PlayState* play, Input* input, u8 attacking) {
     sH.seenFrame = play->gameplayFrames;
+    sH.closeT = (hero->actor.xzDistToPlayer < 150.0f) ? (s16)MIN(sH.closeT + 1, 3000) : 0;
     sH.engaged = attacking && (sH.fallenT == 0);
     if (sH.stunT > 0) {
         sH.stunT--;
@@ -666,7 +685,8 @@ extern "C" void GdfHero_Brain(Player* hero, PlayState* play, Input* input, u8 at
             return;
         }
         if ((d < 150.0f) && (sH.dinCd == 0) && Tune("hero.din", 1.0f, 0, 1) && !GanondorfAloft() &&
-            (Rand_ZeroOne() < GdfTune("hero.din_chance", 0.03f))) {
+            (sH.closeT >= Tune("hero.din_crowded", 75.0f, 0, 2000)) &&
+            (Rand_ZeroOne() < GdfTune("hero.din_chance", 0.006f))) {
             StartAct(play, hero, HA_DIN);
             RunAct(play, hero, input);
             return;
@@ -682,6 +702,15 @@ extern "C" void GdfHero_Brain(Player* hero, PlayState* play, Input* input, u8 at
     }
     if (GanondorfAloft()) {
         KeepToEdge(play, hero, input);
+        return;
+    }
+    // Up close he presses the attack: slashes, and combos as he keeps at it
+    if (ready && (sH.spin == 0) && (d < GdfTune("hero.sword_range", 100.0f)) &&
+        (Rand_ZeroOne() < GdfTune("hero.sword_chance", 0.2f))) {
+        hero->actor.world.rot.y = hero->actor.shape.rot.y = hero->actor.yawTowardsPlayer;
+        input->cur.button |= BTN_B;
+        input->press.button |= BTN_B;
+        input->prev.button &= (u16)~BTN_B;
         return;
     }
     SwordArts(play, hero, input, ready);
@@ -709,7 +738,8 @@ extern "C" s32 GdfHero_TakeHit(Player* hero, PlayState* play) {
             (u8)MAX(1, (sH.maxHealth * Tune("hero.fairy_heal_percent", 50.0f, 1, 100)) / 100);
         hero->actor.colChkInfo.damage = 0;
         hero->invincibilityTimer = 40;
-        Audio_PlayActorSound2(&hero->actor, NA_SE_EV_FIATY_HEAL);
+        Audio_PlayActorSound2(&hero->actor, NA_SE_EV_BUTTERFRY_TO_FAIRY); // (the fairy's heal sound loops)
+        Audio_PlayActorSound2(&hero->actor, NA_SE_SY_HP_RECOVER);
         Sparkles(play, &at, 16, 255, 160, 255);
         return false;
     }
@@ -745,6 +775,15 @@ extern "C" s32 GdfHero_Fallen(Player* hero, PlayState* play) {
     }
     if (t == 70) {
         Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS_CLEAR);
+    }
+    // And the game's ending (as after Ganon: the Chamber of Sages, then the credits)
+    if ((t == (s16)Tune("hero.ending_after", 300.0f, 80, 3000)) && Tune("hero.ending", 1.0f, 0, 1) &&
+        (play->transitionTrigger == TRANS_TRIGGER_OFF)) {
+        play->nextEntranceIndex = ENTR_CHAMBER_OF_THE_SAGES_0;
+        gSaveContext.nextCutsceneIndex = 0xFFF2;
+        play->transitionTrigger = TRANS_TRIGGER_START;
+        play->transitionType = TRANS_TYPE_FADE_WHITE;
+        play->linkAgeOnLoad = 1;
     }
     if (t > 30000) {
         sH.fallenT = 100;

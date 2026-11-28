@@ -20,6 +20,7 @@ s32 GdfHero_TakeHit(Player* hero, PlayState* play); // before his damage: false 
 s32 GdfHero_Fallen(Player* hero, PlayState* play);  // beaten: true while he lies there (no fading away)
 void GdfHero_Draw(Player* hero, PlayState* play);
 u16 GdfHero_Music(void);
+s32 GdfHero_Recovered(Player* hero); // struck: back on his feet
 // Din's Fire and his elemental arrows: the spell is his, not the player's (it follows him, hurts Ganondorf, and
 // leaves the player's magic meter alone)
 s32 GdfHero_OwnsMagic(Actor* magicParent);

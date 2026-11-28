@@ -553,6 +553,13 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
         case ENTORCH2_DAMAGE:
             this->meleeWeaponState = 0;
             input->cur.stick_x = input->cur.stick_y = 0;
+            if (GdfHero_Is(thisx)) {
+                if ((this->invincibilityTimer < 12) && GdfHero_Recovered(this)) {
+                    this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+                    sActionState = ENTORCH2_ATTACK;
+                }
+                break;
+            }
             if ((this->invincibilityTimer > 0) && (this->actor.world.pos.y < (this->actor.floorHeight - 160.0f))) {
                 this->stateFlags3 &= ~PLAYER_STATE3_IGNORE_CEILING_FLOOR_WATER;
                 this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
@@ -690,7 +697,9 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
                 this->knockbackRot = this->actor.yawTowardsPlayer + 0x8000;
                 Actor_SetDropFlag(&this->actor, &this->cylinder.info, 1);
                 this->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
-                this->stateFlags3 |= PLAYER_STATE3_IGNORE_CEILING_FLOOR_WATER;
+                if (!GdfHero_Is(thisx)) {
+                    this->stateFlags3 |= PLAYER_STATE3_IGNORE_CEILING_FLOOR_WATER; // (the Hero doesn't sink away)
+                }
                 sActionState = ENTORCH2_DAMAGE;
                 if (sAlpha == 255) {
                     Actor_SetColorFilter(&this->actor, 0x4000, 0xFF, 0, 0xC);
