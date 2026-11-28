@@ -2138,7 +2138,36 @@ void SohMenu::AddMenuEnhancements() {
             "The roles swapped in Ganondorf's cutscenes: adult Link plays the villain's part, in his own voice. So "
             "far: the opening nightmare (Link on Epona draws his bow on you), Zelda's courtyard window (Link kneels "
             "to the king and glares up at her), the laughing giant (Link triumphant), and the drawbridge escape, "
-            "where Link rides out on Epona and his Light Arrow drops Ganondorf to his knees."));
+            "where Link rides out on Epona and his Light Arrow drops Ganondorf to his knees. And at the top of Ganon's "
+            "Tower, Link is the one waiting for you (see below)."));
+    AddWidget(path, "The Hero at the Tower Top", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("PlayAsGanondorf.HeroBoss"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0) ||
+                            (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.VillainLink"), 1) == 0);
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "The final battle with the roles swapped: at the top of Ganon's Tower, Link waits before the organ in "
+            "the tower Ganondorf's place. He fights with Link's own moveset at full strength (slashes, combos, "
+            "spin and jump attacks, rolls, backflips, the Mirror Shield) and his whole kit: Fire, Ice and Light "
+            "Arrows, bombs, Din's Fire, Nayru's Love, potions and a fairy. Double defence. Every number can be "
+            "tuned in ganondorf_tuning.json (hero.*)."));
+    AddWidget(path, "Fight the Hero", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0) ||
+                            (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.VillainLink"), 1) == 0);
+            info.options->disabled = (gPlayState == NULL);
+        })
+        .Options(ButtonOptions().Tooltip("Go straight to the top of Ganon's Tower to fight the Hero. Your save's "
+                                         "story flags are left alone.")
+                     .Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo& info) {
+            if (gPlayState != NULL) {
+                gPlayState->nextEntranceIndex = ENTR_GANONDORF_BOSS_0;
+                gPlayState->transitionTrigger = TRANS_TRIGGER_START;
+                gPlayState->transitionType = TRANS_TYPE_FADE_BLACK_FAST;
+            }
+        });
     AddWidget(path, "Play the Opening Nightmare", WIDGET_BUTTON)
         .PreFunc([](WidgetInfo& info) {
             info.isHidden = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) == 0;

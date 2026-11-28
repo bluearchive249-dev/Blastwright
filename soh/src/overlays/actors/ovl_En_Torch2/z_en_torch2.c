@@ -6,6 +6,7 @@
 
 #include "z_en_torch2.h"
 #include "soh/Enhancements/ExtraModes/GanondorfInvasion.h"
+#include "soh/Enhancements/ExtraModes/GanondorfHeroLink.h"
 #include "objects/object_torch2/object_torch2.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -149,7 +150,8 @@ void EnTorch2_Init(Actor* thisx, PlayState* play2) {
         s32 age = gSaveContext.linkAge;
 
         gSaveContext.linkAge = LINK_AGE_ADULT;
-        play->playerInit(this, play, &gDarkLinkSkel);
+        // (Play as Ganondorf: the Hero is adult Link himself)
+        play->playerInit(this, play, GdfHero_Is(thisx) ? gPlayerSkelHeaders[0] : &gDarkLinkSkel);
         gSaveContext.linkAge = age;
     }
     this->actor.naviEnemyId = 0x26;
@@ -177,6 +179,11 @@ void EnTorch2_Init(Actor* thisx, PlayState* play2) {
     sLastSwordAnim = 0;
     sAlpha = 95;
     sSpawnPoint = this->actor.home.pos;
+    // Play as Ganondorf: the Hero at the tower top, whole from the start (Dark Link fades in, and holds back until then)
+    if (GdfHero_Is(thisx)) {
+        GdfHero_Init(this, play);
+        sAlpha = 255;
+    }
 }
 
 void EnTorch2_Destroy(Actor* thisx, PlayState* play) {
@@ -283,7 +290,7 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
             this->actor.world.pos.x = (Math_SinS(this->actor.world.rot.y) * 25.0f) + sSpawnPoint.x;
             this->actor.world.pos.z = (Math_CosS(this->actor.world.rot.y) * 25.0f) + sSpawnPoint.z;
             if ((this->actor.xzDistToPlayer <= 120.0f) || Actor_IsTargeted(play, &this->actor) ||
-                (attackItem != NULL)) {
+                (attackItem != NULL) || (GdfHero_Is(thisx) && GdfHero_Engages(this, play))) {
                 if (attackItem != NULL) {
                     sDodgeRollState = 1;
                     sStickAngle = this->actor.yawTowardsPlayer;
@@ -299,7 +306,7 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
                 // Disable miniboss music with Enemy Randomizer because the music would keep
                 // playing if the enemy was never defeated, which is common with Enemy Randomizer.
                 if (!CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0)) {
-                    func_800F5ACC(NA_BGM_MINI_BOSS);
+                    func_800F5ACC(GdfHero_Is(thisx) ? GdfHero_Music() : NA_BGM_MINI_BOSS);
                 }
                 sActionState = ENTORCH2_ATTACK;
             }
@@ -579,6 +586,10 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
             break;
 
         case ENTORCH2_DEATH:
+            // The Hero doesn't fade away: he falls and stays down
+            if (GdfHero_Is(thisx) && GdfHero_Fallen(this, play)) {
+                break;
+            }
             if (sAlpha - 13 <= 0) {
                 sAlpha = 0;
                 GameInteractor_ExecuteOnEnemyDefeat(&this->actor);
@@ -646,7 +657,10 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
         (this->cylinder.base.acFlags & AC_HIT) && !(this->stateFlags1 & PLAYER_STATE1_DAMAGED) &&
         !(this->meleeWeaponQuads[0].base.atFlags & AT_HIT) && !(this->meleeWeaponQuads[1].base.atFlags & AT_HIT)) {
 
-        if (!Actor_ApplyDamage(&this->actor)) {
+        // The Hero: his defence, his fairy and Nayru's Love first
+        if (GdfHero_Is(thisx) && !GdfHero_TakeHit(this, play)) {
+            this->cylinder.base.acFlags &= ~AC_HIT;
+        } else if (!Actor_ApplyDamage(&this->actor)) {
             func_800F5B58();
             this->actor.flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
             this->knockbackType = 2;
@@ -660,7 +674,7 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
             Item_DropCollectibleRandom(play, &this->actor, &thisx->world.pos, 0xC0);
             this->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
         } else {
-            func_800F5ACC(NA_BGM_MINI_BOSS);
+            func_800F5ACC(GdfHero_Is(thisx) ? GdfHero_Music() : NA_BGM_MINI_BOSS);
             if (this->actor.colChkInfo.damageEffect == 1) {
                 if (sAlpha == 255) {
                     Actor_SetColorFilter(&this->actor, 0, 0xFF, 0, 0x50);
@@ -706,6 +720,11 @@ void EnTorch2_Update(Actor* thisx, PlayState* play2) {
         input->cur.button = 0;
         input->press.button = 0;
         this->linearVelocity = 0.0f;
+    }
+
+    // The Hero: his bow, bombs, spells, potions and sword arts, over Dark Link's fencing
+    if (GdfHero_Is(thisx)) {
+        GdfHero_Brain(this, play, input, (sActionState == ENTORCH2_ATTACK) && !possessed);
     }
 
     play->playerUpdate(this, play, input);
@@ -831,6 +850,11 @@ void EnTorch2_Draw(Actor* thisx, PlayState* play2) {
     PlayState* play = play2;
     Player* this = (Player*)thisx;
     s32 pad;
+
+    if (GdfHero_Is(thisx)) {
+        GdfHero_Draw(this, play);
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
     func_80093C80(play);

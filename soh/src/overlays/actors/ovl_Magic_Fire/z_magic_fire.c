@@ -5,6 +5,7 @@
  */
 
 #include "z_magic_fire.h"
+#include "soh/Enhancements/ExtraModes/GanondorfHeroLink.h"
 #include "soh/ResourceManagerHelpers.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA)
@@ -93,8 +94,18 @@ void MagicFire_Init(Actor* thisx, PlayState* play) {
     this->actor.room = -1;
 }
 
+// Play as Ganondorf: the Hero's own Din's Fire (cast at the tower top) is his, not the player's
+static Actor* MagicFire_Caster(MagicFire* this, PlayState* play) {
+    if ((this->actor.parent != NULL) && (this->actor.parent->update != NULL) && GdfHero_Is(this->actor.parent)) {
+        return this->actor.parent;
+    }
+    return &GET_PLAYER(play)->actor;
+}
+
 void MagicFire_Destroy(Actor* thisx, PlayState* play) {
-    Magic_Reset(play);
+    if (!GdfHero_OwnsMagic(thisx->parent)) {
+        Magic_Reset(play);
+    }
 }
 
 void MagicFire_UpdateBeforeCast(Actor* thisx, PlayState* play) {
@@ -109,9 +120,9 @@ void MagicFire_UpdateBeforeCast(Actor* thisx, PlayState* play) {
         this->actionTimer--;
     } else {
         this->actor.update = MagicFire_Update;
-        Player_PlaySfx(&player->actor, NA_SE_PL_MAGIC_FIRE);
+        Player_PlaySfx(MagicFire_Caster(this, play), NA_SE_PL_MAGIC_FIRE);
     }
-    this->actor.world.pos = player->actor.world.pos;
+    this->actor.world.pos = MagicFire_Caster(this, play)->world.pos;
 }
 
 void MagicFire_Update(Actor* thisx, PlayState* play) {
@@ -119,7 +130,7 @@ void MagicFire_Update(Actor* thisx, PlayState* play) {
     Player* player = GET_PLAYER(play);
     s32 pad;
 
-    this->actor.world.pos = player->actor.world.pos;
+    this->actor.world.pos = MagicFire_Caster(this, play)->world.pos;
     if ((play->msgCtx.msgMode == MSGMODE_OCARINA_CORRECT_PLAYBACK) || (play->msgCtx.msgMode == MSGMODE_SONG_PLAYED)) {
         Actor_Kill(&this->actor);
         return;
@@ -128,6 +139,9 @@ void MagicFire_Update(Actor* thisx, PlayState* play) {
         this->collider.info.toucher.damage = this->actionTimer + 25;
     } else if (this->action == DF_ACTION_STOP_EXPANDING) {
         this->collider.info.toucher.damage = this->actionTimer;
+    }
+    if (MagicFire_Caster(this, play) != &player->actor) {
+        this->collider.info.toucher.damage = GdfHero_DinDamage(); // (his, on Ganondorf)
     }
     Collider_UpdateCylinder(&this->actor, &this->collider);
     this->collider.dim.radius = (this->actor.scale.x * 325.0f);

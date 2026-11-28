@@ -5,6 +5,7 @@
  */
 
 #include "z_arrow_ice.h"
+#include "soh/Enhancements/ExtraModes/GanondorfHeroLink.h"
 
 #include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
 
@@ -56,7 +57,10 @@ void ArrowIce_Init(Actor* thisx, PlayState* play) {
 }
 
 void ArrowIce_Destroy(Actor* thisx, PlayState* play) {
-    Magic_Reset(play);
+    // (the Hero's arrows at the tower top leave the player's magic alone)
+    if (!GdfHero_OwnsMagic(thisx->parent)) {
+        Magic_Reset(play);
+    }
     LOG_STRING("消滅"); // "Disappearance"
 }
 
