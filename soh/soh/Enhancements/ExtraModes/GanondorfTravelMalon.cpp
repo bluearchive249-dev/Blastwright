@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Grimsfrost. All rights reserved. No copying, editing or additions, by people or AI tools, without the author's written consent. See AI-POLICY.md.
 // SoH: "Play as Ganondorf", the traveller's Malon. The public edition has no Extra Modes menu with its test buttons, so
-// in Link's house adult Malon (the game's own model and idle, object_ma2) stands waiting: talk to her and she takes
+// in Link's house adult Malon (the game's own model and idle, object_ma2) stands waiting at the foot of the bed: talk to her and she takes
 // you straight to the mod's scenes: the opening nightmare, the drawbridge escape, Zelda's courtyard, and the Hero at
 // the top of Ganon's Tower. Your save's story flags are left alone.
 #include "soh/ActorDB.h"
@@ -17,6 +17,7 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 #include "objects/object_ma2/object_ma2.h"
+#include "GanondorfTuning.h"
 extern PlayState* gPlayState;
 }
 
@@ -173,13 +174,12 @@ void SpawnInLinksHouse() {
         init.draw = Malon_Draw;
         sActorId = (s16)ActorDB::Instance->AddEntry(init).entry.id;
     }
-    Player* player = GET_PLAYER(play);
-    s16 yaw = player->actor.shape.rot.y;
-    f32 ahead = 100.0f;
+    // At the foot of the bed, out of the camera's way (the room's fixed camera looks down on its middle)
+    Vec3f pos = { GdfTuneAt("malon.position", 0, -52.0f), GdfTuneAt("malon.position", 1, 0.0f),
+                  GdfTuneAt("malon.position", 2, 118.0f) };
+    Vec3f middle = { 0.0f, 0.0f, 0.0f };
 
-    Actor_Spawn(&play->actorCtx, play, sActorId, player->actor.world.pos.x + Math_SinS(yaw) * ahead,
-                player->actor.world.pos.y + 20.0f, player->actor.world.pos.z + Math_CosS(yaw) * ahead, 0,
-                (s16)(yaw + 0x8000), 0, 0);
+    Actor_Spawn(&play->actorCtx, play, sActorId, pos.x, pos.y + 10.0f, pos.z, 0, Math_Vec3f_Yaw(&pos, &middle), 0, 0);
     sSpawnedScene = play->sceneNum;
 }
 
