@@ -4,6 +4,7 @@
 // you straight to the mod's scenes: the opening nightmare, the drawbridge escape, Zelda's courtyard, and the Hero at
 // the top of Ganon's Tower. Your save's story flags are left alone.
 #include "soh/ActorDB.h"
+#include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "soh/ShipInit.hpp"
@@ -16,7 +17,6 @@ extern "C" {
 #include "functions.h"
 #include "variables.h"
 #include "objects/object_ma2/object_ma2.h"
-#include "soh/frame_interpolation.h"
 extern PlayState* gPlayState;
 }
 
