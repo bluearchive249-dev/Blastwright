@@ -534,8 +534,8 @@ void OnSpawnEntry(bool* should, va_list args) {
     Actor** out = va_arg(args, Actor**);
 
     if (!*should || (play == nullptr) || (play->sceneNum != SCENE_GANONDORF_BOSS) || (entry->id != ACTOR_BOSS_GANON) ||
-        (entry->params >= 0x64) || !HeroOn()) {
-        return;
+        (entry->params >= 0x64) || !HeroOn() || (gSaveContext.gameMode != GAMEMODE_NORMAL)) {
+        return; // (the title screen is set in this room too: its Ganondorf stays)
     }
     // The tower Ganondorf's place: the Hero, waiting before the organ (its room, carpet and statues stay)
     *should = false;
