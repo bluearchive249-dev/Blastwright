@@ -388,6 +388,50 @@ bool ReadFile(Layout& out) {
         A.ground.floorTex = TexIndexOf(a.value("floor_texture", std::string()));
         A.ground.wallTex = TexIndexOf(a.value("wall_texture", std::string()));
         A.ground.sound = SoundIndexOf(a.value("footsteps", std::string("Stone")));
+        A.ground.cell = a.value("detail", 100.0f);
+        // Its shape: heights at the grid's points, and per cell texture (-1: the area's), footsteps (-1) and holes
+        if (a.contains("grid") && a["grid"].is_object()) {
+            auto& g = a["grid"];
+            int nx = g.value("nx", 0), nz = g.value("nz", 0);
+            auto list = [&](const char* key, size_t n) {
+                std::vector<int> v;
+                if (g.contains(key) && g[key].is_array() && (g[key].size() == n)) {
+                    for (auto& x : g[key]) {
+                        v.push_back(x.is_number() ? x.get<int>() : 0);
+                    }
+                }
+                return v;
+            };
+            if ((nx > 0) && (nz > 0) && (nx <= GDF_POCKET_MAX_CELLS) && (nz <= GDF_POCKET_MAX_CELLS)) {
+                std::vector<int> h = list("heights", (size_t)((nx + 1) * (nz + 1)));
+                std::vector<int> tex = list("textures", (size_t)(nx * nz));
+                std::vector<int> snd = list("footsteps", (size_t)(nx * nz));
+                std::vector<int> hole = list("holes", (size_t)(nx * nz));
+                if (!h.empty()) {
+                    A.ground.nx = nx;
+                    A.ground.nz = nz;
+                    A.ground.h.resize(h.size());
+                    for (size_t k = 0; k < h.size(); k++) {
+                        A.ground.h[k] = (f32)h[k];
+                    }
+                    A.ground.tex.assign((size_t)(nx * nz), GDF_POCKET_KEEP);
+                    A.ground.snd.assign((size_t)(nx * nz), GDF_POCKET_KEEP);
+                    A.ground.hole.assign((size_t)(nx * nz), 0);
+                    for (size_t c = 0; c < (size_t)(nx * nz); c++) {
+                        if (!tex.empty() && (tex[c] >= 0)) {
+                            A.ground.tex[c] = (u8)CLAMP(tex[c], 0, GdfBuild_TexCount() - 1);
+                        }
+                        if (!snd.empty() && (snd[c] >= 0)) {
+                            A.ground.snd[c] = (u8)CLAMP(snd[c], 0, 13);
+                        }
+                        if (!hole.empty()) {
+                            A.ground.hole[c] = (u8)(hole[c] ? 1 : 0);
+                        }
+                    }
+                }
+            }
+        }
+        GdfBuild_FitPocketGrid(A.ground);
         ReadColor(a, "ambient", A.amb);
         ReadColor(a, "light", A.light);
         ReadColor(a, "fog", A.fog);
@@ -427,6 +471,7 @@ void EnsureLayout(PlayState* play) {
         }
         if (play->sceneNum == POCKET_SCENE) {
             sLayout.area.has = true; // (a custom area always has its settings, the defaults until changed)
+            GdfBuild_FitPocketGrid(sLayout.area.ground);
         }
         NoteFile();
     } catch (...) {
@@ -520,6 +565,35 @@ void SaveLayout() {
         a["floor_texture"] = GdfBuild_TexName(A.ground.floorTex);
         a["wall_texture"] = GdfBuild_TexName(A.ground.wallTex);
         a["footsteps"] = GdfBuild_SoundName(A.ground.sound);
+        a["detail"] = lroundf(A.ground.cell);
+        const GdfPocketGround& G = A.ground;
+        bool shaped = false;
+        for (f32 v : G.h) {
+            shaped |= (fabsf(v) >= 0.5f);
+        }
+        for (size_t c = 0; c < G.tex.size(); c++) {
+            shaped |= (G.tex[c] != GDF_POCKET_KEEP) || (G.snd[c] != GDF_POCKET_KEEP) || (G.hole[c] != 0);
+        }
+        if (shaped && (G.nx > 0)) {
+            nlohmann::ordered_json g;
+            g["nx"] = G.nx;
+            g["nz"] = G.nz;
+            nlohmann::ordered_json h = nlohmann::ordered_json::array(), tex = nlohmann::ordered_json::array(),
+                                   snd = nlohmann::ordered_json::array(), hole = nlohmann::ordered_json::array();
+            for (f32 v : G.h) {
+                h.push_back(lroundf(v));
+            }
+            for (size_t c = 0; c < G.tex.size(); c++) {
+                tex.push_back((G.tex[c] == GDF_POCKET_KEEP) ? -1 : (int)G.tex[c]);
+                snd.push_back((G.snd[c] == GDF_POCKET_KEEP) ? -1 : (int)G.snd[c]);
+                hole.push_back((int)G.hole[c]);
+            }
+            g["heights"] = h;
+            g["textures"] = tex;
+            g["footsteps"] = snd;
+            g["holes"] = hole;
+            a["grid"] = g;
+        }
         a["ambient"] = { A.amb[0], A.amb[1], A.amb[2] };
         a["light"] = { A.light[0], A.light[1], A.light[2] };
         a["fog"] = { A.fog[0], A.fog[1], A.fog[2] };
@@ -705,6 +779,7 @@ Actor* Respawn(PlayState* play, Actor* a, s16 params) {
 
 RespawnData sReturn = {};
 bool sHasReturn = false;
+f32 sPocketW = 0.0f, sPocketL = 0.0f; // the custom area's size as it loaded (a new size needs a reload)
 int sMusicDelay = -1; // frames until a custom area's music starts (the game starts its own first)
 
 void StartTransition(PlayState* play, s16 entrance, bool respawn) {
@@ -1497,6 +1572,256 @@ DragKind sDrag = DRAG_NONE;
 u32 sSelPiece = 0;
 Vec3f sMenuAt = { 0.0f, 0.0f, 0.0f };
 
+// ---- Shaping a custom area's ground on the map ----
+
+enum GroundTool {
+    TOOL_SELECT,
+    TOOL_RAISE,
+    TOOL_LOWER,
+    TOOL_FLATTEN,
+    TOOL_SMOOTH,
+    TOOL_SLOPE,
+    TOOL_PAINT_TEX,
+    TOOL_PAINT_SOUND,
+    TOOL_HOLE,
+    TOOL_FILL,
+    TOOL_COUNT
+};
+const char* sToolNames[TOOL_COUNT] = { "Select and move", "Raise",       "Lower",           "Flatten",
+                                       "Smooth",          "Slope",       "Paint texture",   "Paint footsteps",
+                                       "Dig a hole",      "Fill a hole" };
+int sTool = TOOL_SELECT;
+f32 sBrush = 250.0f;     // brush radius (world units)
+f32 sStrength = 400.0f;  // raise / lower speed (units a second, at the brush's middle)
+f32 sFlatY = 0.0f;       // the height Flatten brings the ground to
+f32 sSlopeW = 250.0f;    // a slope's width
+f32 sSlopeRise = 0.0f;   // a slope's end height over its start (0: from the ground's own heights)
+int sPaintTex = 0, sPaintSound = 2;
+bool sStroke = false;
+Vec3f sSlopeA = { 0.0f, 0.0f, 0.0f };
+std::vector<GdfPocketGround> sUndo, sRedo;
+
+void PushUndo() {
+    sUndo.push_back(sLayout.area.ground);
+    if (sUndo.size() > 40) {
+        sUndo.erase(sUndo.begin());
+    }
+    sRedo.clear();
+}
+
+// The ground made again from the layout, live (false: too much for the area's collision: it's put back)
+bool ApplyGround(PlayState* play) {
+    if (GdfBuild_UpdatePocketGround(play, sLayout.area.ground)) {
+        return true;
+    }
+    sStatus = "That's more shape than the area's collision can hold: try fewer cliffs, or less detail";
+    return false;
+}
+
+void Undo(PlayState* play) {
+    if (sUndo.empty()) {
+        return;
+    }
+    sRedo.push_back(sLayout.area.ground);
+    sLayout.area.ground = sUndo.back();
+    sUndo.pop_back();
+    ApplyGround(play);
+    Changed();
+}
+
+void Redo(PlayState* play) {
+    if (sRedo.empty()) {
+        return;
+    }
+    sUndo.push_back(sLayout.area.ground);
+    sLayout.area.ground = sRedo.back();
+    sRedo.pop_back();
+    ApplyGround(play);
+    Changed();
+}
+
+f32 GroundHeightAt(const GdfPocketGround& g, f32 x, f32 z) {
+    if ((g.nx <= 0) || ((int)g.h.size() != (g.nx + 1) * (g.nz + 1))) {
+        return 0.0f;
+    }
+    f32 fx = CLAMP((x + g.w * 0.5f) / g.w * (f32)g.nx, 0.0f, (f32)g.nx);
+    f32 fz = CLAMP((z + g.l * 0.5f) / g.l * (f32)g.nz, 0.0f, (f32)g.nz);
+    int i0 = CLAMP((int)fx, 0, g.nx - 1), j0 = CLAMP((int)fz, 0, g.nz - 1);
+    f32 tx = fx - (f32)i0, tz = fz - (f32)j0;
+    auto H = [&](int a, int b) { return g.h[b * (g.nx + 1) + a]; };
+    f32 top = H(i0, j0) + (H(i0 + 1, j0) - H(i0, j0)) * tx;
+    f32 bot = H(i0, j0 + 1) + (H(i0 + 1, j0 + 1) - H(i0, j0 + 1)) * tx;
+    return top + (bot - top) * tz;
+}
+
+// One step of the brush at a point on the map
+void BrushStep(f32 wx, f32 wz, f32 dt) {
+    GdfPocketGround& g = sLayout.area.ground;
+    if ((g.nx <= 0) || (sBrush <= 1.0f)) {
+        return;
+    }
+    const f32 r = sBrush;
+    std::vector<f32> before = (sTool == TOOL_SMOOTH) ? g.h : std::vector<f32>();
+    for (int j = 0; j <= g.nz; j++) {
+        for (int i = 0; i <= g.nx; i++) {
+            f32 x, z;
+            GdfBuild_PocketPoint(g, i, j, &x, &z);
+            f32 d = sqrtf((x - wx) * (x - wx) + (z - wz) * (z - wz));
+            if (d > r) {
+                continue;
+            }
+            f32 f = 1.0f - (d / r) * (d / r);
+            f *= f; // (soft at the edge)
+            f32& h = g.h[j * (g.nx + 1) + i];
+            switch (sTool) {
+                case TOOL_RAISE:
+                    h += sStrength * dt * f;
+                    break;
+                case TOOL_LOWER:
+                    h -= sStrength * dt * f;
+                    break;
+                case TOOL_FLATTEN:
+                    h += (sFlatY - h) * MIN(1.0f, 6.0f * dt * f);
+                    break;
+                case TOOL_SMOOTH: {
+                    f32 sum = 0.0f;
+                    int n = 0;
+                    const int di[4] = { -1, 1, 0, 0 }, dj[4] = { 0, 0, -1, 1 };
+                    for (int k = 0; k < 4; k++) {
+                        int a = i + di[k], b = j + dj[k];
+                        if ((a >= 0) && (a <= g.nx) && (b >= 0) && (b <= g.nz)) {
+                            sum += before[b * (g.nx + 1) + a];
+                            n++;
+                        }
+                    }
+                    if (n > 0) {
+                        h += (sum / (f32)n - h) * MIN(1.0f, 8.0f * dt * f);
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+            h = CLAMP(h, GDF_POCKET_MIN_Y, GDF_POCKET_MAX_Y);
+        }
+    }
+    // The cell tools: each cell whose middle is under the brush
+    if ((sTool == TOOL_PAINT_TEX) || (sTool == TOOL_PAINT_SOUND) || (sTool == TOOL_HOLE) || (sTool == TOOL_FILL)) {
+        for (int j = 0; j < g.nz; j++) {
+            for (int i = 0; i < g.nx; i++) {
+                f32 x0, z0, x1, z1;
+                GdfBuild_PocketPoint(g, i, j, &x0, &z0);
+                GdfBuild_PocketPoint(g, i + 1, j + 1, &x1, &z1);
+                f32 cx = (x0 + x1) * 0.5f, cz = (z0 + z1) * 0.5f;
+                if ((cx - wx) * (cx - wx) + (cz - wz) * (cz - wz) > r * r) {
+                    continue;
+                }
+                int c = j * g.nx + i;
+                if (sTool == TOOL_PAINT_TEX) {
+                    g.tex[c] = (u8)sPaintTex;
+                } else if (sTool == TOOL_PAINT_SOUND) {
+                    g.snd[c] = (u8)sPaintSound;
+                } else {
+                    g.hole[c] = (sTool == TOOL_HOLE) ? 1 : 0;
+                }
+            }
+        }
+    }
+}
+
+// A straight ramp from A to B, as wide as set: the ground's points along it are put on the line between the two ends
+void SlopeApply(Vec3f a, Vec3f b) {
+    GdfPocketGround& g = sLayout.area.ground;
+    f32 ha = GroundHeightAt(g, a.x, a.z);
+    f32 hb = (sSlopeRise != 0.0f) ? ha + sSlopeRise : GroundHeightAt(g, b.x, b.z);
+    f32 dx = b.x - a.x, dz = b.z - a.z;
+    f32 len2 = dx * dx + dz * dz;
+    if (len2 < 1.0f) {
+        return;
+    }
+    f32 half = sSlopeW * 0.5f;
+    for (int j = 0; j <= g.nz; j++) {
+        for (int i = 0; i <= g.nx; i++) {
+            f32 x, z;
+            GdfBuild_PocketPoint(g, i, j, &x, &z);
+            f32 t = ((x - a.x) * dx + (z - a.z) * dz) / len2;
+            if ((t < 0.0f) || (t > 1.0f)) {
+                continue;
+            }
+            f32 px = a.x + dx * t, pz = a.z + dz * t;
+            f32 d = sqrtf((x - px) * (x - px) + (z - pz) * (z - pz));
+            if (d > half) {
+                continue;
+            }
+            // (full on the ramp, blending into the ground over its outer quarter each side)
+            f32 edge = MAX(half * 0.25f, 1.0f);
+            f32 f = (d < half - edge) ? 1.0f : (half - d) / edge;
+            f32& h = g.h[j * (g.nx + 1) + i];
+            h += ((ha + (hb - ha) * t) - h) * f;
+            h = CLAMP(h, GDF_POCKET_MIN_Y, GDF_POCKET_MAX_Y);
+        }
+    }
+}
+
+void DrawGroundTools(PlayState* play) {
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::BeginCombo("##tool", sToolNames[sTool])) {
+        for (int i = 0; i < TOOL_COUNT; i++) {
+            if (ImGui::Selectable(sToolNames[i], sTool == i)) {
+                sTool = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (sTool != TOOL_SELECT) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90);
+        ImGui::DragFloat(sTool == TOOL_SLOPE ? "Width" : "Brush", sTool == TOOL_SLOPE ? &sSlopeW : &sBrush, 2.0f, 20.0f,
+                         5000.0f, "%.0f");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(110);
+        if ((sTool == TOOL_RAISE) || (sTool == TOOL_LOWER)) {
+            ImGui::DragFloat("Strength", &sStrength, 5.0f, 10.0f, 5000.0f, "%.0f");
+        } else if (sTool == TOOL_FLATTEN) {
+            ImGui::DragFloat("To height", &sFlatY, 2.0f, GDF_POCKET_MIN_Y, GDF_POCKET_MAX_Y, "%.0f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Ctrl+click on the map to take the height there");
+            }
+        } else if (sTool == TOOL_SLOPE) {
+            ImGui::DragFloat("Rise", &sSlopeRise, 2.0f, -6000.0f, 6000.0f, "%.0f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("How much higher the end is than the start (0: between the ground's own heights)");
+            }
+        } else if (sTool == TOOL_PAINT_TEX) {
+            if (ImGui::BeginCombo("##ptex2", GdfBuild_TexName(sPaintTex))) {
+                for (int i = 0; i < GdfBuild_TexCount(); i++) {
+                    if (ImGui::Selectable(GdfBuild_TexName(i), sPaintTex == i)) {
+                        sPaintTex = i;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        } else if (sTool == TOOL_PAINT_SOUND) {
+            if (ImGui::BeginCombo("##psnd", GdfBuild_SoundName(sPaintSound))) {
+                for (int i = 0; i < 14; i++) {
+                    if (ImGui::Selectable(GdfBuild_SoundName(i), sPaintSound == i)) {
+                        sPaintSound = i;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Undo") && !sUndo.empty()) {
+        Undo(play);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Redo") && !sRedo.empty()) {
+        Redo(play);
+    }
+}
+
 void DrawMapTab(PlayState* play) {
     Player* player = GET_PLAYER(play);
     Vec3f pp = player->actor.world.pos;
@@ -1517,6 +1842,13 @@ void DrawMapTab(PlayState* play) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Ground this far above or below him is drawn (for areas with floors over floors)");
     }
+    bool pocket = InPocket(play);
+    if (pocket) {
+        DrawGroundTools(play);
+    } else {
+        sTool = TOOL_SELECT;
+    }
+    bool shaping = pocket && (sTool != TOOL_SELECT);
 
     // The selection's own controls under the map: its height (the map moves it across, not up and down)
     f32 below = 64.0f;
@@ -1553,7 +1885,7 @@ void DrawMapTab(PlayState* play) {
             const Vec3s& b = h->vtxList[COLPOLY_VTX_INDEX(poly.flags_vIB)];
             const Vec3s& c = h->vtxList[poly.vIC];
             f32 y = ((f32)a.y + (f32)b.y + (f32)c.y) / 3.0f;
-            if (fabsf(y - pp.y) > sMap.band) {
+            if (!pocket && (fabsf(y - pp.y) > sMap.band)) {
                 continue;
             }
             ImVec2 A = toScreen(a.x, a.z), B = toScreen(b.x, b.z), C = toScreen(c.x, c.z);
@@ -1563,7 +1895,9 @@ void DrawMapTab(PlayState* play) {
                 continue;
             }
             f32 ny = poly.normal.y / 32767.0f;
-            f32 t = CLAMP(0.5f + (y - pp.y) / (2.0f * sMap.band), 0.0f, 1.0f);
+            // (a custom area's ground by its own height, -1000 to 2000; elsewhere near his height)
+            f32 t = pocket ? CLAMP((y + 1000.0f) / 3000.0f, 0.0f, 1.0f)
+                           : CLAMP(0.5f + (y - pp.y) / (2.0f * sMap.band), 0.0f, 1.0f);
             if (ny > 0.5f) {
                 int g = (int)(40 + 120 * t);
                 dl->AddTriangleFilled(A, B, C, IM_COL32(g, g - 10 > 0 ? g - 10 : 0, g + 20, 255));
@@ -1651,11 +1985,74 @@ void DrawMapTab(PlayState* play) {
         ImVec2 r = ImVec2(c.x - sy * 5.0f - cy * 6.0f, c.y - cy * 5.0f + sy * 6.0f);
         dl->AddTriangleFilled(tip, l, r, IM_COL32(90, 255, 120, 255));
     }
-    dl->AddText(ImVec2(p0.x + 6, p0.y + 4), IM_COL32(180, 170, 200, 255), "North is up. Wheel: zoom. Drag: move / pan. Right-click: add.");
+    dl->AddText(ImVec2(p0.x + 6, p0.y + 4), IM_COL32(180, 170, 200, 255),
+                "North is up. Wheel: zoom. Drag: move / pan (middle button pans always). Right-click: add.");
     dl->PopClipRect();
 
+    // Panning with the middle button, whatever the tool
+    if (hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 1.0f)) {
+        sMap.cx -= io.MouseDelta.x / sMap.scale;
+        sMap.cz -= io.MouseDelta.y / sMap.scale;
+        sMap.follow = false;
+    }
+    // Shaping the ground
+    if (shaping) {
+        f32 wx = toWorldX(m.x), wz = toWorldZ(m.y);
+        ImVec2 c = toScreen(wx, wz);
+        dl->PushClipRect(p0, p1, true);
+        if (sTool == TOOL_SLOPE) {
+            if (sStroke) {
+                dl->AddLine(toScreen(sSlopeA.x, sSlopeA.z), c, IM_COL32(255, 220, 120, 255),
+                            MAX(sSlopeW * sMap.scale, 2.0f));
+            }
+        } else if (hovered) {
+            dl->AddCircle(c, MAX(sBrush * sMap.scale, 3.0f), IM_COL32(255, 220, 120, 255), 40, 1.5f);
+        }
+        dl->PopClipRect();
+        if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            if ((sTool == TOOL_FLATTEN) && io.KeyCtrl) {
+                sFlatY = GroundHeightAt(sLayout.area.ground, wx, wz);
+            } else {
+                PushUndo();
+                sStroke = true;
+                sSlopeA = { wx, 0.0f, wz };
+            }
+        }
+        if (sStroke && ImGui::IsMouseDown(ImGuiMouseButton_Left) && (sTool != TOOL_SLOPE)) {
+            BrushStep(wx, wz, MIN(io.DeltaTime, 0.1f));
+            if (!ApplyGround(play)) {
+                sLayout.area.ground = sUndo.back();
+                sUndo.pop_back();
+                ApplyGround(play);
+                sStroke = false;
+            }
+        }
+        if (sStroke && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            if (sTool == TOOL_SLOPE) {
+                SlopeApply(sSlopeA, { wx, 0.0f, wz });
+                if (!ApplyGround(play)) {
+                    sLayout.area.ground = sUndo.back();
+                    sUndo.pop_back();
+                    ApplyGround(play);
+                }
+            }
+            sStroke = false;
+            Changed();
+        }
+    } else {
+        sStroke = false;
+    }
+    // Ctrl+Z / Ctrl+Y while the editor has the keyboard
+    if (pocket && io.KeyCtrl && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+            Undo(play);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+            Redo(play);
+        }
+    }
+
     // Clicking and dragging
-    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    if (!shaping && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         sDrag = (best.kind == DRAG_NONE) ? DRAG_PAN : best.kind;
         if (best.kind == DRAG_ACTOR) {
             Select(best.actor);
@@ -2030,20 +2427,36 @@ void DrawAreasTab(PlayState* play) {
     }
     AreaSpec& A = sLayout.area;
     ImGui::SeparatorText(("This area: " + PocketName()).c_str());
-    bool ground = false;
+    // A new size takes a reload (the game's collision lookup is laid out for the size the area came in with); the
+    // rest is live
+    bool sized = false, live = false;
     ImGui::SetNextItemWidth(120);
-    ground |= ImGui::DragFloat("Width", &A.ground.w, 10.0f, 200.0f, 30000.0f, "%.0f");
+    ImGui::DragFloat("Width", &A.ground.w, 10.0f, 200.0f, 30000.0f, "%.0f");
+    sized |= ImGui::IsItemDeactivatedAfterEdit();
     ImGui::SameLine();
     ImGui::SetNextItemWidth(120);
-    ground |= ImGui::DragFloat("Length", &A.ground.l, 10.0f, 200.0f, 30000.0f, "%.0f");
+    ImGui::DragFloat("Length", &A.ground.l, 10.0f, 200.0f, 30000.0f, "%.0f");
+    sized |= ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(reloads the area)");
     ImGui::SetNextItemWidth(120);
-    ground |= ImGui::DragFloat("Walls (0: none)", &A.ground.wallH, 5.0f, 0.0f, 4000.0f, "%.0f");
+    ImGui::DragFloat("Detail (grid step)", &A.ground.cell, 1.0f, 25.0f, 2000.0f, "%.0f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("How fine the ground can be shaped: smaller is finer (at most 64 cells a side)");
+    }
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        PushUndo();
+        live = true;
+    }
+    ImGui::SetNextItemWidth(120);
+    ImGui::DragFloat("Walls (0: none)", &A.ground.wallH, 5.0f, 0.0f, 4000.0f, "%.0f");
+    live |= ImGui::IsItemEdited();
     ImGui::SetNextItemWidth(180);
     if (ImGui::BeginCombo("Floor texture", GdfBuild_TexName(A.ground.floorTex))) {
         for (int i = 0; i < GdfBuild_TexCount(); i++) {
             if (ImGui::Selectable(GdfBuild_TexName(i), A.ground.floorTex == i)) {
                 A.ground.floorTex = i;
-                ground = true;
+                live = true;
             }
         }
         ImGui::EndCombo();
@@ -2053,7 +2466,7 @@ void DrawAreasTab(PlayState* play) {
         for (int i = 0; i < GdfBuild_TexCount(); i++) {
             if (ImGui::Selectable(GdfBuild_TexName(i), A.ground.wallTex == i)) {
                 A.ground.wallTex = i;
-                ground = true;
+                live = true;
             }
         }
         ImGui::EndCombo();
@@ -2063,19 +2476,42 @@ void DrawAreasTab(PlayState* play) {
         for (int i = 0; i < 14; i++) {
             if (ImGui::Selectable(GdfBuild_SoundName(i), A.ground.sound == i)) {
                 A.ground.sound = i;
-                ground = true;
+                live = true;
             }
         }
         ImGui::EndCombo();
     }
-    if (ground) {
-        Changed();
-    }
-    if (ImGui::Button("Rebuild the ground (reloads the area)")) {
+    if (sized) {
+        GdfBuild_FitPocketGrid(A.ground);
         SaveLayout();
         ReloadArea();
+    } else if (live) {
+        GdfBuild_FitPocketGrid(A.ground);
+        ApplyGround(play);
+        Changed();
     }
-    ImGui::TextDisabled("Size, walls, textures and footsteps take effect when the area reloads.");
+    ImGui::TextDisabled("Shape the ground on the Map tab (the tool menu above the map).");
+    if (ImGui::SmallButton("Flatten it all to 0")) {
+        PushUndo();
+        std::fill(A.ground.h.begin(), A.ground.h.end(), 0.0f);
+        ApplyGround(play);
+        Changed();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Fill every hole")) {
+        PushUndo();
+        std::fill(A.ground.hole.begin(), A.ground.hole.end(), (u8)0);
+        ApplyGround(play);
+        Changed();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear painting")) {
+        PushUndo();
+        std::fill(A.ground.tex.begin(), A.ground.tex.end(), (u8)GDF_POCKET_KEEP);
+        std::fill(A.ground.snd.begin(), A.ground.snd.end(), (u8)GDF_POCKET_KEEP);
+        ApplyGround(play);
+        Changed();
+    }
 
     ImGui::SeparatorText("Light and fog (live)");
     bool look = false;
@@ -2375,6 +2811,9 @@ void AreaStart() {
     sSpawnedRoom = -1;
     sTrigInside.clear();
     sMusicDelay = -1;
+    sUndo.clear();
+    sRedo.clear();
+    sStroke = false;
     if (InPocket(play)) {
         ApplyAreaLook(play);
         // (should the area come up without a start point for him, he's given one rather than the game falling over)
@@ -2429,6 +2868,8 @@ void GdfMapEdit_AreaLoading(PlayState* play, CollisionHeader* header) {
     EnsureLayout(play);
     if (InPocket(play)) {
         GdfBuild_MakePocketGround(header, sLayout.area.ground);
+        sPocketW = sLayout.area.ground.w;
+        sPocketL = sLayout.area.ground.l;
     }
     if (sLayout.hasTerrain) {
         try {

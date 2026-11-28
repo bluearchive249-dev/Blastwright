@@ -1816,14 +1816,34 @@ const char* GdfBuild_SoundName(int sound) {
     return sSoundNames[CLAMP(sound, 0, 13)];
 }
 
+extern "C" u32 BgCheck_InitializeStaticLookup(CollisionContext* colCtx, PlayState* play, StaticLookup* lookupTbl);
+
+#define PK_SURF_WALL 14
+// Room for the largest ground there can be, set aside once: the lists are never moved in memory (the collision,
+// actors standing on it and the drawn ground all point into them), so the ground can be made again in place
+#define PK_MAX_VTX ((GDF_POCKET_MAX_CELLS + 1) * (GDF_POCKET_MAX_CELLS + 1) + 4 * GDF_POCKET_MAX_CELLS * 4)
+#define PK_MAX_POLY (GDF_POCKET_MAX_CELLS * GDF_POCKET_MAX_CELLS * 2 + 4 * GDF_POCKET_MAX_CELLS * 2)
+
 static std::vector<Vec3s> sPkVtx;
 static std::vector<CollisionPoly> sPkPolys;
-static SurfaceType sPkSurf[2];
-static std::vector<Vtx> sPkDraw; // three per triangle, laid out as the polys are
+static std::vector<u8> sPkPolyTex;   // each poly's texture
+static std::vector<u8> sPkCheck;     // the game's "already tested" mark per poly (its own was sized for the first ground)
+static SurfaceType sPkSurf[15];      // 0-13: floors by footstep sound; 14: walls
+static std::vector<Vtx> sPkDraw;     // three per triangle, grouped by texture each frame
 static GdfPocketGround sPk;
 static s32 sPkActorId = -1;
 
-static void PkPoly(int a, int b, int c, u16 surface) {
+static void PkReserve() {
+    if (sPkVtx.capacity() < PK_MAX_VTX) {
+        sPkVtx.reserve(PK_MAX_VTX);
+        sPkPolys.reserve(PK_MAX_POLY);
+        sPkPolyTex.reserve(PK_MAX_POLY);
+        sPkCheck.assign(PK_MAX_POLY, 0);
+        sPkDraw.reserve(PK_MAX_POLY * 3);
+    }
+}
+
+static void PkPoly(int a, int b, int c, u16 surface, u8 tex) {
     const Vec3s& A = sPkVtx[a];
     const Vec3s& B = sPkVtx[b];
     const Vec3s& C = sPkVtx[c];
@@ -1831,7 +1851,7 @@ static void PkPoly(int a, int b, int c, u16 surface) {
     f32 acx = (f32)(C.x - A.x), acy = (f32)(C.y - A.y), acz = (f32)(C.z - A.z);
     f32 nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
     f32 len = sqrtf(nx * nx + ny * ny + nz * nz);
-    if (len < 0.001f) {
+    if ((len < 0.001f) || (sPkPolys.size() >= PK_MAX_POLY)) {
         return;
     }
     nx /= len, ny /= len, nz /= len;
@@ -1843,51 +1863,122 @@ static void PkPoly(int a, int b, int c, u16 surface) {
     p.normal.x = (s16)(nx * 32767.0f);
     p.normal.y = (s16)(ny * 32767.0f);
     p.normal.z = (s16)(nz * 32767.0f);
-    p.dist = (s16)-(nx * A.x + ny * A.y + nz * A.z);
+    p.dist = (s16)-(nx * (f32)A.x + ny * (f32)A.y + nz * (f32)A.z);
     sPkPolys.push_back(p);
+    sPkPolyTex.push_back(tex);
 }
 
-void GdfBuild_MakePocketGround(CollisionHeader* header, const GdfPocketGround& g) {
-    if (header == nullptr) {
+void GdfBuild_PocketPoint(const GdfPocketGround& g, int i, int j, f32* x, f32* z) {
+    *x = -g.w * 0.5f + g.w * (f32)i / (f32)MAX(g.nx, 1);
+    *z = -g.l * 0.5f + g.l * (f32)j / (f32)MAX(g.nz, 1);
+}
+
+void GdfBuild_FitPocketGrid(GdfPocketGround& g) {
+    g.w = CLAMP(g.w, 200.0f, 30000.0f);
+    g.l = CLAMP(g.l, 200.0f, 30000.0f);
+    g.cell = CLAMP(g.cell, 25.0f, 2000.0f);
+    int nx = CLAMP((int)(g.w / g.cell + 0.5f), 1, GDF_POCKET_MAX_CELLS);
+    int nz = CLAMP((int)(g.l / g.cell + 0.5f), 1, GDF_POCKET_MAX_CELLS);
+    bool fits = (g.nx == nx) && (g.nz == nz) && ((int)g.h.size() == (nx + 1) * (nz + 1)) &&
+                ((int)g.tex.size() == nx * nz) && ((int)g.snd.size() == nx * nz) && ((int)g.hole.size() == nx * nz);
+    if (fits) {
         return;
     }
-    sPk = g;
-    sPk.w = CLAMP(g.w, 200.0f, 30000.0f);
-    sPk.l = CLAMP(g.l, 200.0f, 30000.0f);
-    sPk.wallH = CLAMP(g.wallH, 0.0f, 4000.0f);
+    // Stretch what's there onto the new grid (heights blended between points, cells taken from the nearest)
+    bool had = (g.nx > 0) && (g.nz > 0) && ((int)g.h.size() == (g.nx + 1) * (g.nz + 1));
+    std::vector<f32> h((nx + 1) * (nz + 1), 0.0f);
+    std::vector<u8> tex(nx * nz, GDF_POCKET_KEEP), snd(nx * nz, GDF_POCKET_KEEP), hole(nx * nz, 0);
+    if (had) {
+        for (int j = 0; j <= nz; j++) {
+            for (int i = 0; i <= nx; i++) {
+                f32 fx = (f32)i / (f32)nx * (f32)g.nx, fz = (f32)j / (f32)nz * (f32)g.nz;
+                int i0 = CLAMP((int)fx, 0, g.nx - 1), j0 = CLAMP((int)fz, 0, g.nz - 1);
+                f32 tx = fx - (f32)i0, tz = fz - (f32)j0;
+                auto H = [&](int a, int b) { return g.h[b * (g.nx + 1) + a]; };
+                f32 top = H(i0, j0) + (H(i0 + 1, j0) - H(i0, j0)) * tx;
+                f32 bot = H(i0, j0 + 1) + (H(i0 + 1, j0 + 1) - H(i0, j0 + 1)) * tx;
+                h[j * (nx + 1) + i] = top + (bot - top) * tz;
+            }
+        }
+        bool cells = ((int)g.tex.size() == g.nx * g.nz) && ((int)g.snd.size() == g.nx * g.nz) &&
+                     ((int)g.hole.size() == g.nx * g.nz);
+        if (cells) {
+            for (int j = 0; j < nz; j++) {
+                for (int i = 0; i < nx; i++) {
+                    int oi = CLAMP((int)(((f32)i + 0.5f) / (f32)nx * (f32)g.nx), 0, g.nx - 1);
+                    int oj = CLAMP((int)(((f32)j + 0.5f) / (f32)nz * (f32)g.nz), 0, g.nz - 1);
+                    tex[j * nx + i] = g.tex[oj * g.nx + oi];
+                    snd[j * nx + i] = g.snd[oj * g.nx + oi];
+                    hole[j * nx + i] = g.hole[oj * g.nx + oi];
+                }
+            }
+        }
+    }
+    g.nx = nx;
+    g.nz = nz;
+    g.h = h;
+    g.tex = tex;
+    g.snd = snd;
+    g.hole = hole;
+}
+
+// The ground's points and polys from its grid (into the lists set aside for them)
+static void PkBuild(const GdfPocketGround& in) {
+    PkReserve();
+    sPk = in;
+    GdfBuild_FitPocketGrid(sPk);
+    sPk.wallH = CLAMP(sPk.wallH, 0.0f, 4000.0f);
+    const int nx = sPk.nx, nz = sPk.nz;
     sPkVtx.clear();
     sPkPolys.clear();
-    // The floor: a grid (so sculpting has points to move), at most 48 cells a side
-    int nx = CLAMP((int)(sPk.w / 150.0f + 0.5f), 1, 48);
-    int nz = CLAMP((int)(sPk.l / 150.0f + 0.5f), 1, 48);
-    f32 x0 = -sPk.w * 0.5f, z0 = -sPk.l * 0.5f;
+    sPkPolyTex.clear();
     for (int j = 0; j <= nz; j++) {
         for (int i = 0; i <= nx; i++) {
-            sPkVtx.push_back({ (s16)(x0 + sPk.w * (f32)i / (f32)nx), 0, (s16)(z0 + sPk.l * (f32)j / (f32)nz) });
+            f32 x, z;
+            GdfBuild_PocketPoint(sPk, i, j, &x, &z);
+            f32 y = CLAMP(sPk.h[j * (nx + 1) + i], GDF_POCKET_MIN_Y, GDF_POCKET_MAX_Y);
+            sPkVtx.push_back({ (s16)x, (s16)y, (s16)z });
         }
     }
     auto at = [&](int i, int j) { return j * (nx + 1) + i; };
+    u8 floorTex = (u8)CLAMP(sPk.floorTex, 0, TEX_COUNT - 1), wallTex = (u8)CLAMP(sPk.wallTex, 0, TEX_COUNT - 1);
     for (int j = 0; j < nz; j++) {
         for (int i = 0; i < nx; i++) {
-            // (wound so the normal points up)
-            PkPoly(at(i, j), at(i, j + 1), at(i + 1, j + 1), 0);
-            PkPoly(at(i, j), at(i + 1, j + 1), at(i + 1, j), 0);
+            int c = j * nx + i;
+            if (sPk.hole[c]) {
+                continue;
+            }
+            u16 surf = (u16)((sPk.snd[c] == GDF_POCKET_KEEP) ? CLAMP(sPk.sound, 0, 13) : CLAMP(sPk.snd[c], 0, 13));
+            u8 tex = (sPk.tex[c] == GDF_POCKET_KEEP) ? floorTex : (u8)CLAMP(sPk.tex[c], 0, TEX_COUNT - 1);
+            // (wound so the normal points up; split along the diagonal that suits the slope better)
+            f32 d1 = fabsf((f32)sPkVtx[at(i, j)].y - (f32)sPkVtx[at(i + 1, j + 1)].y);
+            f32 d2 = fabsf((f32)sPkVtx[at(i + 1, j)].y - (f32)sPkVtx[at(i, j + 1)].y);
+            if (d1 <= d2) {
+                PkPoly(at(i, j), at(i, j + 1), at(i + 1, j + 1), surf, tex);
+                PkPoly(at(i, j), at(i + 1, j + 1), at(i + 1, j), surf, tex);
+            } else {
+                PkPoly(at(i, j), at(i, j + 1), at(i + 1, j), surf, tex);
+                PkPoly(at(i + 1, j), at(i, j + 1), at(i + 1, j + 1), surf, tex);
+            }
         }
     }
-    // Walls round the edge, facing in, in cell-wide panels
+    // Walls round the edge, facing in, in cell-wide panels following the ground's edge
     if (sPk.wallH > 0.0f) {
-        s16 top = (s16)sPk.wallH;
         auto panel = [&](int a, int b) {
+            if (sPkVtx.size() + 4 > PK_MAX_VTX) {
+                return;
+            }
             int base = (int)sPkVtx.size();
             Vec3s A = sPkVtx[a], B = sPkVtx[b];
+            s16 ta = (s16)CLAMP((f32)A.y + sPk.wallH, -30000.0f, 30000.0f);
+            s16 tb = (s16)CLAMP((f32)B.y + sPk.wallH, -30000.0f, 30000.0f);
             sPkVtx.push_back(A);
             sPkVtx.push_back(B);
-            sPkVtx.push_back({ B.x, top, B.z });
-            sPkVtx.push_back({ A.x, top, A.z });
-            PkPoly(base, base + 1, base + 2, 1);
-            PkPoly(base, base + 2, base + 3, 1);
+            sPkVtx.push_back({ B.x, tb, B.z });
+            sPkVtx.push_back({ A.x, ta, A.z });
+            PkPoly(base, base + 1, base + 2, PK_SURF_WALL, wallTex);
+            PkPoly(base, base + 2, base + 3, PK_SURF_WALL, wallTex);
         };
-        // (each run goes so that its inward side is the polygons' front)
         for (int i = 0; i < nx; i++) {
             panel(at(i, 0), at(i + 1, 0));   // south edge, facing +z
             panel(at(i + 1, nz), at(i, nz)); // north edge, facing -z
@@ -1897,20 +1988,80 @@ void GdfBuild_MakePocketGround(CollisionHeader* header, const GdfPocketGround& g
             panel(at(nx, j), at(nx, j + 1)); // east edge, facing -x
         }
     }
-    // Floor: the chosen footstep sound; walls: plain. (Camera setting 0 of the area's own list.)
-    sPkSurf[0].data[0] = 0;
-    sPkSurf[0].data[1] = (u32)CLAMP(g.sound, 0, 13);
-    sPkSurf[1].data[0] = 0;
-    sPkSurf[1].data[1] = 2;
+    // Footstep sounds by surface; walls plain. (Camera setting 0 of the area's own list.)
+    for (int k = 0; k < 14; k++) {
+        sPkSurf[k].data[0] = 0;
+        sPkSurf[k].data[1] = (u32)k;
+    }
+    sPkSurf[PK_SURF_WALL].data[0] = 0;
+    sPkSurf[PK_SURF_WALL].data[1] = 2;
+    sPkDraw.resize(sPkPolys.size() * 3); // (within what was set aside: never moved)
+}
+
+static void PkPoint(CollisionHeader* header) {
     header->vtxList = sPkVtx.data();
     header->numVertices = (u16)sPkVtx.size();
     header->polyList = sPkPolys.data();
     header->numPolygons = (u16)sPkPolys.size();
     header->surfaceTypeList = sPkSurf;
-    f32 hw = sPk.w * 0.5f + 10.0f, hl = sPk.l * 0.5f + 10.0f;
-    header->minBounds = { (s16)-hw, -100, (s16)-hl };
-    header->maxBounds = { (s16)hw, (s16)(MAX(sPk.wallH, 100.0f) + 300.0f), (s16)hl };
-    sPkDraw.assign(sPkPolys.size() * 3, Vtx{});
+}
+
+void GdfBuild_MakePocketGround(CollisionHeader* header, const GdfPocketGround& g) {
+    if (header == nullptr) {
+        return;
+    }
+    PkBuild(g);
+    PkPoint(header);
+    // The bounds cover all the shaping there can be, so the game's lookup grid never has to grow
+    f32 hw = sPk.w * 0.5f + 20.0f, hl = sPk.l * 0.5f + 20.0f;
+    header->minBounds = { (s16)-hw, (s16)(GDF_POCKET_MIN_Y - 100.0f), (s16)-hl };
+    header->maxBounds = { (s16)hw, (s16)(GDF_POCKET_MAX_Y + 4100.0f), (s16)hl };
+}
+
+// How many of the lookup's nodes the ground needs (each poly takes one in every lookup cell its box touches)
+static s32 PkNodesNeeded(CollisionContext* c) {
+    s32 total = 0;
+    for (auto& p : sPkPolys) {
+        const Vec3s& a = sPkVtx[p.flags_vIA & 0x1FFF];
+        const Vec3s& b = sPkVtx[p.flags_vIB & 0x1FFF];
+        const Vec3s& d = sPkVtx[p.vIC];
+        s32 n = 1;
+        const f32 mn[3] = { (f32)MIN(a.x, MIN(b.x, d.x)), (f32)MIN(a.y, MIN(b.y, d.y)), (f32)MIN(a.z, MIN(b.z, d.z)) };
+        const f32 mx[3] = { (f32)MAX(a.x, MAX(b.x, d.x)), (f32)MAX(a.y, MAX(b.y, d.y)), (f32)MAX(a.z, MAX(b.z, d.z)) };
+        const f32 base[3] = { (f32)c->minBounds.x, (f32)c->minBounds.y, (f32)c->minBounds.z };
+        const f32 inv[3] = { c->subdivLengthInv.x, c->subdivLengthInv.y, c->subdivLengthInv.z };
+        for (int k = 0; k < 3; k++) {
+            s32 lo = (s32)((mn[k] - base[k] - 50.0f) * inv[k]), hi = (s32)((mx[k] - base[k] + 50.0f) * inv[k]);
+            n *= MAX(hi - lo + 1, 1);
+        }
+        total += n;
+    }
+    return total;
+}
+
+bool GdfBuild_UpdatePocketGround(PlayState* play, const GdfPocketGround& g) {
+    if (play == nullptr) {
+        return false;
+    }
+    CollisionContext* c = &play->colCtx;
+    CollisionHeader* header = c->colHeader;
+    if ((header == nullptr) || (header->polyList != sPkPolys.data()) || (c->lookupTbl == nullptr)) {
+        return false;
+    }
+    GdfPocketGround keep = sPk;
+    PkBuild(g);
+    if (PkNodesNeeded(c) >= c->polyNodes.max - 64) {
+        PkBuild(keep); // (too much for the area's lookup: the ground stays as it was)
+        PkPoint(header);
+        return false;
+    }
+    PkPoint(header);
+    // Sort the polys into the game's lookup grid again, over its own memory
+    std::fill(sPkCheck.begin(), sPkCheck.end(), 0);
+    c->polyNodes.polyCheckTbl = sPkCheck.data();
+    c->polyNodes.count = 0;
+    BgCheck_InitializeStaticLookup(c, play, c->lookupTbl);
+    return true;
 }
 
 // (outside the unnamed namespace, as Piece_Draw: the draw macros)
@@ -1919,36 +2070,52 @@ static void PocketGround_Draw(Actor* thisx, PlayState* play) {
     if ((header == nullptr) || (header->polyList != sPkPolys.data()) || sPkPolys.empty()) {
         return;
     }
+    // (the game's own mark list for this area, sized for its first ground: ours from now on)
+    if (play->colCtx.polyNodes.polyCheckTbl != sPkCheck.data()) {
+        std::fill(sPkCheck.begin(), sPkCheck.end(), 0);
+        play->colCtx.polyNodes.polyCheckTbl = sPkCheck.data();
+    }
     static TexInfo sInfo[TEX_COUNT];
     static bool sLoaded[TEX_COUNT] = {};
-    int texOf[2] = { CLAMP(sPk.floorTex, 0, TEX_COUNT - 1), CLAMP(sPk.wallTex, 0, TEX_COUNT - 1) };
-    for (int k = 0; k < 2; k++) {
-        if (!sLoaded[texOf[k]]) {
-            sInfo[texOf[k]] = LoadTexInfo(sTexList[texOf[k]].path);
-            sLoaded[texOf[k]] = true;
-        }
+    // Which textures are used, and the triangles of each, in order
+    static std::vector<u32> sByTex[TEX_COUNT];
+    for (int k = 0; k < TEX_COUNT; k++) {
+        sByTex[k].clear();
     }
-    // The vertices where the collision has them now (sculpting moves them)
+    for (u32 t = 0; t < (u32)sPkPolys.size(); t++) {
+        sByTex[sPkPolyTex[t] % TEX_COUNT].push_back(t);
+    }
+    // The vertices where the collision has them now (sculpting moves them), laid out texture by texture
     const Vec3s* cv = header->vtxList;
-    for (size_t t = 0; t < sPkPolys.size(); t++) {
-        const CollisionPoly& p = sPkPolys[t];
-        const int idx[3] = { p.flags_vIA & 0x1FFF, p.flags_vIB & 0x1FFF, p.vIC };
-        const TexInfo& tex = sInfo[texOf[p.type ? 1 : 0]];
-        f32 su = (tex.ok ? tex.w : 32) * 32.0f / TEX_REPEAT, sv = (tex.ok ? tex.h : 32) * 32.0f / TEX_REPEAT;
-        bool floor = (p.type == 0);
-        for (int k = 0; k < 3; k++) {
-            Vtx& v = sPkDraw[t * 3 + k];
-            const Vec3s& s = cv[idx[k]];
-            v.n.ob[0] = s.x, v.n.ob[1] = s.y, v.n.ob[2] = s.z;
-            v.n.flag = 0;
-            f32 u = (f32)(floor ? s.x : ((ABS(p.normal.x) > ABS(p.normal.z)) ? s.z : s.x));
-            f32 w = (f32)(floor ? s.z : -s.y);
-            v.n.tc[0] = (s16)CLAMP(fmodf(u, TEX_REPEAT * 16.0f) * su, -32000.0f, 32000.0f);
-            v.n.tc[1] = (s16)CLAMP(fmodf(w, TEX_REPEAT * 16.0f) * sv, -32000.0f, 32000.0f);
-            v.n.n[0] = (s8)(p.normal.x / 258);
-            v.n.n[1] = (s8)(p.normal.y / 258);
-            v.n.n[2] = (s8)(p.normal.z / 258);
-            v.n.a = 255;
+    size_t out = 0;
+    for (int k = 0; k < TEX_COUNT; k++) {
+        if (sByTex[k].empty()) {
+            continue;
+        }
+        if (!sLoaded[k]) {
+            sInfo[k] = LoadTexInfo(sTexList[k].path);
+            sLoaded[k] = true;
+        }
+        const TexInfo& tex = sInfo[k];
+        f32 su = (f32)(tex.ok ? tex.w : 32) * 32.0f / TEX_REPEAT, sv = (f32)(tex.ok ? tex.h : 32) * 32.0f / TEX_REPEAT;
+        for (u32 t : sByTex[k]) {
+            const CollisionPoly& p = sPkPolys[t];
+            const int idx[3] = { p.flags_vIA & 0x1FFF, p.flags_vIB & 0x1FFF, p.vIC };
+            bool floor = (p.type != PK_SURF_WALL);
+            for (int q = 0; q < 3; q++) {
+                Vtx& v = sPkDraw[out++];
+                const Vec3s& s = cv[idx[q]];
+                v.n.ob[0] = s.x, v.n.ob[1] = s.y, v.n.ob[2] = s.z;
+                v.n.flag = 0;
+                f32 u = (f32)(floor ? s.x : ((ABS(p.normal.x) > ABS(p.normal.z)) ? s.z : s.x));
+                f32 w = (f32)(floor ? s.z : -s.y);
+                v.n.tc[0] = (s16)CLAMP(fmodf(u, TEX_REPEAT * 16.0f) * su, -32000.0f, 32000.0f);
+                v.n.tc[1] = (s16)CLAMP(fmodf(w, TEX_REPEAT * 16.0f) * sv, -32000.0f, 32000.0f);
+                v.n.n[0] = (s8)(p.normal.x / 258);
+                v.n.n[1] = (s8)(p.normal.y / 258);
+                v.n.n[2] = (s8)(p.normal.z / 258);
+                v.n.a = 255;
+            }
         }
     }
 
@@ -1956,8 +2123,13 @@ static void PocketGround_Draw(Actor* thisx, PlayState* play) {
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    for (int pass = 0; pass < 2; pass++) {
-        bool textured = SetupTex(POLY_OPA_DISP, sTexList[texOf[pass]].path, sInfo[texOf[pass]]);
+    size_t first = 0;
+    for (int k = 0; k < TEX_COUNT; k++) {
+        size_t count = sByTex[k].size();
+        if (count == 0) {
+            continue;
+        }
+        bool textured = SetupTex(POLY_OPA_DISP, sTexList[k].path, sInfo[k]);
         if (textured) {
             gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL0, 0, SHADE, 0, TEXEL0, 0, PRIMITIVE, 0, COMBINED, 0, PRIMITIVE, 0,
                               0, 0, 0, COMBINED);
@@ -1967,24 +2139,15 @@ static void PocketGround_Draw(Actor* thisx, PlayState* play) {
                               COMBINED);
             gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 150, 142, 132, 255);
         }
-        // Runs of up to 10 triangles of this pass's kind (floor first, then walls)
-        size_t t = 0;
-        while (t < sPkPolys.size()) {
-            if ((sPkPolys[t].type != 0) != (pass == 1)) {
-                t++;
-                continue;
+        // Runs of up to 10 triangles
+        for (size_t t = 0; t < count; t += 10) {
+            int n = (int)MIN((size_t)10, count - t);
+            gSPVertex(POLY_OPA_DISP++, (uintptr_t)&sPkDraw[(first + t) * 3], n * 3, 0);
+            for (int q = 0; q < n; q++) {
+                gSP1Triangle(POLY_OPA_DISP++, q * 3, q * 3 + 1, q * 3 + 2, 0);
             }
-            size_t end = t;
-            while ((end < sPkPolys.size()) && (end - t < 10) && ((sPkPolys[end].type != 0) == (pass == 1))) {
-                end++;
-            }
-            int count = (int)(end - t);
-            gSPVertex(POLY_OPA_DISP++, (uintptr_t)&sPkDraw[t * 3], count * 3, 0);
-            for (int k = 0; k < count; k++) {
-                gSP1Triangle(POLY_OPA_DISP++, k * 3, k * 3 + 1, k * 3 + 2, 0);
-            }
-            t = end;
         }
+        first += count;
     }
     CLOSE_DISPS(play->state.gfxCtx);
 }

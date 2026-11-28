@@ -1470,6 +1470,9 @@ s32 BgCheck_TryGetCustomMemsize(s32 sceneId, u32* memSize) {
         { SCENE_GANON_BOSS, 0x70C8 },           { SCENE_SPIRIT_TEMPLE_BOSS, 0xACC8 },
         { SCENE_CHAMBER_OF_THE_SAGES, 0x70C8 }, { SCENE_SPIRIT_TEMPLE, 0x16CC8 },
         { SCENE_FIRE_TEMPLE, 0x198C8 },         { SCENE_GANONDORF_BOSS, 0x84C8 },
+        // Play as Ganondorf: the Map Editor's custom areas (shaped live: room for a 64x64 grid with walls, the node
+        // count kept under its 16-bit limit after the memory is doubled below)
+        { SCENE_SASATEST, 0x24000 },
     };
     s32 i;
 
