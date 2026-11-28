@@ -93,7 +93,7 @@ bool EndsPlainly(const std::string& text) {
 
 void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
     if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) ||
-        !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 0) ||
+        !CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 1) ||
         (gSaveContext.language != LANGUAGE_ENG) || !*loadFromMessageTable) {
         return; // (another of his hooks already gave this line its own text)
     }
@@ -102,8 +102,11 @@ void OnOpenText(uint16_t* textId, bool* loadFromMessageTable) {
         return;
     }
     std::string text = it->second.text;
-    auto talk = sNpcTalk.find(*textId);
-    const TalkPool* pool = PoolFor(*textId);
+    // He doesn't speak: the people do (his own greetings, replies and goodbyes are kept here, off, behind
+    // PlayAsGanondorf.NpcHisLines)
+    bool his = CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcHisLines"), 0) != 0;
+    auto talk = his ? sNpcTalk.find(*textId) : sNpcTalk.end();
+    const TalkPool* pool = his ? PoolFor(*textId) : nullptr;
     // (a new conversation: no text box is up yet; a line that follows another in the same talk gets nothing)
     bool opening = (gPlayState != nullptr) && (gPlayState->msgCtx.msgMode == MSGMODE_NONE);
 
@@ -194,10 +197,10 @@ void OnOpenTextCapes(uint16_t* textId, bool* loadFromMessageTable) {
 }
 
 void RegisterNpcs() {
-    // Off by default while it's reworked (once only: it used to be on, and a saved setting kept it on)
-    if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogueReset"), 0)) {
-        CVarSetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 0);
-        CVarSetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogueReset"), 1);
+    // On again (28 Nov 2026), the people's lines only: once, over the setting that was saved off while it was reworked
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogueOn"), 0)) {
+        CVarSetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 1);
+        CVarSetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogueOn"), 1);
         Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(OnOpenText);

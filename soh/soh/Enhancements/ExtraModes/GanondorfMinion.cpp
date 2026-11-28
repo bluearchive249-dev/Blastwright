@@ -380,7 +380,7 @@ static bool BuildEditedMessage(uint16_t textId,
 
 static void BuildMinionMessage(uint16_t* textId, bool* loadFromMessageTable) {
     if (CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.Enabled"), 1) &&
-        CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 0) &&
+        CVarGetInteger(CVAR_ENHANCEMENT("PlayAsGanondorf.NpcDialogue"), 1) &&
         BuildEditedMessage(*textId, sDesertThiefEdits)) {
         *loadFromMessageTable = false;
         return;
